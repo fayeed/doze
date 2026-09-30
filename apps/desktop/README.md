@@ -75,6 +75,10 @@ Audio meters observe all active render endpoints, including non-default devices.
 
 ## macOS status
 
+Appearance follows each platform's native design language. On Windows 11 build 22621+, Settings, About, Help, and custom timer dialogs request DWM Mica; the temporary countdown requests Desktop Acrylic. Windows owns the material tint and rounded frame. Standard form controls sit on a solid system-colored surface, with glass in the title bar and surrounding inset, so their text remains readable. Unsupported Windows versions fall back to ordinary dialogs. High contrast disables the material, and system appearance changes refresh open windows. The system tray menu remains OS-rendered. This is an initial native material treatment, not a WinUI 3 control migration; visual and DPI verification is still required.
+
+The macOS appearance target is AppKit's standard controls and native Liquid Glass (`NSGlassEffectView`, macOS 26+), with `NSVisualEffectView` vibrancy on older releases and solid surfaces when accessibility settings require them. This target is not implemented yet: there are currently no macOS settings or countdown windows to style. It requires building and verifying the native AppKit adapter on a Mac. References: [Windows materials](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type), [Apple's Liquid Glass guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
+
 Separate adapters include IOKit keep-awake assertions and Sleep, Core Graphics idle detection, and native notifications through Tauri. These have not been compiled or tested on a Mac. Native settings/custom timer dialogs, After Playback, launch at login, and native suspend/resume observation remain unimplemented on macOS; controls are hidden or the limitation is reported. Other macOS power actions are hidden.
 
 ## Hardware verification

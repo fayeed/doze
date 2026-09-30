@@ -225,7 +225,17 @@ unsafe extern "system" fn dialog_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> isize {
+    if let Some(result) = super::appearance::message(
+        hwnd,
+        message,
+        wparam,
+        lparam,
+        super::appearance::Surface::Temporary,
+    ) {
+        return result;
+    }
     if message == WM_INITDIALOG {
+        super::appearance::apply(hwnd, super::appearance::Surface::Temporary);
         SetWindowLongPtrW(hwnd, USER_DATA, lparam.0);
         let dialog = &mut *(lparam.0 as *mut Dialog<'_>);
         render(hwnd, dialog);
@@ -395,6 +405,7 @@ mod tests {
         }
         .unwrap();
         unsafe {
+            super::super::appearance::apply(hwnd, super::super::appearance::Surface::Temporary);
             render(hwnd, &mut dialog);
             let mut text = [0u16; 100];
             let length = GetDlgItemTextW(hwnd, STATUS as i32, &mut text);

@@ -25,6 +25,7 @@ mod tests {
         Ok(())
     }
 }
+mod appearance;
 mod dialog_template;
 pub mod dialogs;
 mod help;

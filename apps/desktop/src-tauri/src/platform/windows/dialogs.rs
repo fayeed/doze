@@ -155,7 +155,17 @@ unsafe extern "system" fn dialog_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> isize {
+    if let Some(result) = super::appearance::message(
+        hwnd,
+        message,
+        wparam,
+        lparam,
+        super::appearance::Surface::Persistent,
+    ) {
+        return result;
+    }
     if message == WM_INITDIALOG {
+        super::appearance::apply(hwnd, super::appearance::Surface::Persistent);
         SetWindowLongPtrW(hwnd, DIALOG_USER_OFFSET, lparam.0);
         let dialog = &*(lparam.0 as *const Dialog);
         ACTIVE_DIALOGS[dialog_slot(dialog.snapshot.view)].store(hwnd.0 as isize, Ordering::Relaxed);
@@ -375,6 +385,7 @@ mod tests {
         };
         for view in [
             DialogView::Settings,
+            DialogView::About,
             DialogView::Help,
             DialogView::AwakeDuration,
             DialogView::TimerDuration,
@@ -395,6 +406,10 @@ mod tests {
             }
             .expect("Windows must accept the dialog template");
             unsafe {
+                super::super::appearance::apply(
+                    hwnd,
+                    super::super::appearance::Surface::Persistent,
+                );
                 initialize(hwnd, &snapshot);
                 match view {
                     DialogView::Help | DialogView::About => {
@@ -409,6 +424,14 @@ mod tests {
                         };
                         assert_eq!(settings, snapshot.settings);
                         SetDlgItemTextW(hwnd, 112, w!("42")).unwrap();
+                        // Appearance refreshes must preserve unsaved form values.
+                        super::super::appearance::message(
+                            hwnd,
+                            WM_SETTINGCHANGE,
+                            WPARAM(0),
+                            LPARAM(0),
+                            super::super::appearance::Surface::Persistent,
+                        );
                         for page in 0..5 {
                             SendDlgItemMessageW(
                                 hwnd,
