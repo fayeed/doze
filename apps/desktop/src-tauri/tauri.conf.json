@@ -4,24 +4,10 @@
   "version": "0.1.0",
   "identifier": "app.getdoze.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev:vite",
-    "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "pnpm build:frontend",
-    "frontendDist": "../dist"
+    "frontendDist": "../resources"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Doze",
-        "width": 800,
-        "height": 600,
-        "minWidth": 360,
-        "minHeight": 480
-      }
-    ],
-    "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
-    }
+    "windows": []
   },
   "bundle": {
     "active": true,

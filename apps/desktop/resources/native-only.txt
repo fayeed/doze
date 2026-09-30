@@ -1,0 +1,1 @@
+Doze uses native tray menus and operating system dialogs. No web frontend is bundled.
