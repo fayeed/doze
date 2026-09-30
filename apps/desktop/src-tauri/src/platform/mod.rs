@@ -5,28 +5,20 @@ pub trait PowerManager {
     fn set_awake(&mut self, active: bool, allow_display_sleep: bool) -> Result<(), String>;
     fn execute(&mut self, action: PowerAction) -> Result<(), String>;
 }
+#[cfg(target_os = "macos")]
+pub use macos::countdown;
 #[cfg(windows)]
 pub use windows::countdown;
 #[cfg(windows)]
 pub use windows::dialogs;
-#[cfg(target_os = "macos")]
-pub mod countdown {
-    pub struct Warning;
-    impl Warning {
-        pub fn new(_: std::sync::mpsc::Sender<crate::state::Request>) -> Result<Self, String> {
-            Ok(Self)
-        }
-        pub fn update(&self, _: Option<&crate::core::countdown::Countdown>, _: u64) {}
-        pub fn preview(&self, _: crate::core::sessions::PowerAction) {}
-    }
-}
+mod native_ui;
 #[cfg(target_os = "macos")]
 pub mod dialogs {
     pub fn show(
-        _: crate::state::Snapshot,
-        _: std::sync::mpsc::Sender<crate::state::Request>,
+        snapshot: crate::state::Snapshot,
+        requests: std::sync::mpsc::Sender<crate::state::Request>,
     ) -> Result<(), String> {
-        Err("Native settings dialogs are currently available on Windows only.".into())
+        super::native_ui::show(snapshot, requests)
     }
 }
 pub trait AudioMonitor {

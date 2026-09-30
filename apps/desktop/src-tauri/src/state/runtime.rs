@@ -90,10 +90,11 @@ pub(super) fn worker(
         let mut preview_countdown = false;
         if let Some(request) = request {
             match request {
-                #[cfg(windows)]
                 Request::WarningFailed(error) => {
-                    snapshot.engine.cancel_countdown();
-                    snapshot.error = Some(format!("Countdown cancelled: {error}"));
+                    if snapshot.engine.countdown.is_some() {
+                        snapshot.engine.cancel_countdown();
+                        snapshot.error = Some(format!("Countdown cancelled: {error}"));
+                    }
                 }
                 Request::Lifecycle => {
                     snapshot

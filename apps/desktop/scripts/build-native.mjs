@@ -1,11 +1,43 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+const desktop = fileURLToPath(new URL("../", import.meta.url));
+if (process.platform === "darwin") {
+  const sdk = spawnSync("xcrun", ["--sdk", "macosx", "--show-sdk-version"], {
+    encoding: "utf8",
+  });
+  if (sdk.status !== 0 || Number.parseInt(sdk.stdout, 10) < 26) {
+    console.error(
+      "Xcode with a macOS 26 or newer SDK is required for native Liquid Glass.",
+    );
+    process.exit(1);
+  }
+  const output = path.join(desktop, "native/macos/publish");
+  mkdirSync(output, { recursive: true });
+  const arch = process.arch === "arm64" ? "arm64" : "x86_64";
+  const build = spawnSync(
+    "xcrun",
+    [
+      "swiftc",
+      "-swift-version",
+      "5",
+      "-O",
+      "-parse-as-library",
+      "-target",
+      `${arch}-apple-macos13.0`,
+      "native/macos/Doze.swift",
+      "-o",
+      path.join(output, "Doze.NativeUI"),
+    ],
+    { cwd: desktop, stdio: "inherit" },
+  );
+  if (build.error) console.error(build.error.message);
+  process.exit(build.status ?? 1);
+}
 if (process.platform !== "win32") process.exit(0);
 
-const desktop = fileURLToPath(new URL("../", import.meta.url));
 const localSdk = path.resolve(desktop, "../../.tools/dotnet/dotnet.exe");
 const dotnet = existsSync(localSdk) ? localSdk : "dotnet";
 const result = spawnSync(

@@ -119,7 +119,7 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
     let about = menu_icons::item(app, "about", "About Doze…", Glyph::Info)?;
     let quick = crate::quick_settings::QuickSettings::new(app)?;
     let preview = menu_icons::item(app, "preview", "Preview Countdown…", Glyph::Preview)?;
-    preview.set_enabled(cfg!(windows))?;
+    preview.set_enabled(true)?;
     let quit = menu_icons::item(app, "quit", "Quit Doze", Glyph::Quit)?;
     let help = menu_icons::item(app, "help", "Menu Guide…", Glyph::Help)?;
     let countdown = menu_icons::submenu(app, "countdown_menu", "Countdown", Glyph::Timer)?;
@@ -129,7 +129,16 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         &PredefinedMenuItem::separator(app)?,
         &preview,
     ])?;
-    let support = menu_icons::submenu(app, "support_menu", "Help && About", Glyph::Help)?;
+    let support = menu_icons::submenu(
+        app,
+        "support_menu",
+        if cfg!(windows) {
+            "Help && About"
+        } else {
+            "Help & About"
+        },
+        Glyph::Help,
+    )?;
     support.append_items(&[&help, &about])?;
     // Session management lives beside its start controls rather than filling the root with
     // inactive rows. Disabled commands still explain why they cannot run.

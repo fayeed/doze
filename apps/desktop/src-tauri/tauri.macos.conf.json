@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "resources": {
+      "../native/macos/publish/": "macos-ui/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}
