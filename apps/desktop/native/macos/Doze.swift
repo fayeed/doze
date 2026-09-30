@@ -556,7 +556,6 @@ struct SettingsView: View {
                     if session.status == "awaiting_authorization" {
                         HStack {
                             Button("Allow Once") { model.send("agent-authorize", extra: ["id": session.id, "decision": "once"]) }
-                            Button("Always Allow") { model.send("agent-authorize", extra: ["id": session.id, "decision": "always"]) }
                             Button("Deny") { model.send("agent-authorize", extra: ["id": session.id, "decision": "deny"]) }
                         }
                     } else {

@@ -89,22 +89,6 @@ pub fn call(
         {
             return Err("Too many agent sessions.".into());
         }
-        if !engine.agents.unsettled() {
-            if engine
-                .countdown
-                .as_ref()
-                .is_some_and(|c| c.source == Source::Agents)
-            {
-                engine.cancel_countdown();
-            }
-            engine.agents.batch.clear();
-            // Keep bounded terminal history so agents can query just-finished sessions.
-            if engine.agents.items.len() > 128 {
-                let remove = engine.agents.items.len() - 128;
-                engine.agents.items.drain(..remove);
-            }
-            engine.agents.completion_consumed = false;
-        }
         let approved = client.keep_awake && action.is_none_or(|a| client.actions.contains(&a));
         let session = Session {
             session_id: uuid::Uuid::new_v4().to_string(),
@@ -130,7 +114,11 @@ pub fn call(
             },
             timeout_at: start.optional_timeout.map(|t| engine.now.saturating_add(t)),
         };
-        engine.agents.batch.push(session.session_id.clone());
+        if approved {
+            join_authorized_batch(engine, &session.session_id);
+        } else {
+            prune_history(engine);
+        }
         let result = json!(session);
         engine.agents.items.push(session);
         return Ok(result);
@@ -149,6 +137,7 @@ pub fn call(
     if ![
         "doze.heartbeat",
         "doze.finish_session",
+        "doze.fail_session",
         "doze.cancel_session",
         "doze.get_session",
     ]
@@ -187,9 +176,17 @@ pub fn call(
                 session.status = Status::Finished;
             }
         }
+        "doze.fail_session" => {
+            if session.status != Status::Failed {
+                if !session.status.holds_awake() {
+                    return Err("Session is not authorized or already ended.".into());
+                }
+                session.status = Status::Failed;
+            }
+        }
         "doze.cancel_session" => {
-            if session.status == Status::Finished {
-                return Err("Session already finished; cancel the countdown in Doze.".into());
+            if matches!(session.status, Status::Finished | Status::Failed) {
+                return Err("Session already ended; cancel the countdown in Doze.".into());
             }
             if session.status != Status::Denied {
                 session.status = Status::Cancelled;
@@ -210,35 +207,38 @@ pub fn authorize(
     if !settings.agents.enabled {
         return Err("MCP is disabled.".into());
     }
+    if !["once", "deny"].contains(&decision) {
+        return Err("Persistent permissions can only be changed in Agents settings.".into());
+    }
+    let session = engine
+        .agents
+        .items
+        .iter()
+        .find(|s| s.session_id == id)
+        .ok_or("Session not found.")?;
+    if session.status != Status::AwaitingAuthorization {
+        return Err("Authorization is no longer pending.".into());
+    }
+    if !settings
+        .agents
+        .clients
+        .iter()
+        .any(|c| c.id == session.client_id)
+    {
+        return Err("Client revoked.".into());
+    }
+    if decision == "once" {
+        join_authorized_batch(engine, id);
+    }
     let session = engine
         .agents
         .items
         .iter_mut()
         .find(|s| s.session_id == id)
         .ok_or("Session not found.")?;
-    if session.status != Status::AwaitingAuthorization {
-        return Err("Authorization is no longer pending.".into());
-    }
     if decision == "deny" {
         session.status = Status::Denied;
         return Ok(());
-    }
-    if !["once", "always"].contains(&decision) {
-        return Err("Unknown authorization decision.".into());
-    }
-    let client = settings
-        .agents
-        .clients
-        .iter_mut()
-        .find(|c| c.id == session.client_id)
-        .ok_or("Client revoked.")?;
-    if decision == "always" {
-        client.keep_awake = true;
-        if let Some(action) = session.completion_action {
-            if !client.actions.contains(&action) {
-                client.actions.push(action);
-            }
-        }
     }
     session.status = Status::Active;
     session.authorized_action = session.completion_action;
@@ -287,6 +287,7 @@ pub fn definitions() -> Value {
     for (name, description, readonly) in [
         ("heartbeat", "Renew an authorized lease. Send at least every lease-duration/2 seconds.", false),
         ("finish_session", "Explicitly mark work complete. The core waits for all leases and starts a cancellable countdown; never sleeps directly.", false),
+        ("fail_session", "Explicitly report definitive task failure, not disconnection or missing status. Release this authorized lease without executing its action. Successful peer sessions may still complete normally.", false),
         ("cancel_session", "Release your session without executing its completion action.", false),
         ("get_session", "Read your session status and lease expiration.", true),
     ] {
@@ -294,4 +295,39 @@ pub fn definitions() -> Value {
     }
     tools.push(json!({"name":"doze.list_sessions","description":"List sessions owned by this configured client.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true,"openWorldHint":false}}));
     json!({"tools":tools})
+}
+
+fn join_authorized_batch(engine: &mut Engine, id: &str) {
+    if !engine.agents.holds_awake() {
+        if engine
+            .countdown
+            .as_ref()
+            .is_some_and(|c| c.source == Source::Agents)
+        {
+            engine.cancel_countdown();
+        }
+        engine.agents.batch.clear();
+        engine.agents.completion_consumed = false;
+        prune_history(engine);
+    }
+    engine.agents.batch.push(id.into());
+}
+
+fn prune_history(engine: &mut Engine) {
+    let sessions = &mut engine.agents;
+    let removable = |s: &Session| s.status.terminal() && !sessions.batch.contains(&s.session_id);
+    let mut remove = sessions
+        .items
+        .iter()
+        .filter(|s| removable(s))
+        .count()
+        .saturating_sub(128);
+    sessions.items.retain(|s| {
+        if remove > 0 && removable(s) {
+            remove -= 1;
+            false
+        } else {
+            true
+        }
+    });
 }

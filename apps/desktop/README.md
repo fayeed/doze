@@ -109,7 +109,7 @@ Before release, verify native menu and dialog keyboard navigation/layout across 
 
 Open **Doze → Agents → Agent settings and connections**, turn on **Enable MCP**, and choose **Connect** for Codex, Claude Code, or a generic MCP client. MCP is off by default. Doze generates a separate random credential for each profile and shows copyable configuration containing the installed executable and local endpoint paths. Leave the desktop app running. A remotely hosted model works when its MCP client process runs on this computer; a remote execution machine cannot control this Doze instance through stdio.
 
-The first request opens Agents settings for **Allow Once**, **Always Allow**, or **Deny**. Approval grants Keep Awake plus the exact requested completion action. Allow Once is scoped to that session; Always Allow saves only those permissions. Future requests for other actions require approval. An awaiting-authorization session does **not** hold a wake assertion: the agent must poll `doze.get_session` and wait for `active` before claiming the computer is protected. Pending approvals expire after ten minutes.
+The first request opens Agents settings for **Allow Once** or **Deny**. Approval grants Keep Awake plus the exact requested completion action. Allow Once is scoped to that session. Persistent permissions can only be changed explicitly under Trusted agents and permissions in Settings. Future requests for other actions require approval. An awaiting-authorization session does **not** hold a wake assertion: the agent must poll `doze.get_session` and wait for `active` before claiming the computer is protected. Pending approvals expire after ten minutes.
 
 ### Codex
 
@@ -148,9 +148,10 @@ Example user request: “I'm going to bed. Keep my computer awake while you fini
 2. If authorization is pending, ask the user to approve in Doze, then poll `doze.get_session`. The response includes `session_id`, configured client identity, status, requested/authorized action and lease timestamps. All timestamps are monotonic seconds since the current Doze process started, not Unix timestamps.
 3. Call `doze.heartbeat(session_id)` at least twice per lease interval. The default lease is five minutes; configurable range is 30–3600 seconds. Renewal never extends the optional total timeout.
 4. Call `doze.finish_session(session_id)` only after the work and validation are complete. It marks explicit completion in the engine. It never performs a power action directly.
-5. Call `doze.cancel_session(session_id)` to release a session without its action. `doze.get_session` and `doze.list_sessions` expose only sessions owned by the configured client. Reconnecting with the same profile credential can resume an existing lease. Use separate profiles for separate trust boundaries.
+5. Call `doze.fail_session(session_id)` only when the runtime definitively reports task failure. It releases that authorized lease without executing its action. Successful peers can still trigger their unanimously authorized completion action; a batch consisting only of failed tasks never triggers one. Silence or disconnection is not definitive failure.
+6. Call `doze.cancel_session(session_id)` to release a session without its action. `doze.get_session` and `doze.list_sessions` expose only sessions owned by the configured client. Reconnecting with the same profile credential can resume an existing lease. Use separate profiles for separate trust boundaries.
 
-The existing native engine owns the wake assertion, warning countdown and OS action. Active and connection-lost sessions block all Doze power countdowns, including existing timers. Manual awake/audio sessions also defer agent completion. When the entire overlapping batch finishes explicitly with the same authorized action, the core starts a countdown of at least five minutes. **Cancel**, **Stay Awake**, and **Snooze** remain available. Return to Normal, cancellation, denial, or differing completion actions veto the automatic action for that batch. No ranking silently escalates from Sleep to Shutdown.
+The existing native engine owns the wake assertion, warning countdown and OS action. Only authorized active and connection-lost sessions block Doze power countdowns, including existing timers. Manual awake/audio sessions also defer agent completion. An enabled After Playback rule takes precedence even while waiting for playback to begin. Pending or denied requests do not enter authorized batches and cannot alter timers or countdowns. Paused playback warnings restart after authorized agent leases end, provided the silence/idle checks still pass. When the entire overlapping batch finishes explicitly with the same authorized action, the core starts a countdown of at least five minutes. **Cancel**, **Stay Awake**, and **Snooze** remain available. Return to Normal, cancellation, or differing completion actions veto the automatic action for that batch. No ranking silently escalates from Sleep to Shutdown.
 
 Lease expiration, transport EOF, total timeout, suspend/resume, or a clock discontinuity is uncertainty rather than proof of completion. A lost lease conservatively keeps the computer awake indefinitely. The tray and Agents settings show connection lost and last activity, with **Cancel session**, **Wait 30 minutes**, or **End and apply completion action**. A valid heartbeat can recover a lost lease unless its total timeout elapsed. A resumed explicit finish can resolve it. No CPU, process, network, editor, or task-completion heuristics are used.
 
@@ -173,3 +174,23 @@ pnpm build
 ```
 
 `mcp:test` uses the official TypeScript MCP client SDK against the actual Doze stdio binary, connected to a test-only engine host with MockPower. It checks handshake/tool discovery, session creation and mock assertion, UI snapshot data, heartbeat renewal, finish/countdown, user cancellation, overlapping clients, conflicting actions, ownership and invalid credentials, unauthorized shutdown, disconnect/expiry and reconnect. Rust tests cover authorization decisions, leases, timers, wake arbitration, timeout, failure state and cancellation. Native UI tests construct the Agents approval, lost-connection, permissions and connection controls in light/dark themes. The mock host is excluded from normal builds and installers by a required `mcp-test-support` Cargo feature. Tests never execute native sleep/shutdown. Real native power transitions and macOS compilation require separate platform hardware validation.
+
+On Windows, if a running debug app locks `doze.exe`, set `$env:DOZE_MCP_TEST_RELEASE="1"` in PowerShell before running `mcp:test`. The test then builds and uses the release binaries without closing the desktop app.
+
+### Heartbeats without model turns
+
+The lease remains the failure detector; removing renewal would leave Doze blind between start and finish. `scripts/runtime-lease.mjs` provides the opt-in `watchDozeRun` adapter for runtimes using an MCP client. It polls a supplied **fresh authoritative** job-status callback, renews while that job is explicitly running, and finishes only when the callback reports `succeeded`. These MCP/status calls do not invoke the language model. A definitive `failed` job state calls `doze.fail_session`, releasing that lease without executing its requested action. Disconnected status, user-input waits, unknown state, a hung status callback, or abort stop renewal without reporting success. Doze then enters connection-lost state when the remaining lease expires. A cached running flag, an open MCP pipe, or a background helper that lives indefinitely is insufficient evidence.
+
+```js
+import { watchDozeRun } from "./scripts/runtime-lease.mjs";
+
+const result = await watchDozeRun(mcpClient,
+  { reason: "Finish the requested refactor", completion_action: "sleep" },
+  { readStatus: async ({ signal }) => runtime.readFreshJobStatus(jobId, { signal }) });
+// readFreshJobStatus is your runtime adapter, not a Doze or MCP standard method.
+// It returns running/succeeded only for authoritative whole-job states.
+```
+
+No Codex/Claude hooks are installed automatically. A provider integration must distinguish a successful whole job from an individual turn ending, child tasks still running, cancellation, or waiting for approval. A runtime event stream plus its documented connection/status checks can implement this callback. Generic clients without those signals continue using explicit heartbeats. Longer leases reduce calls but increase failure-detection latency; every uncertainty favors keeping awake rather than executing a completion action.
+
+For example, with three authorized agents, one can finish successfully at 15 minutes, a second can explicitly report terminal model failure, and the third can finish successfully at an hour. The first two no longer hold wake leases; the third keeps the machine awake. Its successful finish begins the common countdown when the successful sessions agree on their authorized action. If the second agent disappears instead of reporting failure, its lease becomes connection-lost and continues to block sleep until resolved. This distinction is intentional.

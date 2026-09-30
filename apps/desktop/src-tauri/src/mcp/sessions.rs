@@ -8,6 +8,7 @@ pub enum Status {
     Active,
     ConnectionLost,
     Finished,
+    Failed,
     Cancelled,
     Denied,
 }
@@ -16,7 +17,10 @@ impl Status {
         matches!(self, Self::Active | Self::ConnectionLost)
     }
     pub fn terminal(self) -> bool {
-        matches!(self, Self::Finished | Self::Cancelled | Self::Denied)
+        matches!(
+            self,
+            Self::Finished | Self::Failed | Self::Cancelled | Self::Denied
+        )
     }
 }
 #[derive(Clone, Debug, Serialize)]
@@ -70,15 +74,19 @@ impl Sessions {
             }
         }
     }
-    // Only unanimous explicit finishes may produce an automatic action. Cancellation,
-    // denial, return-to-normal, and conflicting requests veto the entire overlapping batch.
+    // Only unanimous successful finishes may request an action; definitive failures
+    // release their leases without requesting an action. Cancellation,
+    // return-to-normal, and conflicting requests veto the entire overlapping batch.
     pub fn completion(&self) -> Option<PowerAction> {
-        if self.completion_consumed || self.unsettled() || self.batch.is_empty() {
+        if self.completion_consumed || self.holds_awake() || self.batch.is_empty() {
             return None;
         }
         let mut action = None;
         for id in &self.batch {
             let session = self.items.iter().find(|s| &s.session_id == id)?;
+            if session.status == Status::Failed {
+                continue;
+            }
             if session.status != Status::Finished {
                 return None;
             }

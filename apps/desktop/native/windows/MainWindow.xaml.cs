@@ -322,7 +322,7 @@ public sealed partial class MainWindow : Window
                 var action = whenDone is null ? "Return to normal" : ActionNames.GetValueOrDefault(whenDone, whenDone);
                 var controls = new StackPanel { Spacing = 6 };
                 if (status == "awaiting_authorization")
-                    foreach (var (decision, label) in new[] { ("once", "Allow Once"), ("always", "Always Allow"), ("deny", "Deny") })
+                    foreach (var (decision, label) in new[] { ("once", "Allow Once"), ("deny", "Deny") })
                         controls.Children.Add(ActionButton(label, () => bridge.SendAgentAsync("agent-authorize", id: id, decision: decision)));
                 else
                 {

@@ -480,7 +480,7 @@ fn agent_operation(id: &str) -> Option<Operation> {
         ["agents", "lease", seconds] => Operation::AgentLease {
             seconds: seconds.parse().ok()?,
         },
-        ["agents", "once" | "always" | "deny", id] => Operation::AuthorizeAgent {
+        ["agents", "once" | "deny", id] => Operation::AuthorizeAgent {
             id: (*id).into(),
             decision: parts[1].into(),
         },
@@ -556,11 +556,7 @@ fn update_agents(app: &tauri::AppHandle, menu: &NativeMenu, snapshot: &Snapshot)
                 None::<&str>,
             )?)?;
             if session.status == Status::AwaitingAuthorization {
-                for (id, label) in [
-                    ("once", "Allow Once"),
-                    ("always", "Always Allow"),
-                    ("deny", "Deny"),
-                ] {
+                for (id, label) in [("once", "Allow Once"), ("deny", "Deny")] {
                     row.append(&MenuItem::with_id(
                         app,
                         format!("agents:{id}:{}", session.session_id),

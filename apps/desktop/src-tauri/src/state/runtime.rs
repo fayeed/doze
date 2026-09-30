@@ -95,15 +95,17 @@ pub(super) fn worker(
         if let Some(request) = request {
             match request {
                 Request::Mcp(call, tx) => {
+                    let request_authorization = call.name == "doze.start_session";
                     let result = crate::mcp::tools::call(
                         &mut snapshot.engine,
                         &snapshot.settings,
                         &snapshot.actions,
                         call,
                     );
-                    if result
-                        .as_ref()
-                        .is_ok_and(|value| value["status"] == "awaiting_authorization")
+                    if request_authorization
+                        && result
+                            .as_ref()
+                            .is_ok_and(|value| value["status"] == "awaiting_authorization")
                     {
                         snapshot.view = super::DialogView::Agents;
                         open_dialog = true;

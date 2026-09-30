@@ -10,6 +10,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const desktop = fileURLToPath(new URL("../", import.meta.url));
+// Release mode allows integration tests while the debug desktop app is running.
+const release = process.env.DOZE_MCP_TEST_RELEASE === "1";
 const build = spawnSync(
   "cargo",
   [
@@ -20,12 +22,17 @@ const build = spawnSync(
     "--features",
     "mcp-test-support",
     "--bins",
+    ...(release ? ["--release"] : []),
   ],
   { cwd: desktop, stdio: "inherit" },
 );
 assert.equal(build.status, 0, "Build failed");
 const suffix = process.platform === "win32" ? ".exe" : "";
-const binaries = path.join(desktop, "src-tauri/target/debug");
+const binaries = path.join(
+  desktop,
+  "src-tauri/target",
+  release ? "release" : "debug",
+);
 const directory = await mkdtemp(path.join(tmpdir(), "doze-mcp-"));
 const endpoint = path.join(directory, "endpoint.json");
 // This host contains only MockPower; the actual application binary is used for stdio.
@@ -70,7 +77,7 @@ try {
   const codex = await connect("codex");
   const claude = await connect("claude");
   const listed = await codex.listTools();
-  assert.equal(listed.tools.length, 6);
+  assert.equal(listed.tools.length, 7);
   assert(
     !listed.tools.some((t) =>
       /sleep_now|shutdown_now|execute_command/.test(t.name),
@@ -161,6 +168,24 @@ try {
   });
   assert.equal(conflict.test_countdown, false);
   assert.equal(conflict.test_awake, false);
+  const successful = await call(reconnected, "start_session", {
+    reason: "Third agent",
+    completion_action: "sleep",
+  });
+  const failedPeer = await call(claude, "start_session", {
+    reason: "Model unavailable",
+    completion_action: "sleep",
+  });
+  const failure = await call(claude, "fail_session", {
+    session_id: failedPeer.session_id,
+  });
+  assert.equal(failure.status, "failed");
+  assert.equal(failure.test_countdown, false);
+  const successfulFinish = await call(reconnected, "finish_session", {
+    session_id: successful.session_id,
+  });
+  assert.equal(successfulFinish.test_countdown, true);
+  await command("cancel");
   // A valid bounded history can exceed the request-size limit; responses use a
   // separate limit so list_sessions continues to work for long overlapping batches.
   const anchor = await call(reconnected, "start_session", {

@@ -104,7 +104,7 @@ impl Engine {
         self.agents.expire(now);
         // Pause other power sources while agent work is unsettled. Do not continually
         // restart visible countdowns or emit a notification every engine tick.
-        if self.agents.unsettled() {
+        if self.agents.holds_awake() {
             if let Some(countdown) = self.countdown.take() {
                 match countdown.source {
                     Source::Timer => {
@@ -113,7 +113,10 @@ impl Engine {
                             action: countdown.action,
                         })
                     }
-                    Source::Playback => self.cancel_playback(),
+                    Source::Playback => {
+                        self.playback_phase = Phase::GracePeriod;
+                        self.silence_since.get_or_insert(now);
+                    }
                     Source::Agents => self.agents.completion_consumed = true,
                 }
             }
@@ -192,7 +195,7 @@ impl Engine {
                     .silence_since
                     .is_some_and(|s| now.saturating_sub(s) >= settings.silence_seconds)
                 && idle.is_some_and(|i| i >= settings.idle_seconds)
-                && !self.agents.unsettled()
+                && !self.agents.holds_awake()
                 && !self.awake
                 && self.timer.is_none()
                 && self.countdown.is_none()
@@ -205,7 +208,7 @@ impl Engine {
                 self.playback_phase = Phase::Countdown;
             }
         }
-        if !self.agents.unsettled() && self.timer.as_ref().is_some_and(|t| now >= t.deadline) {
+        if !self.agents.holds_awake() && self.timer.as_ref().is_some_and(|t| now >= t.deadline) {
             let timer = self.timer.take()?;
             self.cancel_playback();
             self.countdown = Some(Countdown {
@@ -215,15 +218,9 @@ impl Engine {
             });
         }
         // Every power path respects agent wake leases, including timers already counting down.
-        let other_wake_required = self.awake
-            || self.while_audio
-            || self.timer.is_some()
-            || (self.playback_enabled
-                && matches!(
-                    self.playback_phase,
-                    Phase::Active | Phase::GracePeriod | Phase::Countdown
-                ));
-        if !(self.agents.unsettled() || other_wake_required || self.countdown.is_some()) {
+        let other_wake_required =
+            self.awake || self.while_audio || self.timer.is_some() || self.playback_enabled;
+        if !(self.agents.holds_awake() || other_wake_required || self.countdown.is_some()) {
             if let Some(action) = self.agents.completion() {
                 self.countdown = Some(Countdown {
                     deadline: now.saturating_add(settings.countdown_seconds.max(300)),

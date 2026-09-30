@@ -239,17 +239,23 @@ fn unapproved_shutdown_cannot_finish_or_hold_awake() {
     assert!(call(&mut e, &s, "codex", "heartbeat", json!({"session_id":id})).is_err());
 }
 #[test]
-fn allow_once_does_not_persist_but_always_allow_does() {
+fn prompts_cannot_grant_persistent_permissions() {
     let (mut e, mut s) = (Engine::default(), settings());
     let a = start(&mut e, &s, "codex", "shutdown");
     tools::authorize(&mut e, &mut s, &a, "once").unwrap();
     assert!(!s.agents.clients[0].actions.contains(&PowerAction::Shutdown));
     let b = start(&mut e, &s, "codex", "shutdown");
-    tools::authorize(&mut e, &mut s, &b, "always").unwrap();
-    let restored: Settings = serde_json::from_value(json!(s)).unwrap();
-    assert!(restored.agents.clients[0]
-        .actions
-        .contains(&PowerAction::Shutdown));
+    assert!(tools::authorize(&mut e, &mut s, &b, "always").is_err());
+    assert!(!s.agents.clients[0].actions.contains(&PowerAction::Shutdown));
+    assert_eq!(
+        e.agents
+            .items
+            .iter()
+            .find(|session| session.session_id == b)
+            .unwrap()
+            .status,
+        Status::AwaitingAuthorization
+    );
 }
 #[test]
 fn deny_and_pending_timeout_never_hold_awake() {
@@ -359,7 +365,7 @@ fn json_rpc_lifecycle_and_tool_errors_are_compliant() {
             .as_array()
             .unwrap()
             .len(),
-        6
+        7
     );
     let tool = json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"doze.start_session","arguments":{"reason":"test"}}});
     assert_eq!(
@@ -402,4 +408,153 @@ fn existing_timer_countdown_pauses_without_repeated_warnings() {
     tick(&mut engine, &settings, 1001);
     assert_eq!(engine.countdown.as_ref().unwrap().source, Source::Timer);
     assert_eq!(engine.countdown.as_ref().unwrap().deadline, 1301);
+}
+
+#[test]
+fn pending_request_cannot_pause_timer_or_cancel_existing_agent_countdown() {
+    let (mut engine, settings) = (Engine::default(), settings());
+    engine.schedule(1, PowerAction::Sleep);
+    start(&mut engine, &settings, "codex", "shutdown");
+    tick(&mut engine, &settings, 1);
+    assert_eq!(engine.countdown.as_ref().unwrap().source, Source::Timer);
+    assert_eq!(tick(&mut engine, &settings, 301), Some(PowerAction::Sleep));
+    let id = start(&mut engine, &settings, "codex", "sleep");
+    finish(&mut engine, &settings, "codex", &id);
+    tick(&mut engine, &settings, 302);
+    let deadline = engine.countdown.as_ref().unwrap().deadline;
+    start(&mut engine, &settings, "claude", "shutdown");
+    tick(&mut engine, &settings, 303);
+    assert_eq!(engine.countdown.as_ref().unwrap().deadline, deadline);
+}
+#[test]
+fn pending_and_denied_requests_do_not_veto_authorized_batch() {
+    let (mut engine, mut settings) = (Engine::default(), settings());
+    let id = start(&mut engine, &settings, "codex", "sleep");
+    let pending = start(&mut engine, &settings, "claude", "shutdown");
+    tools::authorize(&mut engine, &mut settings, &pending, "deny").unwrap();
+    finish(&mut engine, &settings, "codex", &id);
+    tick(&mut engine, &settings, 1);
+    assert!(engine.countdown.is_some());
+}
+#[test]
+fn granting_once_joins_batch_and_pauses_countdown_only_after_approval() {
+    let (mut engine, mut settings) = (Engine::default(), settings());
+    let id = start(&mut engine, &settings, "codex", "sleep");
+    finish(&mut engine, &settings, "codex", &id);
+    tick(&mut engine, &settings, 1);
+    settings.agents.clients[1].keep_awake = false;
+    let pending = start(&mut engine, &settings, "claude", "sleep");
+    assert!(engine.countdown.is_some());
+    tools::authorize(&mut engine, &mut settings, &pending, "once").unwrap();
+    assert!(engine.countdown.is_none());
+    assert!(engine.should_hold_awake());
+    finish(&mut engine, &settings, "claude", &pending);
+    tick(&mut engine, &settings, 2);
+    assert!(engine.countdown.is_some());
+}
+#[test]
+fn enabled_playback_rule_waiting_for_audio_takes_precedence_over_agent_sleep() {
+    let (mut engine, settings) = (Engine::default(), settings());
+    engine.enable_playback(true);
+    let id = start(&mut engine, &settings, "codex", "sleep");
+    finish(&mut engine, &settings, "codex", &id);
+    engine.tick(1, Some(false), Some(600), false, &settings);
+    assert!(engine.countdown.is_none());
+    for now in 2..5 {
+        engine.tick(now, Some(true), Some(600), false, &settings);
+    }
+    engine.tick(5, Some(false), Some(600), false, &settings);
+    engine.tick(65, Some(false), Some(600), false, &settings);
+    assert_eq!(engine.countdown.as_ref().unwrap().source, Source::Playback);
+}
+#[test]
+fn playback_countdown_paused_by_agent_resumes_without_requiring_fresh_audio() {
+    let (mut engine, settings) = (Engine::default(), settings());
+    engine.enable_playback(true);
+    for now in 0..3 {
+        engine.tick(now, Some(true), Some(600), false, &settings);
+    }
+    engine.tick(3, Some(false), Some(600), false, &settings);
+    engine.tick(63, Some(false), Some(600), false, &settings);
+    let id = start(&mut engine, &settings, "codex", "sleep");
+    engine.tick(64, Some(false), Some(600), false, &settings);
+    assert!(engine.countdown.is_none());
+    finish(&mut engine, &settings, "codex", &id);
+    engine.tick(65, Some(false), Some(600), false, &settings);
+    assert_eq!(engine.countdown.as_ref().unwrap().source, Source::Playback);
+}
+
+#[test]
+fn definitive_failed_peer_does_not_block_last_successful_agent() {
+    let (mut engine, settings) = (Engine::default(), settings());
+    let first = start(&mut engine, &settings, "codex", "sleep");
+    let failed = start(&mut engine, &settings, "claude", "sleep");
+    let last = start(&mut engine, &settings, "codex", "sleep");
+    finish(&mut engine, &settings, "codex", &first);
+    call(
+        &mut engine,
+        &settings,
+        "claude",
+        "fail_session",
+        json!({"session_id":failed}),
+    )
+    .unwrap();
+    tick(&mut engine, &settings, 1);
+    assert!(engine.countdown.is_none());
+    assert!(engine.should_hold_awake());
+    finish(&mut engine, &settings, "codex", &last);
+    tick(&mut engine, &settings, 2);
+    assert!(engine.countdown.is_some());
+}
+#[test]
+fn failure_alone_never_requests_its_completion_action() {
+    let (mut engine, settings) = (Engine::default(), settings());
+    let id = start(&mut engine, &settings, "codex", "sleep");
+    call(
+        &mut engine,
+        &settings,
+        "codex",
+        "fail_session",
+        json!({"session_id":id}),
+    )
+    .unwrap();
+    assert_eq!(tick(&mut engine, &settings, 1), None);
+    assert!(engine.countdown.is_none());
+    assert!(!engine.should_hold_awake());
+}
+#[test]
+fn failure_reporting_is_authorized_and_client_scoped() {
+    let (mut engine, settings) = (Engine::default(), settings());
+    let pending = start(&mut engine, &settings, "codex", "shutdown");
+    assert!(call(
+        &mut engine,
+        &settings,
+        "codex",
+        "fail_session",
+        json!({"session_id":pending})
+    )
+    .is_err());
+    let id = start(&mut engine, &settings, "codex", "sleep");
+    assert!(call(
+        &mut engine,
+        &settings,
+        "claude",
+        "fail_session",
+        json!({"session_id":id})
+    )
+    .is_err());
+}
+
+#[test]
+fn denied_request_history_is_bounded_without_disturbing_authorized_completion() {
+    let (mut engine, mut settings) = (Engine::default(), settings());
+    let active = start(&mut engine, &settings, "codex", "sleep");
+    for _ in 0..300 {
+        let pending = start(&mut engine, &settings, "claude", "shutdown");
+        tools::authorize(&mut engine, &mut settings, &pending, "deny").unwrap();
+    }
+    assert!(engine.agents.items.len() <= 130);
+    finish(&mut engine, &settings, "codex", &active);
+    tick(&mut engine, &settings, 1);
+    assert!(engine.countdown.is_some());
 }
