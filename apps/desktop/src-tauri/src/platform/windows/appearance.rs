@@ -20,7 +20,6 @@ const MATERIAL: windows::core::PCWSTR = w!("Doze.NativeMaterial");
 #[derive(Clone, Copy)]
 pub(super) enum Surface {
     Persistent,
-    Temporary,
 }
 
 /// Material support is optional: Windows 10 and accessibility modes keep ordinary dialogs.
@@ -43,7 +42,6 @@ pub(super) unsafe fn apply(hwnd: HWND, surface: Surface) {
     } else {
         match surface {
             Surface::Persistent => DWMSBT_MAINWINDOW,
-            Surface::Temporary => DWMSBT_TRANSIENTWINDOW,
         }
     };
     let supported = attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop);

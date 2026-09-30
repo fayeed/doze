@@ -36,9 +36,7 @@ impl UiRequest {
             },
             "preview" => Operation::PreviewCountdown,
             "refresh" => Operation::Refresh,
-            #[cfg(target_os = "macos")]
             "cancel" => Operation::Cancel,
-            #[cfg(target_os = "macos")]
             "snooze" => Operation::Snooze,
             #[cfg(target_os = "macos")]
             "quit" => Operation::Quit,
@@ -58,6 +56,7 @@ impl UiRequest {
 fn reply_to_ui(line: &str, requests: &Sender<Request>) -> Result<Value, String> {
     let request: UiRequest = serde_json::from_str(line).map_err(|error| error.to_string())?;
     let saved = request.command == "save";
+    let command = request.command.clone();
     let operation = request.operation()?;
     let (reply, response) = mpsc::channel();
     requests
@@ -68,6 +67,7 @@ fn reply_to_ui(line: &str, requests: &Sender<Request>) -> Result<Value, String> 
         .map_err(|_| "Doze engine did not respond.")??;
     Ok(json!({
         "type": if saved { "saved" } else { "state" },
+        "command": command,
         "snapshot": snapshot_json(&snapshot),
     }))
 }
@@ -187,7 +187,6 @@ pub(super) fn send(open: Value, requests: Sender<Request>) -> Result<(), String>
                 }
             }
             let _ = child.wait();
-            #[cfg(target_os = "macos")]
             let _ = requests.send(Request::WarningFailed(
                 "Native warning window closed unexpectedly.".into(),
             ));

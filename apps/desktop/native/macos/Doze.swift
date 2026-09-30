@@ -46,7 +46,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .playback: return "speaker.wave.2"
         case .notifications: return "bell"
         case .advanced: return "slider.horizontal.3"
-        case .help: return "questionmark.circle"
+        case .help: return "book"
         case .about: return "info.circle"
         }
     }
@@ -171,8 +171,10 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         reset()
         guard draft.defaultAwakeMinutes == 30 else { throw verificationError("Reset did not restore defaults.") }
         // Preview buttons must never submit engine commands.
-        preview = true
-        warningVisible = true
+        receive(["type": "preview", "action": "Sleep"])
+        guard warningWindow?.level == .floating else {
+            throw verificationError("Preview is not always on top.")
+        }
         snoozeWarning()
         guard !warningVisible else { throw verificationError("Preview did not dismiss.") }
     }
@@ -281,12 +283,12 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
 
     private func showWarning() {
         if warningWindow == nil {
-            warningWindow = window("Doze · Power countdown", size: NSSize(width: 460, height: 260), content: WarningView(model: self))
+            warningWindow = window("Doze · Power countdown", size: NSSize(width: 520, height: 440), content: WarningView(model: self))
             warningWindow?.styleMask.remove([.resizable, .miniaturizable])
             warningWindow?.level = .floating
             warningWindow?.delegate = self
         }
-        if !warningVisible, let window = warningWindow { activate(window) }
+        if !warningVisible, !verification, let window = warningWindow { activate(window) }
         warningVisible = true
     }
 
@@ -517,8 +519,10 @@ struct WarningView: View {
     var body: some View {
         VStack(spacing: 18) {
             Image(systemName: "moon.zzz").font(.system(size: 32)).foregroundStyle(.tint)
-            Text("\(model.warningAction) in \(model.remaining / 60):\(String(format: "%02d", model.remaining % 60))")
-                .font(.title2.bold()).monospacedDigit().accessibilityAddTraits(.updatesFrequently)
+            Text("\(model.warningAction) in").font(.title2.weight(.semibold))
+            Text("\(model.remaining / 60):\(String(format: "%02d", model.remaining % 60))")
+                .font(.system(size: 64, weight: .semibold, design: .rounded))
+                .monospacedDigit().accessibilityAddTraits(.updatesFrequently)
             Text(model.preview ? "Preview only — no power action is scheduled." : "Cancel the action or snooze for 15 minutes.")
                 .foregroundStyle(.secondary)
             HStack {

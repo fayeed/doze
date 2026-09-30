@@ -48,8 +48,9 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new SizeInt32(1120, 780));
         AppWindow.Closing += (window, args) =>
         {
-            if ((!preferences.HasChanges && !saving) || verification) return;
+            if (verification) return;
             args.Cancel = true;
+            if (!preferences.HasChanges && !saving) { HideWindow(); return; }
             closeAfterApply = true;
             _ = ApplySettingsAsync();
         };
@@ -95,16 +96,25 @@ public sealed partial class MainWindow : Window
                 {
                     preferences.Confirm(ReadPreferences());
                     _ = ApplySettingsAsync();
-                    if (closeAfterApply && !preferences.HasChanges) Close();
+                    if (closeAfterApply && !preferences.HasChanges) HideWindow();
                 }
             }
             if (message["type"]?.GetValue<string>() == "open")
             {
                 preferences.Refresh(ReadPreferences());
                 SelectPage(ViewPage(message["view"]?.GetValue<string>(), page));
+                closeAfterApply = false;
+                refresh.Start();
                 Activate();
             }
         });
+    }
+
+    private void HideWindow()
+    {
+        closeAfterApply = false;
+        refresh.Stop();
+        AppWindow.Hide();
     }
 
     // A construction smoke test of the actual WinUI pages, without showing a window or
@@ -149,21 +159,7 @@ public sealed partial class MainWindow : Window
                 {
                     SelectPage(name);
                     await Task.Delay(150);
-                    Root.UpdateLayout();
-                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
-                    await bitmap.RenderAsync(Root);
-                    var pixels = await bitmap.GetPixelsAsync();
-                    var bytes = new byte[pixels.Length];
-                    using (var reader = Windows.Storage.Streams.DataReader.FromBuffer(pixels)) reader.ReadBytes(bytes);
-                    using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
-                    var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
-                    encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, bytes);
-                    await encoder.FlushAsync();
-                    using var fileReader = new Windows.Storage.Streams.DataReader(stream.GetInputStreamAt(0));
-                    await fileReader.LoadAsync((uint)stream.Size);
-                    var png = new byte[(int)stream.Size];
-                    fileReader.ReadBytes(png);
-                    await File.WriteAllBytesAsync(Path.Combine(directory, $"{name.Replace(' ', '-')}-{theme}.png"), png);
+                    await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"{name.Replace(' ', '-')}-{theme}.png"));
                 }
             }
         }
@@ -261,7 +257,7 @@ public sealed partial class MainWindow : Window
         PageDescription.Text = "A final warning before Doze performs a power action.";
         Toggle("Countdown notifications", "Show a native Windows notification when a countdown starts. The warning window remains available even when notifications are off.", "\uEA8F", draft.Notifications, value => draft.Notifications = value);
         Number("Final countdown", "Seconds to Cancel or Snooze. Applies to both timers and After Playback.", "\uE823", draft.CountdownSeconds, 15, 1800, value => draft.CountdownSeconds = value);
-        Card("Try the warning", "A preview never triggers a power action. Cancel closes it; Snooze extends the demonstration.", "\uE768", ActionButton("Preview", async () => await bridge.SendAsync("preview")));
+        Card("Try the warning", "A preview never triggers a power action. Cancel and Snooze dismiss the demonstration.", "\uE768", ActionButton("Preview", async () => await bridge.SendAsync("preview")));
         Card("Cancel and Snooze", "Closing the real warning window or pressing Escape cancels the action. Snooze adds 15 minutes. A real countdown always takes priority over a preview.", "\uE946");
     }
 

@@ -35,7 +35,7 @@
                 <NavigationViewItem Content="Advanced" Tag="Advanced"><NavigationViewItem.Icon><FontIcon Glyph="&#xE115;" /></NavigationViewItem.Icon></NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
-                <NavigationViewItem Content="Menu guide" Tag="Menu guide"><NavigationViewItem.Icon><FontIcon Glyph="&#xE897;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Menu guide" Tag="Menu guide"><NavigationViewItem.Icon><SymbolIcon Symbol="Library" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="About Doze" Tag="About Doze"><NavigationViewItem.Icon><FontIcon Glyph="&#xE946;" /></NavigationViewItem.Icon></NavigationViewItem>
             </NavigationView.FooterMenuItems>
             <Grid Margin="32,20,32,24" MaxWidth="920" HorizontalAlignment="Stretch">

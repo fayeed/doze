@@ -5,10 +5,7 @@ pub trait PowerManager {
     fn set_awake(&mut self, active: bool, allow_display_sleep: bool) -> Result<(), String>;
     fn execute(&mut self, action: PowerAction) -> Result<(), String>;
 }
-#[cfg(target_os = "macos")]
-pub use macos::countdown;
-#[cfg(windows)]
-pub use windows::countdown;
+pub mod countdown;
 #[cfg(windows)]
 pub use windows::dialogs;
 mod native_ui;

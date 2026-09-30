@@ -204,7 +204,11 @@ pub(super) fn worker(
             }
         }
         if let Ok(warning) = &warning {
-            warning.update(snapshot.engine.countdown.as_ref(), snapshot.engine.now);
+            warning.update(
+                snapshot.engine.countdown.as_ref(),
+                snapshot.engine.now,
+                snoozing,
+            );
             if preview_countdown {
                 warning.preview(snapshot.selected_action);
             }
