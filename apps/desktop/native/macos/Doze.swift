@@ -559,7 +559,7 @@ enum DozeNativeUI {
         if CommandLine.arguments.contains("--verify-ui") {
             do {
                 try ui.verify()
-                print("Verified: native macOS pages in light/dark, draft preservation, reset, and preview snooze.")
+                print("Verified: native macOS pages in light/dark, queued immediate changes, failure rollback, reset, and preview snooze.")
             } catch {
                 FileHandle.standardError.write(Data("\(error)\n".utf8))
                 exit(1)

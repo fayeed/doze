@@ -1,4 +1,3 @@
-use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 // Modal native dialogs with standard buttons, checkboxes, edits and date/time pickers.
 use super::dialog_template::Template;
 use crate::state::{DialogView, Operation, Request, Snapshot};
@@ -31,7 +30,6 @@ const DIALOG_USER_OFFSET: WINDOW_LONG_PTR_INDEX =
 const MINUTES: u16 = 120;
 const DATE: u16 = 121;
 const TIME: u16 = 122;
-const HELP_TEXT: u16 = 123;
 // Each window owns a native message loop. The tray remains responsive while settings are open.
 static ACTIVE_DIALOGS: [AtomicIsize; 4] = [const { AtomicIsize::new(0) }; 4];
 
@@ -50,7 +48,10 @@ struct Dialog {
 }
 
 pub fn show(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
-    if matches!(snapshot.view, DialogView::Settings | DialogView::About) {
+    if matches!(
+        snapshot.view,
+        DialogView::Settings | DialogView::About | DialogView::Help
+    ) {
         return super::winui::show(snapshot, sender);
     }
     let slot = dialog_slot(snapshot.view);
@@ -83,8 +84,11 @@ pub fn show(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
 }
 
 fn show_modal(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
-    if matches!(snapshot.view, DialogView::Settings | DialogView::About) {
-        return Err("Settings and About are handled by WinUI.".into());
+    if matches!(
+        snapshot.view,
+        DialogView::Settings | DialogView::About | DialogView::Help
+    ) {
+        return Err("Settings, About and Menu Guide are handled by WinUI.".into());
     }
     let controls = INITCOMMONCONTROLSEX {
         dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
@@ -113,31 +117,24 @@ fn show_modal(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String>
 }
 
 fn template(view: DialogView) -> Vec<u32> {
-    if matches!(view, DialogView::Help) {
-        let mut form = Template::new("Doze · What do these options mean?", 360, 240);
-        form.read_only_text(HELP_TEXT, [12, 12, 336, 192]);
-        form.button(2, "Close", 286, 216, true);
-        form.finish()
+    let awake = matches!(view, DialogView::AwakeDuration | DialogView::AwakeTime);
+    let mut form = Template::new(if awake { "Keep awake" } else { "Sleep timer" }, 278, 108);
+    if matches!(view, DialogView::AwakeTime | DialogView::TimerTime) {
+        form.label(
+            "Choose a future date and local time (within 7 days)",
+            12,
+            12,
+            252,
+        );
+        form.date_time(DATE, 12, 36, 130, false);
+        form.date_time(TIME, 150, 36, 114, true);
     } else {
-        let awake = matches!(view, DialogView::AwakeDuration | DialogView::AwakeTime);
-        let mut form = Template::new(if awake { "Keep awake" } else { "Sleep timer" }, 278, 108);
-        if matches!(view, DialogView::AwakeTime | DialogView::TimerTime) {
-            form.label(
-                "Choose a future date and local time (within 7 days)",
-                12,
-                12,
-                252,
-            );
-            form.date_time(DATE, 12, 36, 130, false);
-            form.date_time(TIME, 150, 36, 114, true);
-        } else {
-            form.label("Duration in minutes (1–10080)", 12, 12, 252);
-            form.edit(MINUTES, "30", 12, 36, 252);
-        }
-        form.button(1, "Start", 136, 78, true);
-        form.button(2, "Cancel", 204, 78, false);
-        form.finish()
+        form.label("Duration in minutes (1–10080)", 12, 12, 252);
+        form.edit(MINUTES, "30", 12, 36, 252);
     }
+    form.button(1, "Start", 136, 78, true);
+    form.button(2, "Cancel", 204, 78, false);
+    form.finish()
 }
 
 unsafe extern "system" fn dialog_proc(
@@ -160,13 +157,6 @@ unsafe extern "system" fn dialog_proc(
         let dialog = &*(lparam.0 as *const Dialog);
         super::appearance::apply(hwnd, super::appearance::Surface::Persistent);
         ACTIVE_DIALOGS[dialog_slot(dialog.snapshot.view)].store(hwnd.0 as isize, Ordering::Relaxed);
-        initialize(hwnd, &dialog.snapshot);
-        if matches!(dialog.snapshot.view, DialogView::Help) {
-            if let Ok(close) = GetDlgItem(hwnd, 2) {
-                let _ = SetFocus(close);
-            }
-            return 0;
-        }
         return 1;
     }
     if message == WM_CLOSE {
@@ -188,10 +178,6 @@ unsafe extern "system" fn dialog_proc(
     let dialog = &*context;
     if id != 1 {
         return 0;
-    }
-    if matches!(dialog.snapshot.view, DialogView::Help) {
-        let _ = EndDialog(hwnd, 0);
-        return 1;
     }
     let operation = collect(hwnd, &dialog.snapshot);
     match operation.and_then(|operation| submit(&dialog.sender, operation)) {
@@ -228,12 +214,6 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
 }
 
-unsafe fn initialize(hwnd: HWND, snapshot: &Snapshot) {
-    if matches!(snapshot.view, DialogView::Help) {
-        let text = wide(&super::help::text(snapshot).replace('\n', "\r\n"));
-        let _ = SetDlgItemTextW(hwnd, HELP_TEXT as i32, PCWSTR(text.as_ptr()));
-    }
-}
 unsafe fn number(hwnd: HWND, id: u16) -> Result<u64, String> {
     let mut valid = BOOL(0);
     let value = GetDlgItemInt(hwnd, id as i32, Some(&mut valid), false);
@@ -331,7 +311,6 @@ mod tests {
             view: DialogView::Settings,
         };
         for view in [
-            DialogView::Help,
             DialogView::AwakeDuration,
             DialogView::TimerDuration,
             DialogView::AwakeTime,
@@ -355,13 +334,8 @@ mod tests {
                     hwnd,
                     super::super::appearance::Surface::Persistent,
                 );
-                initialize(hwnd, &snapshot);
                 match view {
-                    DialogView::Help => {
-                        assert!(GetDlgItem(hwnd, HELP_TEXT as i32).is_ok());
-                        assert!(GetDlgItem(hwnd, MINUTES as i32).is_err());
-                    }
-                    DialogView::Settings | DialogView::About => {
+                    DialogView::Settings | DialogView::About | DialogView::Help => {
                         panic!("WinUI pages use the native smoke test")
                     }
                     DialogView::AwakeDuration => assert!(matches!(

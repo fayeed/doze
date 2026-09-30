@@ -19,7 +19,7 @@ Requires Rust 1.88+, Microsoft C++ desktop build tools, and a .NET 8 SDK on Wind
 
 Build output is in `src-tauri/target/release/`: `doze.exe`, its `windows-ui/` companion folder, and `bundle/nsis/`. Windows uses NSIS: MSI validation rejects language IDs in the bundled Microsoft runtime DLLs. Installers are unsigned development artifacts.
 
-`pnpm --filter @doze/desktop native:build` publishes the self-contained WinUI companion. `pnpm --filter @doze/desktop native:test` constructs all seven pages in light/dark modes and verifies draft preservation/reset without showing a window or writing preferences. Tauri dev/build hooks publish it automatically. Installers include the .NET and Windows App SDK runtimes. An unpackaged distribution must keep the `windows-ui` folder beside `doze.exe`; the EXE alone is no longer a complete distribution.
+`pnpm --filter @doze/desktop native:build` publishes the self-contained WinUI companion. `pnpm --filter @doze/desktop native:test` constructs all eight pages in light/dark modes and verifies queued immediate edits, failure rollback and reset without showing a window or writing preferences. Tauri dev/build hooks publish it automatically. Installers include the .NET and Windows App SDK runtimes. An unpackaged distribution must keep the `windows-ui` folder beside `doze.exe`; the EXE alone is no longer a complete distribution.
 
 ## Behavior
 
@@ -35,12 +35,12 @@ The tray uses native icon menu items with antialiased line glyphs, short live st
 - Preview countdown: opens a 60-second demonstration of the warning window for the selected timer action. Its buttons only affect the preview and cannot trigger a power action. A real countdown takes priority over the preview.
 - An explicit Sleep Timer takes precedence over After Playback. Manual Keep Awake blocks playback-triggered actions. An explicit timer can end a manual keep-awake session.
 - Defaults: 60s silence, 300s idle, 300s countdown, Sleep. Unsupported actions are disabled; saved defaults are normalized to supported actions.
-- Settings: a native WinUI sidebar, search, and cards for Overview, General, Session Defaults, After Playback, Notifications, Advanced, and About. ToggleSwitch, NumberBox, and ComboBox controls include explanations and supported-action selectors. Save applies edits; Discard reverts them. Reset fills in defaults and applies them only after Save. Overview refreshes live status every five seconds while visible.
+- Settings: a native WinUI sidebar, search, and cards for Overview, General, Session Defaults, After Playback, Notifications, Advanced, Menu Guide, and About. ToggleSwitch, NumberBox, and ComboBox controls include explanations and supported-action selectors. Valid changes apply immediately, with no Save/Discard bar on either platform. Rapid edits are queued without losing newer values; rejected changes restore confirmed preferences and show an error. Reset defaults lives in Advanced and applies immediately. Overview refreshes live status every five seconds while visible. The Windows companion embeds Doze's icon, assigns it to the window, and enables taskbar/Alt+Tab visibility.
 - Quick Settings: saved checkboxes for display sleep, notifications, launch at sign-in, starting in the tray, and diagnostic logging, plus default awake/timer durations. Changes persist immediately. Duration defaults apply to new sessions; unrelated preferences preserve existing timers and playback state.
 - About Doze: native version/platform information, product purpose, privacy, local data location, and acknowledgements in the same WinUI window.
 - Allow display sleep: keeps the system awake while allowing Windows to turn off the screen. It updates an active power request immediately. Defaults are 30 minutes for both awake and timer shortcuts.
 
-Only settings persist, in Tauri's per-user configuration directory (`settings.json`). Writes use a flushed temporary file and atomic rename. Startup and local error logging are opt-in. Logs record changed errors and are bounded to roughly 256 KiB. Saving reset defaults disables launch at startup. Older settings files receive defaults for newly added preferences.
+Only settings persist, in Tauri's per-user configuration directory (`settings.json`). Writes use a flushed temporary file and atomic rename. Startup and local error logging are opt-in. Logs record changed errors and are bounded to roughly 256 KiB. Reset defaults disables launch at startup. Older settings files receive defaults for newly added preferences.
 
 Sessions and power actions never restore after restart. Windows suspend/resume events clear transient sessions. Wall-clock discontinuities or excessive scheduler delays clear them too. Specific times become monotonic durations when scheduled.
 

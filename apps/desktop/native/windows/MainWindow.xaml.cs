@@ -23,7 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromSeconds(5) };
     private TextBlock? overviewStatus;
     private TextBlock? overviewTimer;
-    private static readonly string[] Pages = ["Overview", "General", "Session defaults", "After playback", "Notifications", "Advanced", "About Doze"];
+    private static readonly string[] Pages = ["Overview", "General", "Session defaults", "After playback", "Notifications", "Advanced", "Menu guide", "About Doze"];
     private static readonly Dictionary<string, string> ActionNames = new()
     {
         ["sleep"] = "Sleep",
@@ -48,12 +48,12 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new SizeInt32(1120, 780));
         AppWindow.Closing += (window, args) =>
         {
-            if (!preferences.HasChanges || verification) return;
+            if ((!preferences.HasChanges && !saving) || verification) return;
             args.Cancel = true;
             closeAfterApply = true;
             _ = ApplySettingsAsync();
         };
-        SelectPage(initial["view"]?.GetValue<string>() == "about" ? "About Doze" : "Overview");
+        SelectPage(ViewPage(initial["view"]?.GetValue<string>(), "Overview"));
         refresh.Tick += async (_, _) =>
         {
             if (page != "Overview" || !AppWindow.IsVisible || saving) return;
@@ -101,7 +101,7 @@ public sealed partial class MainWindow : Window
             if (message["type"]?.GetValue<string>() == "open")
             {
                 preferences.Refresh(ReadPreferences());
-                SelectPage(message["view"]?.GetValue<string>() == "about" ? "About Doze" : page);
+                SelectPage(ViewPage(message["view"]?.GetValue<string>(), page));
                 Activate();
             }
         });
@@ -145,7 +145,7 @@ public sealed partial class MainWindow : Window
             foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
             {
                 Root.RequestedTheme = theme;
-                foreach (var name in new[] { "Session defaults", "About Doze" })
+                foreach (var name in new[] { "Session defaults", "Menu guide", "About Doze" })
                 {
                     SelectPage(name);
                     await Task.Delay(150);
@@ -171,6 +171,12 @@ public sealed partial class MainWindow : Window
     }
 
     private Preferences ReadPreferences() => snapshot["settings"]!.Deserialize<Preferences>(EngineBridge.Json)!;
+    private static string ViewPage(string? view, string fallback) => view switch
+    {
+        "about" => "About Doze",
+        "help" => "Menu guide",
+        _ => fallback
+    };
     private IEnumerable<string> Actions => snapshot["actions"]!.AsArray().Select(action => action!.GetValue<string>());
     private bool Capability(string name) => snapshot[name]?.GetValue<bool>() == true;
 
@@ -201,6 +207,7 @@ public sealed partial class MainWindow : Window
             case "After playback": AfterPlayback(); break;
             case "Notifications": Notifications(); break;
             case "Advanced": Advanced(); break;
+            case "Menu guide": MenuGuide(); break;
             case "About Doze": About(); break;
         }
         PageScroll.ChangeView(null, 0, null, true);
@@ -279,6 +286,26 @@ public sealed partial class MainWindow : Window
         Card("Rust and Tauri", "The Rust engine owns sessions, validation, Core Audio, native power requests, startup settings, and countdown safety.", "\uE7F4");
         Card("Windows App SDK and WinUI 3", "Native NavigationView, settings cards, ToggleSwitch, NumberBox, ComboBox, and system Mica/Acrylic materials. Open-source components retain their respective licenses.", "\uE713");
         Card("Preferences and diagnostics", snapshot["settingsPath"]!.GetValue<string>(), "\uE8B7", ActionButton("Open folder", OpenData));
+    }
+
+    private void MenuGuide()
+    {
+        PageDescription.Text = "What each tray option means and why some commands are unavailable.";
+        Card("Current state", snapshot["status"]!.GetValue<string>(), "\uE708");
+        Section("Status and disabled commands");
+        Card("Normal sleep allowed", "Doze is not holding the computer awake. Your normal Windows power settings apply. The top two tray rows report current status; clicking either opens this guide.", "\uE946");
+        Card("Why an option is grey", "Stop needs an active session. Extend needs a timed awake session. Stop timer needs a timer. Cancel and Snooze need a running countdown. Unsupported power actions are also disabled.", "\uE7BA");
+        Section("Sessions and timers");
+        Card("Keep Awake", $"Choose a duration, a local end time, or indefinitely. Default starts a {draft.DefaultAwakeMinutes}-minute session. Stop ends manual and audio-based awake sessions; Extend adds 15 minutes to a timed session.", "\uE708");
+        Card("Keep awake while audio plays", $"Keeps the computer awake during audible output and brief pauses, then releases the request after {draft.SilenceSeconds} seconds of silence. A checkmark means the rule is enabled; it may still be waiting for audio.", "\uE995");
+        Card("Power Timer", $"Select an action and duration. The default is {draft.DefaultTimerMinutes} minutes, followed by a {draft.CountdownSeconds}-second final warning. The computer stays awake while the timer runs. Stop timer removes the timer and its warning.", "\uE823");
+        ActionGuide();
+        Card("After Playback", $"First waits for ongoing audio, then requires {draft.SilenceSeconds} seconds of silence and {draft.IdleSeconds} seconds without keyboard or mouse activity. Brief sounds and silence alone cannot arm it. Resumed playback or input cancels its countdown. Manual Keep Awake blocks it; an explicit Power Timer takes priority.", "\uE916");
+        Section("Warnings and preferences");
+        Card("Countdown, Cancel and Snooze", "The native warning shows the action and remaining time. Cancel, Escape or closing the warning removes the action. Snooze adds 15 minutes. Preview demonstrates the warning and cannot perform a power action.", "\uEA8F");
+        Card("Quick Settings", "Checkmarks show saved preferences. Changes apply immediately. Duration defaults affect new sessions; display sleep updates the active awake request. Notifications apply to future countdowns.", "\uE713");
+        Card("Settings and Reset", "Settings apply as you change them. Advanced contains Reset defaults, diagnostics and your data folder. Reset applies immediately; running timers keep their deadlines.", "\uE777");
+        Card("Quit Doze", "Stops Doze and its awake sessions. Windows resumes its normal sleep behavior. Transient sessions are cleared after restart or suspend/resume.", "\uE7E8");
     }
 
     private void ActionGuide() => Card("What each action means", "Sleep keeps your session in memory. Hibernate saves it to disk. Shut down closes Windows; unsaved work may need attention. Lock secures your session. Turn display off switches off the screen.", "\uE946");
