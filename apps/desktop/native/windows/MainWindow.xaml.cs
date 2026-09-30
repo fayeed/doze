@@ -40,6 +40,8 @@ public sealed partial class MainWindow : Window
         draft = saved with { };
         InitializeComponent();
         Title = "Doze Settings";
+        AppWindow.IsShownInSwitchers = true;
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Doze.ico"));
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
         SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };

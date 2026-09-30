@@ -13,10 +13,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../src-tauri/icons/icon.ico</ApplicationIcon>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
+    <Content Include="../../src-tauri/icons/icon.ico" Link="Assets/Doze.ico"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="PublishNativeXamlResources" AfterTargets="Publish">
     <ItemGroup>
