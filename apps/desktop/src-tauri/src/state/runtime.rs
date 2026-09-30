@@ -117,7 +117,7 @@ pub(super) fn worker(
             }
         }
         if quit {
-            let result = power.set_awake(false);
+            let result = power.set_awake(false, false);
             if let Some((tx, _)) = reply {
                 let _ = tx.send(result.map(|_| snapshot.clone()));
             }
@@ -184,7 +184,10 @@ pub(super) fn worker(
                 snapshot.error = Some(format!("Countdown cancelled: {error}"));
             }
         }
-        if let Err(e) = power.set_awake(snapshot.engine.should_hold_awake()) {
+        if let Err(e) = power.set_awake(
+            snapshot.engine.should_hold_awake(),
+            snapshot.settings.allow_display_sleep,
+        ) {
             snapshot.error = Some(e);
             snapshot
                 .engine

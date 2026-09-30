@@ -1,10 +1,10 @@
-use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 // Modal native dialogs with standard buttons, checkboxes, edits and date/time pickers.
-use super::dialog_template::Template;
-use crate::{
-    core::sessions::{PowerAction, Settings},
-    state::{DialogView, Operation, Request, Snapshot},
+use super::{
+    dialog_template::Template,
+    settings_ui::{self, RESET},
 };
+use crate::state::{DialogView, Operation, Request, Snapshot};
 use std::{
     sync::{
         atomic::{AtomicIsize, Ordering},
@@ -22,8 +22,8 @@ use windows::{
         },
         UI::{
             Controls::{
-                CheckDlgButton, InitCommonControlsEx, IsDlgButtonChecked, BST_CHECKED,
-                BST_UNCHECKED, DTM_GETSYSTEMTIME, ICC_DATE_CLASSES, INITCOMMONCONTROLSEX,
+                InitCommonControlsEx, DTM_GETSYSTEMTIME, ICC_DATE_CLASSES, ICC_TAB_CLASSES,
+                INITCOMMONCONTROLSEX, NMHDR, TCN_SELCHANGE,
             },
             WindowsAndMessaging::*,
         },
@@ -32,22 +32,21 @@ use windows::{
 
 const DIALOG_USER_OFFSET: WINDOW_LONG_PTR_INDEX =
     WINDOW_LONG_PTR_INDEX((2 * std::mem::size_of::<isize>()) as i32);
-const STARTUP: u16 = 101;
-const MINIMIZED: u16 = 102;
-const NOTIFICATIONS: u16 = 103;
-const ACTION: u16 = 104;
-const SILENCE: u16 = 105;
-const IDLE: u16 = 106;
-const COUNTDOWN: u16 = 107;
-const PLAYBACK_ACTION: u16 = 108;
-const LOGGING: u16 = 109;
-const RESET: u16 = 110;
 const MINUTES: u16 = 120;
 const DATE: u16 = 121;
 const TIME: u16 = 122;
 const HELP_TEXT: u16 = 123;
-// Only the main thread accesses a dialog. Repeated tray clicks focus the existing dialog.
-static ACTIVE_DIALOG: AtomicIsize = AtomicIsize::new(0);
+// Each window owns a native message loop. The tray remains responsive while settings are open.
+static ACTIVE_DIALOGS: [AtomicIsize; 4] = [const { AtomicIsize::new(0) }; 4];
+
+fn dialog_slot(view: DialogView) -> usize {
+    match view {
+        DialogView::Settings => 0,
+        DialogView::About => 1,
+        DialogView::Help => 2,
+        _ => 3,
+    }
+}
 
 struct Dialog {
     snapshot: Snapshot,
@@ -55,16 +54,39 @@ struct Dialog {
 }
 
 pub fn show(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
-    let active = ACTIVE_DIALOG.load(Ordering::Relaxed);
-    if active != 0 {
-        unsafe {
-            let _ = SetForegroundWindow(HWND(active as *mut _));
+    let slot = dialog_slot(snapshot.view);
+    if let Err(active) =
+        ACTIVE_DIALOGS[slot].compare_exchange(0, -1, Ordering::Relaxed, Ordering::Relaxed)
+    {
+        if active > 0 {
+            unsafe {
+                let _ = SetForegroundWindow(HWND(active as *mut _));
+            }
         }
         return Ok(());
     }
+    if let Err(error) = std::thread::Builder::new()
+        .name("doze-dialog".into())
+        .spawn(move || {
+            let result = show_modal(snapshot, sender);
+            ACTIVE_DIALOGS[slot].store(0, Ordering::Relaxed);
+            if let Err(error) = result {
+                unsafe {
+                    show_error(HWND::default(), &error);
+                }
+            }
+        })
+    {
+        ACTIVE_DIALOGS[slot].store(0, Ordering::Relaxed);
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+fn show_modal(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
     let controls = INITCOMMONCONTROLSEX {
         dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
-        dwICC: ICC_DATE_CLASSES,
+        dwICC: ICC_DATE_CLASSES | ICC_TAB_CLASSES,
     };
     if !unsafe { InitCommonControlsEx(&controls) }.as_bool() {
         return Err("Could not initialize Windows date/time controls.".into());
@@ -81,7 +103,6 @@ pub fn show(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
             LPARAM((&mut *dialog as *mut Dialog) as isize),
         )
     };
-    ACTIVE_DIALOG.store(0, Ordering::Relaxed);
     if result == -1 {
         Err(windows::core::Error::from_win32().to_string())
     } else {
@@ -95,29 +116,13 @@ fn template(view: DialogView) -> Vec<u32> {
         form.read_only_text(HELP_TEXT, [12, 12, 336, 192]);
         form.button(2, "Close", 286, 216, true);
         form.finish()
-    } else if matches!(view, DialogView::Settings) {
-        let mut form = Template::new("Doze Settings", 278, 282);
-        form.checkbox(STARTUP, "Launch Doze when I sign in", 12);
-        form.checkbox(MINIMIZED, "Start in the tray", 31);
-        form.checkbox(NOTIFICATIONS, "Show countdown notifications", 50);
-        form.label("Default timer action", 12, 76, 124);
-        form.combo(ACTION, 73);
-        form.label("After Playback", 12, 103, 240);
-        form.label("Action", 12, 126, 124);
-        form.combo(PLAYBACK_ACTION, 123);
-        for (id, text, y) in [
-            (SILENCE, "Silence required (seconds)", 149),
-            (IDLE, "Idle required (seconds)", 171),
-            (COUNTDOWN, "Countdown (seconds)", 193),
-        ] {
-            form.label(text, 12, y, 124);
-            form.edit(id, "", 142, y - 2, 122);
-        }
-        form.checkbox(LOGGING, "Write local diagnostic logs", 218);
-        form.button(RESET, "Reset", 12, 252, false);
-        form.button(1, "Save", 136, 252, true);
-        form.button(2, "Cancel", 204, 252, false);
+    } else if matches!(view, DialogView::About) {
+        let mut form = Template::new("About Doze", 360, 240);
+        form.read_only_text(HELP_TEXT, [12, 12, 336, 192]);
+        form.button(2, "Close", 286, 216, true);
         form.finish()
+    } else if matches!(view, DialogView::Settings) {
+        settings_ui::template()
     } else {
         let awake = matches!(view, DialogView::AwakeDuration | DialogView::AwakeTime);
         let mut form = Template::new(if awake { "Keep awake" } else { "Sleep timer" }, 278, 108);
@@ -148,10 +153,10 @@ unsafe extern "system" fn dialog_proc(
 ) -> isize {
     if message == WM_INITDIALOG {
         SetWindowLongPtrW(hwnd, DIALOG_USER_OFFSET, lparam.0);
-        ACTIVE_DIALOG.store(hwnd.0 as isize, Ordering::Relaxed);
         let dialog = &*(lparam.0 as *const Dialog);
+        ACTIVE_DIALOGS[dialog_slot(dialog.snapshot.view)].store(hwnd.0 as isize, Ordering::Relaxed);
         initialize(hwnd, &dialog.snapshot);
-        if matches!(dialog.snapshot.view, DialogView::Help) {
+        if matches!(dialog.snapshot.view, DialogView::Help | DialogView::About) {
             if let Ok(close) = GetDlgItem(hwnd, 2) {
                 let _ = SetFocus(close);
             }
@@ -163,6 +168,13 @@ unsafe extern "system" fn dialog_proc(
         let _ = EndDialog(hwnd, 0);
         return 1;
     }
+    if message == WM_NOTIFY && lparam.0 != 0 {
+        let header = &*(lparam.0 as *const NMHDR);
+        if header.idFrom == settings_ui::TABS as usize && header.code == TCN_SELCHANGE {
+            settings_ui::select_page(hwnd);
+            return 1;
+        }
+    }
     if message != WM_COMMAND {
         return 0;
     }
@@ -171,43 +183,55 @@ unsafe extern "system" fn dialog_proc(
         let _ = EndDialog(hwnd, 0);
         return 1;
     }
-    if id != 1 && id != RESET {
-        return 0;
-    }
     let context = GetWindowLongPtrW(hwnd, DIALOG_USER_OFFSET) as *mut Dialog;
     if context.is_null() {
         return 0;
     }
     let dialog = &mut *context;
-    if matches!(dialog.snapshot.view, DialogView::Help) {
+    if matches!(dialog.snapshot.view, DialogView::Settings)
+        && (id == settings_ui::PREVIEW || id == settings_ui::OPEN_DATA)
+    {
+        let result = if id == settings_ui::PREVIEW {
+            submit(&dialog.sender, Operation::PreviewCountdown).map(|_| ())
+        } else {
+            settings_ui::open_data(hwnd, &dialog.snapshot)
+        };
+        if let Err(error) = result {
+            show_error(hwnd, &error);
+        }
+        return 1;
+    }
+    if id != 1 && id != RESET {
+        return 0;
+    }
+    if id == RESET && matches!(dialog.snapshot.view, DialogView::Settings) {
+        settings_ui::reset_draft(hwnd, &dialog.snapshot);
+        return 1;
+    }
+    if matches!(dialog.snapshot.view, DialogView::Help | DialogView::About) {
         let _ = EndDialog(hwnd, 0);
         return 1;
     }
-    let operation = if id == RESET {
-        Ok(Operation::ResetSettings)
-    } else {
-        collect(hwnd, &dialog.snapshot)
-    };
+    let operation = collect(hwnd, &dialog.snapshot);
     match operation.and_then(|operation| submit(&dialog.sender, operation)) {
-        Ok(snapshot) => {
-            if id == RESET {
-                dialog.snapshot = snapshot;
-                initialize(hwnd, &dialog.snapshot);
-            } else {
-                let _ = EndDialog(hwnd, 1);
-            }
+        Ok(_) => {
+            let _ = EndDialog(hwnd, 1);
         }
         Err(error) => {
-            let message = wide(&error);
-            MessageBoxW(
-                hwnd,
-                PCWSTR(message.as_ptr()),
-                w!("Doze"),
-                MB_OK | MB_ICONERROR,
-            );
+            show_error(hwnd, &error);
         }
     }
     1
+}
+
+unsafe fn show_error(hwnd: HWND, error: &str) {
+    let message = wide(error);
+    MessageBoxW(
+        hwnd,
+        PCWSTR(message.as_ptr()),
+        w!("Doze"),
+        MB_OK | MB_ICONERROR,
+    );
 }
 
 fn submit(sender: &Sender<Request>, operation: Operation) -> Result<Snapshot, String> {
@@ -224,56 +248,16 @@ fn wide(text: &str) -> Vec<u16> {
 }
 
 unsafe fn initialize(hwnd: HWND, snapshot: &Snapshot) {
-    if matches!(snapshot.view, DialogView::Help) {
-        let text = wide(&super::help::text(snapshot).replace('\n', "\r\n"));
+    if matches!(snapshot.view, DialogView::Help | DialogView::About) {
+        let content = if matches!(snapshot.view, DialogView::About) {
+            super::help::about(snapshot)
+        } else {
+            super::help::text(snapshot)
+        };
+        let text = wide(&content.replace('\n', "\r\n"));
         let _ = SetDlgItemTextW(hwnd, HELP_TEXT as i32, PCWSTR(text.as_ptr()));
-        return;
-    }
-    if !matches!(snapshot.view, DialogView::Settings) {
-        return;
-    }
-    let settings = &snapshot.settings;
-    for (id, checked) in [
-        (STARTUP, settings.launch_at_startup),
-        (MINIMIZED, settings.start_minimized),
-        (NOTIFICATIONS, settings.notifications),
-        (LOGGING, settings.logging),
-    ] {
-        let _ = CheckDlgButton(
-            hwnd,
-            id as i32,
-            if checked { BST_CHECKED } else { BST_UNCHECKED },
-        );
-    }
-    if let Ok(control) = GetDlgItem(hwnd, STARTUP as i32) {
-        let _ = EnableWindow(control, snapshot.startup_supported);
-    }
-    for (id, selected) in [
-        (ACTION, settings.default_action),
-        (PLAYBACK_ACTION, settings.playback_action),
-    ] {
-        SendDlgItemMessageW(hwnd, id as i32, CB_RESETCONTENT, WPARAM(0), LPARAM(0));
-        for (index, action) in snapshot.actions.iter().enumerate() {
-            let text = wide(action.label());
-            SendDlgItemMessageW(
-                hwnd,
-                id as i32,
-                CB_ADDSTRING,
-                WPARAM(0),
-                LPARAM(text.as_ptr() as isize),
-            );
-            if *action == selected {
-                SendDlgItemMessageW(hwnd, id as i32, CB_SETCURSEL, WPARAM(index), LPARAM(0));
-            }
-        }
-    }
-    for (id, value) in [
-        (SILENCE, settings.silence_seconds),
-        (IDLE, settings.idle_seconds),
-        (COUNTDOWN, settings.countdown_seconds),
-    ] {
-        let text = wide(&value.to_string());
-        let _ = SetDlgItemTextW(hwnd, id as i32, PCWSTR(text.as_ptr()));
+    } else if matches!(snapshot.view, DialogView::Settings) {
+        settings_ui::initialize(hwnd, snapshot);
     }
 }
 unsafe fn number(hwnd: HWND, id: u16) -> Result<u64, String> {
@@ -285,28 +269,11 @@ unsafe fn number(hwnd: HWND, id: u16) -> Result<u64, String> {
         Ok(u64::from(value))
     }
 }
-unsafe fn selected(hwnd: HWND, id: u16, actions: &[PowerAction]) -> Result<PowerAction, String> {
-    let index = SendDlgItemMessageW(hwnd, id as i32, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0;
-    actions
-        .get(index as usize)
-        .copied()
-        .ok_or("Choose a supported action.".into())
-}
 unsafe fn collect(hwnd: HWND, snapshot: &Snapshot) -> Result<Operation, String> {
     if matches!(snapshot.view, DialogView::Settings) {
-        let settings = Settings {
-            launch_at_startup: IsDlgButtonChecked(hwnd, STARTUP as i32) == BST_CHECKED.0,
-            start_minimized: IsDlgButtonChecked(hwnd, MINIMIZED as i32) == BST_CHECKED.0,
-            notifications: IsDlgButtonChecked(hwnd, NOTIFICATIONS as i32) == BST_CHECKED.0,
-            default_action: selected(hwnd, ACTION, &snapshot.actions)?,
-            playback_action: selected(hwnd, PLAYBACK_ACTION, &snapshot.actions)?,
-            silence_seconds: number(hwnd, SILENCE)?,
-            idle_seconds: number(hwnd, IDLE)?,
-            countdown_seconds: number(hwnd, COUNTDOWN)?,
-            logging: IsDlgButtonChecked(hwnd, LOGGING as i32) == BST_CHECKED.0,
-        };
-        settings.validate()?;
-        return Ok(Operation::SaveSettings { settings });
+        return Ok(Operation::SaveSettings {
+            settings: settings_ui::collect(hwnd, snapshot)?,
+        });
     }
     let seconds = if matches!(snapshot.view, DialogView::AwakeTime | DialogView::TimerTime) {
         future_seconds(hwnd)?
@@ -370,7 +337,7 @@ unsafe fn future_seconds(hwnd: HWND) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::sessions::Engine;
+    use crate::core::sessions::{Engine, PowerAction, Settings};
 
     unsafe extern "system" fn test_proc(_: HWND, _: u32, _: WPARAM, _: LPARAM) -> isize {
         0
@@ -380,10 +347,11 @@ mod tests {
     fn native_forms_create_and_validate_without_power_actions() {
         let controls = INITCOMMONCONTROLSEX {
             dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
-            dwICC: ICC_DATE_CLASSES,
+            dwICC: ICC_DATE_CLASSES | ICC_TAB_CLASSES,
         };
         assert!(unsafe { InitCommonControlsEx(&controls) }.as_bool());
         let mut snapshot = Snapshot {
+            settings_path: "settings.json".into(),
             engine: Engine::default(),
             settings: Settings::default(),
             actions: vec![PowerAction::Sleep, PowerAction::Lock],
@@ -417,7 +385,7 @@ mod tests {
             unsafe {
                 initialize(hwnd, &snapshot);
                 match view {
-                    DialogView::Help => {
+                    DialogView::Help | DialogView::About => {
                         assert!(GetDlgItem(hwnd, HELP_TEXT as i32).is_ok());
                         assert!(GetDlgItem(hwnd, MINUTES as i32).is_err());
                     }
@@ -428,7 +396,29 @@ mod tests {
                             panic!("Expected settings");
                         };
                         assert_eq!(settings, snapshot.settings);
-                        SetDlgItemTextW(hwnd, SILENCE as i32, w!("0")).unwrap();
+                        SetDlgItemTextW(hwnd, 112, w!("42")).unwrap();
+                        for page in 0..5 {
+                            SendDlgItemMessageW(
+                                hwnd,
+                                settings_ui::TABS as i32,
+                                windows::Win32::UI::Controls::TCM_SETCURSEL,
+                                WPARAM(page),
+                                LPARAM(0),
+                            );
+                            settings_ui::select_page(hwnd);
+                        }
+                        assert_eq!(
+                            settings_ui::collect(hwnd, &snapshot)
+                                .unwrap()
+                                .default_awake_minutes,
+                            42
+                        );
+                        settings_ui::reset_draft(hwnd, &snapshot);
+                        assert_eq!(
+                            settings_ui::collect(hwnd, &snapshot).unwrap(),
+                            Settings::default()
+                        );
+                        SetDlgItemTextW(hwnd, 105, w!("0")).unwrap();
                         assert!(collect(hwnd, &snapshot).is_err());
                     }
                     DialogView::AwakeDuration => assert!(matches!(

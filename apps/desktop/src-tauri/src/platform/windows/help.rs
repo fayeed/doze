@@ -39,3 +39,11 @@ pub(super) fn text(snapshot: &Snapshot) -> String {
         playback_action = settings.playback_action.label(),
     )
 }
+
+pub(super) fn about(snapshot: &Snapshot) -> String {
+    format!(
+        "Doze\nVersion {} · Windows {}\n\nYour computer knows when it's bedtime.\n\nKeep your computer awake when it should be awake, and let it sleep when it should sleep. Doze lives in the tray, with native settings, timers and countdown warnings.\n\nLOCAL AND PRIVATE\nNo account, cloud service, ads, subscriptions or telemetry. Audio monitoring observes output levels; it does not record your audio. Preferences and optional error logs stay on this computer.\n\nTHIS RUN\nRunning for {} minutes. {}\n\nACKNOWLEDGEMENTS\nBuilt with Rust and Tauri. Windows API bindings, native power management, Core Audio and Windows notifications provide the system integration.\n\nDATA\nSettings: {}\n\nUse 'What do these options mean?' in the tray for feature explanations. Advanced Settings provides diagnostics and access to the data folder.",
+        env!("CARGO_PKG_VERSION"), std::env::consts::ARCH, snapshot.engine.now / 60,
+        crate::tray::status_text(snapshot), snapshot.settings_path.display(),
+    )
+}

@@ -34,6 +34,9 @@ pub struct Settings {
     pub countdown_seconds: u64,
     pub playback_action: PowerAction,
     pub logging: bool,
+    pub allow_display_sleep: bool,
+    pub default_awake_minutes: u64,
+    pub default_timer_minutes: u64,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -47,11 +50,19 @@ impl Default for Settings {
             countdown_seconds: 300,
             playback_action: PowerAction::Sleep,
             logging: false,
+            allow_display_sleep: false,
+            default_awake_minutes: 30,
+            default_timer_minutes: 30,
         }
     }
 }
 impl Settings {
     pub fn validate(&self) -> Result<(), String> {
+        if !(1..=10080).contains(&self.default_awake_minutes)
+            || !(1..=10080).contains(&self.default_timer_minutes)
+        {
+            return Err("Default session durations must be between 1 and 10080 minutes.".into());
+        }
         if !(10..=3600).contains(&self.silence_seconds)
             || !(30..=7200).contains(&self.idle_seconds)
             || !(15..=1800).contains(&self.countdown_seconds)

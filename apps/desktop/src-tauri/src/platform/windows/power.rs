@@ -23,10 +23,26 @@ use windows::{
 
 pub struct NativePower {
     held: bool,
+    allow_display_sleep: bool,
+}
+
+fn execution_flags(active: bool, allow_display_sleep: bool) -> EXECUTION_STATE {
+    if !active {
+        return ES_CONTINUOUS;
+    }
+    let flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED;
+    if allow_display_sleep {
+        flags
+    } else {
+        flags | ES_DISPLAY_REQUIRED
+    }
 }
 impl NativePower {
     pub fn new() -> Self {
-        Self { held: false }
+        Self {
+            held: false,
+            allow_display_sleep: false,
+        }
     }
 }
 
@@ -55,26 +71,23 @@ impl PowerManager for NativePower {
         }
         actions
     }
-    fn set_awake(&mut self, active: bool) -> Result<(), String> {
-        if active == self.held {
+    fn set_awake(&mut self, active: bool, allow_display_sleep: bool) -> Result<(), String> {
+        if active == self.held && (!active || allow_display_sleep == self.allow_display_sleep) {
             return Ok(());
         }
-        let flags = if active {
-            ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
-        } else {
-            ES_CONTINUOUS
-        };
+        let flags = execution_flags(active, allow_display_sleep);
         if unsafe { SetThreadExecutionState(flags) }.0 == 0 {
             return Err("Windows could not update the power request.".into());
         }
         self.held = active;
+        self.allow_display_sleep = allow_display_sleep;
         Ok(())
     }
     fn execute(&mut self, action: PowerAction) -> Result<(), String> {
         if !self.supported_actions().contains(&action) {
             return Err("This power action is not supported on this computer.".into());
         }
-        self.set_awake(false)?;
+        self.set_awake(false, false)?;
         unsafe {
             match action {
                 PowerAction::Sleep | PowerAction::Hibernate => with_shutdown_privilege(|| {
@@ -119,7 +132,7 @@ impl PowerManager for NativePower {
 }
 impl Drop for NativePower {
     fn drop(&mut self) {
-        let _ = self.set_awake(false);
+        let _ = self.set_awake(false, false);
     }
 }
 
@@ -164,4 +177,17 @@ unsafe fn with_shutdown_privilege(
     })();
     let _ = CloseHandle(token);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn allowing_display_sleep_preserves_the_system_awake_request() {
+        let flags = execution_flags(true, true);
+        assert_ne!(flags.0 & ES_SYSTEM_REQUIRED.0, 0);
+        assert_eq!(flags.0 & ES_DISPLAY_REQUIRED.0, 0);
+        assert_ne!(execution_flags(true, false).0 & ES_DISPLAY_REQUIRED.0, 0);
+        assert_eq!(execution_flags(false, false), ES_CONTINUOUS);
+    }
 }

@@ -13,7 +13,7 @@ use std::{
     sync::mpsc::{self, Sender},
 };
 
-pub use model::{DialogView, Operation, Request, Snapshot};
+pub use model::{DialogView, Operation, Preference, Request, Snapshot};
 pub use persistence::load;
 
 /// Commands enter a single-owner engine through this channel.
@@ -30,6 +30,7 @@ pub fn start(
 ) -> Result<AppState, String> {
     let (sender, receiver) = mpsc::channel();
     let snapshot = Snapshot {
+        settings_path: path.clone(),
         selected_action: settings.default_action,
         view: DialogView::Settings,
         engine: Engine::default(),

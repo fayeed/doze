@@ -1,6 +1,7 @@
 use tauri::Manager;
 mod core;
 mod platform;
+mod quick_settings;
 mod state;
 mod tray;
 

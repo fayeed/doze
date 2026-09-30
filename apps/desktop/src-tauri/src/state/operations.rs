@@ -1,5 +1,5 @@
 use super::{
-    model::{Operation, Snapshot},
+    model::{Operation, Preference, Snapshot},
     persistence::persist,
 };
 use crate::{
@@ -20,6 +20,34 @@ pub(super) fn apply(
     path: &std::path::Path,
 ) -> Result<(), String> {
     match op {
+        Operation::KeepAwakeDefault => snapshot
+            .engine
+            .keep_awake(Some(snapshot.settings.default_awake_minutes * 60)),
+        Operation::ScheduleDefault => snapshot.engine.schedule(
+            snapshot.settings.default_timer_minutes * 60,
+            snapshot.selected_action,
+        ),
+        Operation::TogglePreference { preference } => {
+            let mut settings = snapshot.settings.clone();
+            let value = match preference {
+                Preference::AllowDisplaySleep => &mut settings.allow_display_sleep,
+                Preference::Notifications => &mut settings.notifications,
+                Preference::LaunchAtStartup => &mut settings.launch_at_startup,
+                Preference::StartMinimized => &mut settings.start_minimized,
+                Preference::Logging => &mut settings.logging,
+            };
+            *value = !*value;
+            save(snapshot, path, settings)?;
+        }
+        Operation::SetDefaultDuration { awake, minutes } => {
+            let mut settings = snapshot.settings.clone();
+            if awake {
+                settings.default_awake_minutes = minutes;
+            } else {
+                settings.default_timer_minutes = minutes;
+            }
+            save(snapshot, path, settings)?;
+        }
         Operation::KeepAwake { seconds } => {
             if let Some(seconds) = seconds {
                 duration(seconds)?;
@@ -81,19 +109,6 @@ pub(super) fn apply(
         Operation::Cancel => snapshot.engine.cancel_countdown(),
         Operation::Snooze => snapshot.engine.snooze()?,
         Operation::SaveSettings { settings } => save(snapshot, path, settings)?,
-        Operation::ResetSettings => {
-            let mut settings = Settings::default();
-            if !snapshot.actions.contains(&settings.default_action) {
-                let first = snapshot
-                    .actions
-                    .first()
-                    .copied()
-                    .ok_or("No power actions are available.")?;
-                settings.default_action = first;
-                settings.playback_action = first;
-            }
-            save(snapshot, path, settings)?;
-        }
         Operation::OpenDialog { view } => snapshot.view = view,
         Operation::Refresh | Operation::PreviewCountdown | Operation::Quit => {}
     }
@@ -116,8 +131,15 @@ fn save(snapshot: &mut Snapshot, path: &std::path::Path, settings: Settings) -> 
         }
         return Err(error);
     }
-    snapshot.engine.cancel_playback();
-    snapshot.selected_action = settings.default_action;
+    if old.playback_action != settings.playback_action
+        || old.silence_seconds != settings.silence_seconds
+        || old.idle_seconds != settings.idle_seconds
+    {
+        snapshot.engine.cancel_playback();
+    }
+    if old.default_action != settings.default_action {
+        snapshot.selected_action = settings.default_action;
+    }
     snapshot.settings = settings;
     Ok(())
 }
@@ -125,6 +147,73 @@ fn save(snapshot: &mut Snapshot, path: &std::path::Path, settings: Settings) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn older_settings_files_receive_new_session_defaults() {
+        let settings: Settings = serde_json::from_str("{\"notifications\":false}").unwrap();
+        assert!(!settings.notifications);
+        assert_eq!(settings.default_awake_minutes, 30);
+        assert_eq!(settings.default_timer_minutes, 30);
+        assert!(!settings.allow_display_sleep);
+    }
+    #[test]
+    fn quick_preferences_preserve_live_sessions_and_action_selection() {
+        use crate::core::sessions::{Engine, PowerAction};
+        let test_dir =
+            std::env::temp_dir().join(format!("doze-preferences-{}", std::process::id()));
+        let path = test_dir.join("settings.json");
+        let mut snapshot = Snapshot {
+            settings_path: path.clone(),
+            engine: Engine::default(),
+            settings: Settings::default(),
+            actions: vec![PowerAction::Sleep, PowerAction::Lock],
+            audio_supported: true,
+            startup_supported: true,
+            error: None,
+            selected_action: PowerAction::Lock,
+            view: super::super::model::DialogView::Settings,
+        };
+        snapshot.engine.enable_playback(true);
+        for time in 0..3 {
+            snapshot
+                .engine
+                .tick(time, Some(true), Some(600), false, &snapshot.settings);
+        }
+        snapshot.engine.schedule(900, PowerAction::Lock);
+        let deadline = snapshot.engine.timer.as_ref().unwrap().deadline;
+        apply(
+            Operation::TogglePreference {
+                preference: Preference::Notifications,
+            },
+            &mut snapshot,
+            &path,
+        )
+        .unwrap();
+        assert_eq!(
+            snapshot.engine.playback_phase,
+            crate::core::sessions::Phase::Active
+        );
+        assert_eq!(snapshot.selected_action, PowerAction::Lock);
+        apply(
+            Operation::SetDefaultDuration {
+                awake: false,
+                minutes: 60,
+            },
+            &mut snapshot,
+            &path,
+        )
+        .unwrap();
+        assert_eq!(snapshot.engine.timer.as_ref().unwrap().deadline, deadline);
+        apply(Operation::ScheduleDefault, &mut snapshot, &path).unwrap();
+        assert_eq!(
+            snapshot.engine.timer.as_ref().unwrap().deadline,
+            snapshot.engine.now + 3600
+        );
+        let saved = super::super::persistence::load(&path).unwrap();
+        assert_eq!(saved.default_timer_minutes, 60);
+        assert!(!saved.notifications);
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&test_dir).unwrap();
+    }
     #[test]
     fn validates_duration_bounds() {
         assert!(duration(0).is_err());

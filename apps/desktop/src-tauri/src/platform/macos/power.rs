@@ -21,22 +21,33 @@ extern "C" {
 }
 pub struct NativePower {
     assertion: Option<u32>,
+    allow_display_sleep: bool,
 }
 impl NativePower {
     pub fn new() -> Self {
-        Self { assertion: None }
+        Self {
+            assertion: None,
+            allow_display_sleep: false,
+        }
     }
 }
 impl PowerManager for NativePower {
     fn supported_actions(&self) -> Vec<PowerAction> {
         vec![PowerAction::Sleep]
     }
-    fn set_awake(&mut self, active: bool) -> Result<(), String> {
+    fn set_awake(&mut self, active: bool, allow_display_sleep: bool) -> Result<(), String> {
+        if active && self.assertion.is_some() && allow_display_sleep != self.allow_display_sleep {
+            self.set_awake(false, false)?;
+        }
         unsafe {
             if active && self.assertion.is_none() {
                 let kind = CFStringCreateWithCString(
                     std::ptr::null(),
-                    c"PreventUserIdleDisplaySleep".as_ptr(),
+                    if allow_display_sleep {
+                        c"PreventUserIdleSystemSleep".as_ptr()
+                    } else {
+                        c"PreventUserIdleDisplaySleep".as_ptr()
+                    },
                     0x08000100,
                 );
                 let name = CFStringCreateWithCString(
@@ -61,6 +72,7 @@ impl PowerManager for NativePower {
                     return Err(format!("IOKit assertion failed: {status}"));
                 }
                 self.assertion = Some(id);
+                self.allow_display_sleep = allow_display_sleep;
             } else if !active {
                 if let Some(id) = self.assertion {
                     let status = IOPMAssertionRelease(id);
@@ -77,7 +89,7 @@ impl PowerManager for NativePower {
         if action != PowerAction::Sleep {
             return Err("Unsupported macOS power action.".into());
         }
-        self.set_awake(false)?;
+        self.set_awake(false, false)?;
         unsafe {
             let connection = IOPMFindPowerManagement(0);
             if connection == 0 {
@@ -95,6 +107,6 @@ impl PowerManager for NativePower {
 }
 impl Drop for NativePower {
     fn drop(&mut self) {
-        let _ = self.set_awake(false);
+        let _ = self.set_awake(false, false);
     }
 }

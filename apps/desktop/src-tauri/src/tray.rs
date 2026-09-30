@@ -9,6 +9,9 @@ use tauri::{
 };
 
 struct NativeMenu {
+    quick: crate::quick_settings::QuickSettings,
+    default_awake: MenuItem<tauri::Wry>,
+    default_timer: MenuItem<tauri::Wry>,
     action_menu: Submenu<tauri::Wry>,
     status: MenuItem<tauri::Wry>,
     timer: MenuItem<tauri::Wry>,
@@ -46,6 +49,10 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
     let timer = item(app, "timer_status", "No sleep timer")?;
     let awake = Submenu::new(app, "Keep awake", true)?;
     let sleep = Submenu::new(app, "Start timer", true)?;
+    let default_awake = item(app, "awake_default", "Default (30 minutes)")?;
+    let default_timer = item(app, "timer_default", "Default (30 minutes)")?;
+    awake.append(&default_awake)?;
+    sleep.append(&default_timer)?;
     for (seconds, label) in [
         (900, "15 minutes"),
         (1800, "30 minutes"),
@@ -105,6 +112,8 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
     let cancel = item(app, "cancel", "No countdown to cancel")?;
     let snooze = item(app, "snooze", "No countdown to snooze")?;
     let settings = item(app, "settings", "Settings…")?;
+    let about = item(app, "about", "About Doze…")?;
+    let quick = crate::quick_settings::QuickSettings::new(app)?;
     let preview = item(app, "preview", "Preview countdown…")?;
     preview.set_enabled(cfg!(windows))?;
     let quit = item(app, "quit", "Quit Doze")?;
@@ -132,12 +141,17 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
             &snooze,
             &separators[3],
             &settings,
+            &quick.menu,
+            &about,
             &preview,
             &help,
             &quit,
         ],
     )?;
     app.manage(NativeMenu {
+        quick,
+        default_awake,
+        default_timer,
         action_menu,
         status,
         timer,
@@ -157,7 +171,16 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
             let id = event.id.as_ref();
+            if let Some(operation) = crate::quick_settings::operation(id) {
+                dispatch(app, operation);
+                return;
+            }
             let operation = match id {
+                "about" => Operation::OpenDialog {
+                    view: DialogView::About,
+                },
+                "awake_default" => Operation::KeepAwakeDefault,
+                "timer_default" => Operation::ScheduleDefault,
                 "help" | "status" | "timer_status" => Operation::OpenDialog {
                     view: DialogView::Help,
                 },
@@ -259,6 +282,15 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
     };
     let engine = &snapshot.engine;
     let status = status_text(snapshot);
+    menu.quick.update(&snapshot.settings);
+    let _ = menu.default_awake.set_text(format!(
+        "Default ({} minutes)",
+        snapshot.settings.default_awake_minutes
+    ));
+    let _ = menu.default_timer.set_text(format!(
+        "Default ({} minutes)",
+        snapshot.settings.default_timer_minutes
+    ));
     let timer = if let Some(countdown) = &engine.countdown {
         format!(
             "{} in {} — countdown",

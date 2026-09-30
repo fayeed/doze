@@ -2,7 +2,7 @@ use crate::core::sessions::PowerAction;
 
 pub trait PowerManager {
     fn supported_actions(&self) -> Vec<PowerAction>;
-    fn set_awake(&mut self, active: bool) -> Result<(), String>;
+    fn set_awake(&mut self, active: bool, allow_display_sleep: bool) -> Result<(), String>;
     fn execute(&mut self, action: PowerAction) -> Result<(), String>;
 }
 #[cfg(windows)]

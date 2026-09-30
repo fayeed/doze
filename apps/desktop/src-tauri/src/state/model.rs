@@ -5,6 +5,10 @@ use std::sync::mpsc::Sender;
 #[derive(Clone, Debug)]
 pub enum Operation {
     KeepAwake { seconds: Option<u64> },
+    KeepAwakeDefault,
+    ScheduleDefault,
+    TogglePreference { preference: Preference },
+    SetDefaultDuration { awake: bool, minutes: u64 },
     ExtendAwake { seconds: u64 },
     StopAwake,
     ToggleWhileAudio,
@@ -16,7 +20,6 @@ pub enum Operation {
     Cancel,
     Snooze,
     SaveSettings { settings: Settings },
-    ResetSettings,
     Refresh,
     PreviewCountdown,
     OpenDialog { view: DialogView },
@@ -26,6 +29,7 @@ pub enum Operation {
 pub enum DialogView {
     Settings,
     Help,
+    About,
     AwakeDuration,
     AwakeTime,
     TimerDuration,
@@ -39,6 +43,7 @@ pub enum Request {
 }
 #[derive(Clone)]
 pub struct Snapshot {
+    pub settings_path: std::path::PathBuf,
     pub engine: Engine,
     pub settings: Settings,
     pub actions: Vec<PowerAction>,
@@ -47,4 +52,13 @@ pub struct Snapshot {
     pub error: Option<String>,
     pub selected_action: PowerAction,
     pub view: DialogView,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Preference {
+    AllowDisplaySleep,
+    Notifications,
+    LaunchAtStartup,
+    StartMinimized,
+    Logging,
 }

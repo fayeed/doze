@@ -73,12 +73,12 @@ impl Template {
     pub fn label_with_id(&mut self, id: u16, text: &str, x: i16, y: i16, width: i16) {
         self.control(id, "STATIC", text, [x, y, width, 12], 0);
     }
-    pub fn checkbox(&mut self, id: u16, text: &str, y: i16) {
+    pub fn checkbox_at(&mut self, id: u16, text: &str, bounds: [i16; 4]) {
         self.control(
             id,
             "BUTTON",
             text,
-            [12, y, 252, 14],
+            bounds,
             WS_TABSTOP.0 | BS_AUTOCHECKBOX as u32,
         );
     }
@@ -105,12 +105,12 @@ impl Template {
             WS_TABSTOP.0 | WS_BORDER.0 | ES_NUMBER as u32,
         );
     }
-    pub fn combo(&mut self, id: u16, y: i16) {
+    pub fn combo_at(&mut self, id: u16, bounds: [i16; 4]) {
         self.control(
             id,
             "COMBOBOX",
             "",
-            [142, y, 122, 90],
+            bounds,
             WS_TABSTOP.0 | WS_VSCROLL.0 | CBS_DROPDOWNLIST as u32,
         );
     }
@@ -122,6 +122,9 @@ impl Template {
             [x, y, width, 16],
             WS_TABSTOP.0 | if time { 9 } else { 0 },
         );
+    }
+    pub fn tabs(&mut self, id: u16, bounds: [i16; 4]) {
+        self.control(id, "SysTabControl32", "", bounds, WS_TABSTOP.0);
     }
     pub fn button(&mut self, id: u16, text: &str, x: i16, y: i16, default: bool) {
         self.control(
