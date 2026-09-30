@@ -21,7 +21,9 @@ Build output is in `src-tauri/target/release/`: `doze.exe`, `bundle/msi/`, and `
 
 ## Behavior
 
-The clickable status rows open native help. “Normal sleep allowed” means Doze is not preventing Windows from sleeping; ordinary Windows power settings apply. Inactive controls explain their reason in the menu, and “What do these options mean?” explains every feature, checked state, unavailable action, and current timing setting.
+The clickable status rows open native help. “Normal sleep allowed” means Doze is not preventing Windows from sleeping; ordinary Windows power settings apply. Inactive controls explain their reason in the menu, and “Help & About → Menu Guide” explains every feature, checked state, unavailable action, and current timing setting.
+
+The tray uses native icon menu items with antialiased line glyphs, short live status rows, and separators between session, timer, and preference groups. Keep Awake contains Extend/Stop; Power Timer contains action, duration, and Stop; Countdown contains Cancel/Snooze/Preview; Help & About contains the Menu Guide and About. Checkmarks retain their native toggle meaning. Settings and Quit show platform keyboard shortcuts. On macOS, applicable items use AppKit's built-in icons and the tray glyph uses template rendering for the menu bar's appearance. macOS rendering still requires verification on a Mac.
 
 - Keep Awake: 15m, 30m, 1h, 2h, custom duration, a local date/time, or indefinitely. Timed sessions can be extended or stopped.
 - Keep awake while audio plays: retains the power request through the configured silence grace period.

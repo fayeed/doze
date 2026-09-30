@@ -19,9 +19,10 @@ pub(super) fn text(snapshot: &Snapshot) -> String {
          Stop keeping awake ends manual and audio-based awake sessions. Extend adds 15 minutes to a timed awake session.\n\n\
          KEEP AWAKE WHILE AUDIO PLAYS\n\
          Check this to keep the computer awake during audible playback and short pauses. It releases the awake request after {silence} seconds of silence. A checkmark means enabled; it may be waiting for audio.\n\n\
-         TIMER ACTION AND START TIMER\n\
+         POWER TIMER\n\
+         Open Power Timer for the action, duration, and Stop timer controls.\n\
          Timer action chooses what happens at the end. Currently selected: {timer_action}.\n\
-         Start timer chooses the duration before the final warning begins. For example, a 15-minute timer is followed by your {countdown}-second countdown. Doze keeps the computer awake while the timer is running. Stop timer removes that timer and its countdown.\n\
+         Choose a duration before the final warning begins. For example, a 15-minute timer is followed by your {countdown}-second countdown. Doze keeps the computer awake while the timer is running. Stop timer removes that timer and its countdown.\n\
          Sleep: suspend the computer, keeping your session in memory.\n\
          Hibernate: save your session to disk and power down.\n\
          Shut down: close Windows and turn off the computer. Windows may ask about unsaved work.\n\
@@ -32,7 +33,7 @@ pub(super) fn text(snapshot: &Snapshot) -> String {
          Manual Keep Awake blocks this automatic action. A timer you start takes priority.\n\n\
          COUNTDOWN, CANCEL AND SNOOZE\n\
          The native warning window shows the action and time remaining. Cancel, Escape, or closing the warning cancels the action. Snooze adds 15 minutes to the countdown.\n\
-         Preview countdown opens a demonstration. Its buttons only affect the preview and cannot trigger a power action.\n\n\
+         The Countdown submenu contains Cancel, Snooze and Preview. Preview opens a demonstration. Its buttons only affect the preview and cannot trigger a power action.\n\n\
          QUICK SETTINGS\n\
          Checkmarks show saved preferences, rather than whether a session is running. Changes save immediately. Default durations apply to new sessions. Display sleep changes take effect on the current awake request; notification changes apply to future notifications.\n\n\
          SETTINGS, ABOUT AND QUIT\n\
@@ -51,7 +52,7 @@ pub(super) fn text(snapshot: &Snapshot) -> String {
 
 pub(super) fn about(snapshot: &Snapshot) -> String {
     format!(
-        "Keep your computer awake when it should be awake, and let it sleep when it should sleep. Doze lives in the tray, with native settings, timers and countdown warnings.\n\nLOCAL AND PRIVATE\nNo account, cloud service, ads, subscriptions or telemetry. Audio monitoring observes output levels; it does not record your audio. Preferences and optional error logs stay on this computer.\n\nTHIS RUN\nRunning for {} minutes. {}\n\nACKNOWLEDGEMENTS\nBuilt with Rust and Tauri. Windows API bindings, native power management, Core Audio and Windows notifications provide the system integration.\n\nDATA\nSettings: {}\n\nUse 'What do these options mean?' in the tray for feature explanations. Advanced Settings provides diagnostics and access to the data folder.",
+        "Keep your computer awake when it should be awake, and let it sleep when it should sleep. Doze lives in the tray, with native settings, timers and countdown warnings.\n\nLOCAL AND PRIVATE\nNo account, cloud service, ads, subscriptions or telemetry. Audio monitoring observes output levels; it does not record your audio. Preferences and optional error logs stay on this computer.\n\nTHIS RUN\nRunning for {} minutes. {}\n\nACKNOWLEDGEMENTS\nBuilt with Rust and Tauri. Windows API bindings, native power management, Core Audio and Windows notifications provide the system integration.\n\nDATA\nSettings: {}\n\nUse 'Help & About → Menu Guide' in the tray for feature explanations. Advanced Settings provides diagnostics and access to the data folder.",
         snapshot.engine.now / 60,
         crate::tray::status_text(snapshot), snapshot.settings_path.display(),
     )

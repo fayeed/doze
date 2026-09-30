@@ -1,6 +1,7 @@
 //! Native shortcuts to saved preferences, separate from current session controls.
 use crate::{
     core::sessions::Settings,
+    menu_icons::{self, Glyph},
     state::{Operation, Preference},
 };
 use tauri::menu::{CheckMenuItem, MenuItem, PredefinedMenuItem, Submenu};
@@ -43,7 +44,7 @@ fn durations(app: &tauri::App, prefix: &str, title: &str) -> tauri::Result<Durat
 }
 impl QuickSettings {
     pub fn new(app: &tauri::App) -> tauri::Result<Self> {
-        let menu = Submenu::new(app, "Quick Settings", true)?;
+        let menu = menu_icons::submenu(app, "quick_menu", "Quick Settings", Glyph::Quick)?;
         menu.append(&MenuItem::with_id(
             app,
             "quick_info",

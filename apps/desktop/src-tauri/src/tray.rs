@@ -1,9 +1,10 @@
 use crate::{
     core::sessions::PowerAction,
+    menu_icons::{self, Glyph},
     state::{AppState, DialogView, Operation, Request, Snapshot},
 };
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{CheckMenuItem, IconMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{TrayIconBuilder, TrayIconEvent},
     Manager,
 };
@@ -15,11 +16,11 @@ struct NativeMenu {
     action_menu: Submenu<tauri::Wry>,
     status: MenuItem<tauri::Wry>,
     timer: MenuItem<tauri::Wry>,
-    stop_awake: MenuItem<tauri::Wry>,
-    extend: MenuItem<tauri::Wry>,
-    stop_timer: MenuItem<tauri::Wry>,
-    cancel: MenuItem<tauri::Wry>,
-    snooze: MenuItem<tauri::Wry>,
+    stop_awake: IconMenuItem<tauri::Wry>,
+    extend: IconMenuItem<tauri::Wry>,
+    stop_timer: IconMenuItem<tauri::Wry>,
+    cancel: IconMenuItem<tauri::Wry>,
+    snooze: IconMenuItem<tauri::Wry>,
     audio: CheckMenuItem<tauri::Wry>,
     playback: CheckMenuItem<tauri::Wry>,
     actions: Vec<(PowerAction, CheckMenuItem<tauri::Wry>)>,
@@ -45,10 +46,10 @@ fn item(app: &tauri::App, id: &str, text: &str) -> tauri::Result<MenuItem<tauri:
 }
 
 pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
-    let status = item(app, "status", "Status: normal sleep allowed")?;
-    let timer = item(app, "timer_status", "No sleep timer")?;
-    let awake = Submenu::new(app, "Keep awake", true)?;
-    let sleep = Submenu::new(app, "Start timer", true)?;
+    let status = item(app, "status", "Normal sleep allowed")?;
+    let timer = item(app, "timer_status", "No power timer")?;
+    let awake = menu_icons::submenu(app, "awake_menu", "Keep Awake", Glyph::Awake)?;
+    let sleep = menu_icons::submenu(app, "timer_menu", "Power Timer", Glyph::Timer)?;
     let default_awake = item(app, "awake_default", "Default (30 minutes)")?;
     let default_timer = item(app, "timer_default", "Default (30 minutes)")?;
     awake.append(&default_awake)?;
@@ -106,18 +107,35 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         false,
         None::<&str>,
     )?;
-    let stop_awake = item(app, "stop_awake", "No awake session to stop")?;
-    let extend = item(app, "extend", "No timed awake session to extend")?;
-    let stop_timer = item(app, "stop_timer", "No timer to stop")?;
-    let cancel = item(app, "cancel", "No countdown to cancel")?;
-    let snooze = item(app, "snooze", "No countdown to snooze")?;
-    let settings = item(app, "settings", "Settings…")?;
-    let about = item(app, "about", "About Doze…")?;
+    let stop_awake = menu_icons::item(app, "stop_awake", "No awake session to stop", Glyph::Stop)?;
+    let extend = menu_icons::item(app, "extend", "No timed session to extend", Glyph::Add)?;
+    let stop_timer = menu_icons::item(app, "stop_timer", "No timer to stop", Glyph::Stop)?;
+    let cancel = menu_icons::item(app, "cancel", "No countdown to cancel", Glyph::Stop)?;
+    let snooze = menu_icons::item(app, "snooze", "No countdown to snooze", Glyph::Timer)?;
+    for inactive in [&stop_awake, &extend, &stop_timer, &cancel, &snooze] {
+        inactive.set_enabled(false)?;
+    }
+    let settings = menu_icons::item(app, "settings", "Settings…", Glyph::Settings)?;
+    let about = menu_icons::item(app, "about", "About Doze…", Glyph::Info)?;
     let quick = crate::quick_settings::QuickSettings::new(app)?;
-    let preview = item(app, "preview", "Preview countdown…")?;
+    let preview = menu_icons::item(app, "preview", "Preview Countdown…", Glyph::Preview)?;
     preview.set_enabled(cfg!(windows))?;
-    let quit = item(app, "quit", "Quit Doze")?;
-    let help = item(app, "help", "What do these options mean?")?;
+    let quit = menu_icons::item(app, "quit", "Quit Doze", Glyph::Quit)?;
+    let help = menu_icons::item(app, "help", "Menu Guide…", Glyph::Help)?;
+    let countdown = menu_icons::submenu(app, "countdown_menu", "Countdown", Glyph::Timer)?;
+    countdown.append_items(&[
+        &cancel,
+        &snooze,
+        &PredefinedMenuItem::separator(app)?,
+        &preview,
+    ])?;
+    let support = menu_icons::submenu(app, "support_menu", "Help && About", Glyph::Help)?;
+    support.append_items(&[&help, &about])?;
+    // Session management lives beside its start controls rather than filling the root with
+    // inactive rows. Disabled commands still explain why they cannot run.
+    awake.append_items(&[&PredefinedMenuItem::separator(app)?, &extend, &stop_awake])?;
+    sleep.prepend_items(&[&action_menu, &PredefinedMenuItem::separator(app)?])?;
+    sleep.append_items(&[&PredefinedMenuItem::separator(app)?, &stop_timer])?;
     let separators = (0..4)
         .map(|_| PredefinedMenuItem::separator(app))
         .collect::<tauri::Result<Vec<_>>>()?;
@@ -128,23 +146,16 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
             &timer,
             &separators[0],
             &awake,
-            &stop_awake,
-            &extend,
             &audio,
             &separators[1],
-            &action_menu,
             &sleep,
-            &stop_timer,
             &playback,
+            &countdown,
             &separators[2],
-            &cancel,
-            &snooze,
-            &separators[3],
-            &settings,
             &quick.menu,
-            &about,
-            &preview,
-            &help,
+            &settings,
+            &support,
+            &separators[3],
             &quit,
         ],
     )?;
@@ -169,6 +180,7 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         .tooltip("Doze · Normal sleep allowed")
         .menu(&menu)
         .show_menu_on_left_click(true)
+        .icon_as_template(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| {
             let id = event.id.as_ref();
             if let Some(operation) = crate::quick_settings::operation(id) {
@@ -246,33 +258,31 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
 
 fn remaining(deadline: u64, now: u64) -> String {
     let seconds = deadline.saturating_sub(now);
-    format!(
-        "{}h {}m {}s",
-        seconds / 3600,
-        seconds / 60 % 60,
-        seconds % 60
-    )
+    if seconds >= 3600 {
+        format!("{}h {}m", seconds / 3600, seconds / 60 % 60)
+    } else if seconds >= 60 {
+        format!("{}m {}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 pub(crate) fn status_text(snapshot: &Snapshot) -> String {
     let engine = &snapshot.engine;
     if let Some(error) = &snapshot.error {
-        format!("Status: {error}")
+        format!("Needs attention: {error}")
     } else if let Some(deadline) = engine.awake_deadline {
-        format!(
-            "Status: keeping awake for {}",
-            remaining(deadline, engine.now)
-        )
+        format!("Keeping awake · {} left", remaining(deadline, engine.now))
     } else if engine.awake {
-        "Status: keeping awake indefinitely".into()
+        "Keeping awake · indefinitely".into()
     } else if engine.countdown.is_some() {
-        "Status: keeping awake during countdown".into()
+        "Keeping awake · countdown running".into()
     } else if engine.timer.is_some() {
-        "Status: keeping awake until timer finishes".into()
+        "Keeping awake · timer running".into()
     } else if engine.should_hold_awake() {
-        "Status: keeping awake for audio playback".into()
+        "Keeping awake · audio playback".into()
     } else {
-        "Status: normal sleep allowed".into()
+        "Normal sleep allowed".into()
     }
 }
 
@@ -383,7 +393,7 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
             u8::from(engine.should_hold_awake())
         };
         let _ = tray.set_tooltip(Some(&format!("Doze · {status}\n{timer}")));
-        let _ = tray.set_icon(Some(image(state)));
+        let _ = tray.set_icon_with_as_template(Some(image(state)), cfg!(target_os = "macos"));
     }
 }
 // Crisp native tray glyph, with a violet awake dot or amber countdown dot.

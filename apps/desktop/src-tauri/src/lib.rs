@@ -1,5 +1,6 @@
 use tauri::Manager;
 mod core;
+mod menu_icons;
 mod platform;
 mod quick_settings;
 mod state;
