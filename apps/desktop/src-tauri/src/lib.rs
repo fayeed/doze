@@ -14,6 +14,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let path = app.path().app_config_dir()?.join("settings.json");
             let (settings, error) = match state::load(&path) {
                 Ok(s) => (s, None),
