@@ -1,0 +1,11 @@
+node_modules/
+.turbo/
+.next/
+out/
+dist/
+coverage/
+.env*
+!.env.example
+*.log
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/

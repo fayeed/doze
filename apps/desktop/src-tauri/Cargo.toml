@@ -1,0 +1,17 @@
+[package]
+name = "doze"
+version = "0.1.0"
+description = "A lightweight utility for a better bedtime."
+authors = ["Doze"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "doze_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
