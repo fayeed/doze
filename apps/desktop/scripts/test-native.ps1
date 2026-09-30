@@ -4,6 +4,7 @@ $desktop = Split-Path $PSScriptRoot -Parent
 $executable = Join-Path $desktop 'native/windows/publish/Doze.Settings.exe'
 $snapshot = @{
     settings = @{
+        theme = 'system'
         launchAtStartup = $false; startMinimized = $true; notifications = $true
         defaultAction = 'sleep'; playbackAction = 'sleep'; silenceSeconds = 60
         idleSeconds = 300; countdownSeconds = 300; logging = $false

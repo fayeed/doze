@@ -2,7 +2,7 @@
 use crate::{
     core::{
         countdown::{Countdown, Source},
-        sessions::PowerAction,
+        sessions::{PowerAction, Theme},
     },
     platform::native_ui,
     state::Request,
@@ -72,18 +72,19 @@ impl Warning {
         })
     }
 
-    pub fn update(&self, countdown: Option<&Countdown>, now: u64, snoozing: bool) {
-        let Some(message) = self.state.borrow_mut().update(countdown, now, snoozing) else {
+    pub fn update(&self, countdown: Option<&Countdown>, now: u64, snoozing: bool, theme: Theme) {
+        let Some(mut message) = self.state.borrow_mut().update(countdown, now, snoozing) else {
             return;
         };
+        message["theme"] = json!(theme);
         if let Err(error) = native_ui::send(message, self.requests.clone()) {
             let _ = self.requests.send(Request::WarningFailed(error));
         }
     }
 
-    pub fn preview(&self, action: PowerAction) {
+    pub fn preview(&self, action: PowerAction, theme: Theme) {
         if let Err(error) = native_ui::send(
-            json!({ "type": "preview", "action": action.label() }),
+            json!({ "type": "preview", "action": action.label(), "theme": theme }),
             self.requests.clone(),
         ) {
             eprintln!("Could not preview native countdown: {error}");

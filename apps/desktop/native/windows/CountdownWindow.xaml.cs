@@ -28,6 +28,7 @@ public sealed partial class CountdownWindow : Window
         this.send = send;
         this.verification = verification;
         InitializeComponent();
+        WindowAppearance.Observe(this, Root);
         Title = "Doze · Countdown";
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
@@ -58,6 +59,9 @@ public sealed partial class CountdownWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint window);
+
+    public void SetTheme(string value) => WindowAppearance.Apply(Root, value);
+    public void StopAppearance() => WindowAppearance.Stop(Root);
 
     public void Receive(JsonObject message)
     {

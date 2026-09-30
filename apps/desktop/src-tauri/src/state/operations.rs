@@ -154,6 +154,17 @@ mod tests {
         assert_eq!(settings.default_awake_minutes, 30);
         assert_eq!(settings.default_timer_minutes, 30);
         assert!(!settings.allow_display_sleep);
+        assert_eq!(settings.theme, crate::core::sessions::Theme::System);
+    }
+    #[test]
+    fn appearance_settings_roundtrip_and_reject_unknown_values() {
+        use crate::core::sessions::Theme;
+        for theme in [Theme::System, Theme::Light, Theme::Dark] {
+            let settings = Settings { theme, ..Settings::default() };
+            let text = serde_json::to_string(&settings).unwrap();
+            assert_eq!(serde_json::from_str::<Settings>(&text).unwrap().theme, theme);
+        }
+        assert!(serde_json::from_str::<Settings>(r#"{"theme":"invalid"}"#).is_err());
     }
     #[test]
     fn quick_preferences_preserve_live_sessions_and_action_selection() {

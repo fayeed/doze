@@ -13,6 +13,7 @@ namespace Doze.SettingsUi;
 public sealed partial class MainWindow : Window
 {
     private readonly EngineBridge bridge;
+    private readonly Action<string> changeTheme;
     private JsonObject snapshot;
     private readonly LiveSettings preferences;
     private Preferences draft => preferences.Draft;
@@ -33,12 +34,15 @@ public sealed partial class MainWindow : Window
         ["displayOff"] = "Turn display off"
     };
 
-    public MainWindow(EngineBridge bridge, JsonObject initial)
+    public MainWindow(EngineBridge bridge, JsonObject initial, Action<string>? changeTheme = null)
     {
         this.bridge = bridge;
+        this.changeTheme = changeTheme ?? SetTheme;
         snapshot = initial["snapshot"]!.AsObject();
         preferences = new LiveSettings(ReadPreferences());
         InitializeComponent();
+        WindowAppearance.Observe(this, Root);
+        SetTheme(draft.Theme);
         Title = "Doze Settings";
         AppWindow.IsShownInSwitchers = true;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Doze.ico"));
@@ -75,6 +79,7 @@ public sealed partial class MainWindow : Window
                 if (message["command"]?.GetValue<string>() == "save")
                 {
                     preferences.Reject();
+                    this.changeTheme(draft.Theme);
                     closeAfterApply = false;
                     var offset = PageScroll.VerticalOffset;
                     ShowPage();
@@ -95,6 +100,7 @@ public sealed partial class MainWindow : Window
                 if (message["type"]?.GetValue<string>() == "saved")
                 {
                     preferences.Confirm(ReadPreferences());
+                    this.changeTheme(draft.Theme);
                     _ = ApplySettingsAsync();
                     if (closeAfterApply && !preferences.HasChanges) HideWindow();
                 }
@@ -102,6 +108,7 @@ public sealed partial class MainWindow : Window
             if (message["type"]?.GetValue<string>() == "open")
             {
                 preferences.Refresh(ReadPreferences());
+                this.changeTheme(draft.Theme);
                 SelectPage(ViewPage(message["view"]?.GetValue<string>(), page));
                 closeAfterApply = false;
                 refresh.Start();
@@ -117,11 +124,21 @@ public sealed partial class MainWindow : Window
         AppWindow.Hide();
     }
 
+    public void SetTheme(string value) => WindowAppearance.Apply(Root, value);
+    public void StopAppearance() => WindowAppearance.Stop(Root);
+
     // A construction smoke test of the actual WinUI pages, without showing a window or
     // requesting any engine operation. CI invokes this against inherited test pipes.
     public void VerifyPages()
     {
         LiveSettings.Verify();
+        foreach (var appearance in new[] { "light", "dark", "system" })
+        {
+            SetTheme(appearance);
+            if (appearance == "light" && Root.RequestedTheme != ElementTheme.Light
+                || appearance == "dark" && Root.RequestedTheme != ElementTheme.Dark)
+                throw new InvalidOperationException("Appearance override was not applied.");
+        }
         var windowBackdrop = SystemBackdrop;
         foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
         {
@@ -228,7 +245,14 @@ public sealed partial class MainWindow : Window
         PageDescription.Text = "Choose how Doze starts and where it lives.";
         Toggle("Launch at sign-in", "Start Doze automatically when you sign in to Windows.", "\uE7E8", draft.LaunchAtStartup, value => draft.LaunchAtStartup = value, Capability("startupSupported"));
         Toggle("Start in the tray", "Keep this window closed at launch. Start sessions from the tray menu.", "\uE73F", draft.StartMinimized, value => draft.StartMinimized = value);
-        Card("Appearance", "Native Windows controls follow your Windows light, dark, and accessibility settings. Settings, About, and countdown windows share the same Mica backdrop.", "\uE790");
+        var appearance = new ComboBox { MinWidth = 160, ItemsSource = new[] { "System", "Light", "Dark" }, SelectedItem = draft.Theme switch { "light" => "Light", "dark" => "Dark", _ => "System" } };
+        AutomationProperties.SetName(appearance, "Appearance");
+        appearance.SelectionChanged += (_, _) =>
+        {
+            draft.Theme = ((string)appearance.SelectedItem).ToLowerInvariant();
+            Changed();
+        };
+        Card("Appearance", "System follows your Windows theme automatically. Light or Dark overrides it for Doze windows. Changes apply immediately.", "\uE790", appearance);
         Card("Session safety", "Sessions are cleared after restart or suspend/resume. Closing Settings keeps Doze and existing sessions running.", "\uE72E");
     }
 
@@ -331,6 +355,7 @@ public sealed partial class MainWindow : Window
 
     private void Changed()
     {
+        changeTheme(draft.Theme);
         Notice.IsOpen = false;
         _ = ApplySettingsAsync();
     }
@@ -395,6 +420,7 @@ public sealed partial class MainWindow : Window
         catch (Exception error)
         {
             preferences.Reject();
+            changeTheme(draft.Theme);
             ShowPage();
             Notify("Couldn't apply settings", error.Message, InfoBarSeverity.Error);
         }

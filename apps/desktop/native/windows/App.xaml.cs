@@ -8,6 +8,14 @@ public partial class App : Application
     private MainWindow? window;
     private CountdownWindow? countdown;
     private EngineBridge? bridge;
+    private string theme = "system";
+
+    private void ChangeTheme(string value)
+    {
+        theme = value;
+        window?.SetTheme(value);
+        countdown?.SetTheme(value);
+    }
 
     public App() => InitializeComponent();
 
@@ -34,15 +42,22 @@ public partial class App : Application
                     await countdown.RenderVerificationAsync(arguments[render + 1]);
                 }
                 await bridge.SendAsync("verified");
+                window.StopAppearance();
+                countdown.StopAppearance();
                 Exit();
                 return;
             }
             Receive(initial);
             var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
             await bridge.ListenAsync(message => dispatcher.TryEnqueue(() => Receive(message)));
+            window?.StopAppearance();
+            countdown?.StopAppearance();
+            Exit();
         }
         catch (Exception error)
         {
+            window?.StopAppearance();
+            countdown?.StopAppearance();
             await Console.Error.WriteLineAsync(error.ToString());
             Exit();
         }
@@ -50,15 +65,25 @@ public partial class App : Application
 
     private void Receive(JsonObject message)
     {
+        if (message["theme"]?.GetValue<string>() is string appearance)
+            ChangeTheme(appearance);
+        else if (message["type"]?.GetValue<string>() == "open"
+                 && message["snapshot"]?["settings"]?["theme"]?.GetValue<string>() is string savedTheme)
+            ChangeTheme(savedTheme);
         var type = message["type"]?.GetValue<string>();
         if (type is "preview" or "countdown")
         {
             countdown ??= new CountdownWindow(command => bridge!.SendAsync(command));
+            countdown.SetTheme(theme);
             countdown.Receive(message);
         }
         else
         {
-            if (type == "open") window ??= new MainWindow(bridge!, message);
+            if (type == "open")
+            {
+                window ??= new MainWindow(bridge!, message, ChangeTheme);
+                window.SetTheme(theme);
+            }
             countdown?.Receive(message);
             if (message["command"]?.GetValue<string>() is not ("cancel" or "snooze"))
                 window?.Receive(message);

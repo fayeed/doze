@@ -208,9 +208,10 @@ pub(super) fn worker(
                 snapshot.engine.countdown.as_ref(),
                 snapshot.engine.now,
                 snoozing,
+                snapshot.settings.theme,
             );
             if preview_countdown {
-                warning.preview(snapshot.selected_action);
+                warning.preview(snapshot.selected_action, snapshot.settings.theme);
             }
         }
         if let Some(action) = action {

@@ -17,8 +17,7 @@ public sealed class EngineBridge
     {
         while (await input.ReadLineAsync() is { } line)
             receive(Parse(line));
-        // The Rust tray process exited. Its settings window must not outlive it.
-        Microsoft.UI.Xaml.Application.Current.Exit();
+        // The app coordinator cleans up native listeners when the Rust pipe closes.
     }
 
     public async Task SendAsync(string command, Preferences? settings = null)
@@ -38,6 +37,7 @@ public sealed class EngineBridge
 
 public sealed record Preferences
 {
+    public string Theme { get; set; } = "system";
     public bool LaunchAtStartup { get; set; }
     public bool StartMinimized { get; set; } = true;
     public bool Notifications { get; set; } = true;

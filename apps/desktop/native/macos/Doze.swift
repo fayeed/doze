@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct Preferences: Codable, Equatable {
+    var theme = "system"
     var launchAtStartup = false
     var startMinimized = true
     var notifications = true
@@ -56,7 +57,7 @@ enum Page: String, CaseIterable, Identifiable {
 final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     @Published var snapshot: EngineSnapshot?
     @Published var draft = Preferences() {
-        didSet { applyChanges() }
+        didSet { applyAppearance(draft.theme); applyChanges() }
     }
     @Published var page: Page? = .overview
     @Published var search = ""
@@ -81,6 +82,14 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     private let verification = CommandLine.arguments.contains("--verify-ui")
 
     var dirty: Bool { snapshot.map { draft != $0.settings } ?? false }
+
+    private func applyAppearance(_ theme: String) {
+        switch theme {
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        default: NSApp.appearance = nil
+        }
+    }
 
     func start() {
         installApplicationMenu()
@@ -132,6 +141,11 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
                                   actions: ["sleep"], audioSupported: false, startupSupported: false,
                                   status: "Normal sleep allowed", timerStatus: "No power action scheduled", version: "0.1.0")
         draft = snapshot!.settings
+        for theme in ["light", "dark", "system"] {
+            applyAppearance(theme)
+            let expected: NSAppearance.Name? = theme == "light" ? .aqua : theme == "dark" ? .darkAqua : nil
+            guard NSApp.appearance?.name == expected else { throw verificationError("Appearance override was not applied.") }
+        }
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             for selected in Page.allCases {
                 page = selected
@@ -202,6 +216,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     private func receive(_ message: [String: Any]) {
+        if let theme = message["theme"] as? String { applyAppearance(theme) }
         let type = message["type"] as? String ?? ""
         if let raw = message["snapshot"],
            let data = try? JSONSerialization.data(withJSONObject: raw),
@@ -413,6 +428,12 @@ struct SettingsView: View {
                 Toggle("Start in the menu bar", isOn: $model.draft.startMinimized)
             }
             Section("Appearance") {
+                Picker("Theme", selection: $model.draft.theme) {
+                    Text("System").tag("system")
+                    Text("Light").tag("light")
+                    Text("Dark").tag("dark")
+                }
+                Text("System follows your Mac’s appearance automatically. Changes apply immediately to Doze windows.").foregroundStyle(.secondary)
                 explanation("Made for macOS", "Native controls, sidebar and Liquid Glass follow the system appearance on recent macOS releases. Older systems use native vibrancy. macOS controls contrast and reduced transparency.", "macwindow")
             }
         case .session:

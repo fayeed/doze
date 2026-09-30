@@ -22,9 +22,19 @@ impl PowerAction {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Theme {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
+    pub theme: Theme,
     pub launch_at_startup: bool,
     pub start_minimized: bool,
     pub notifications: bool,
@@ -41,6 +51,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            theme: Theme::System,
             launch_at_startup: false,
             start_minimized: true,
             notifications: true,
