@@ -16,7 +16,7 @@ struct Preferences: Codable, Equatable {
     var defaultTimerMinutes = 30
 }
 
-struct EngineSnapshot: Decodable {
+struct EngineSnapshot: Codable {
     var settings: Preferences
     var settingsPath: String
     var actions: [String]
@@ -55,7 +55,9 @@ enum Page: String, CaseIterable, Identifiable {
 @MainActor
 final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     @Published var snapshot: EngineSnapshot?
-    @Published var draft = Preferences()
+    @Published var draft = Preferences() {
+        didSet { applyChanges() }
+    }
     @Published var page: Page? = .overview
     @Published var search = ""
     @Published var notice = ""
@@ -75,6 +77,8 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     private var previewDeadline: Date?
     private var clock: Timer?
     private var ticks = 0
+    private var pendingSettings: Preferences?
+    private let verification = CommandLine.arguments.contains("--verify-ui")
 
     var dirty: Bool { snapshot.map { draft != $0.settings } ?? false }
 
@@ -145,6 +149,25 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         page = .about
         page = .session
         guard draft.defaultAwakeMinutes == 42 else { throw verificationError("Navigation lost edits.") }
+        var first = Preferences()
+        first.notifications = false
+        draft = first
+        pendingSettings = first
+        saving = true
+        draft.defaultAwakeMinutes = 42
+        var acknowledgement = snapshot!
+        acknowledgement.settings = first
+        let payload = try JSONSerialization.jsonObject(with: JSONEncoder().encode(acknowledgement))
+        receive(["type": "saved", "snapshot": payload])
+        guard draft.defaultAwakeMinutes == 42, !draft.notifications, !saving else {
+            throw verificationError("Acknowledgement lost newer edits.")
+        }
+        pendingSettings = draft
+        saving = true
+        receive(["type": "error", "command": "save", "error": "Rejected test change."])
+        guard draft == snapshot?.settings, !saving else {
+            throw verificationError("Rejected changes were not restored.")
+        }
         reset()
         guard draft.defaultAwakeMinutes == 30 else { throw verificationError("Reset did not restore defaults.") }
         // Preview buttons must never submit engine commands.
@@ -181,7 +204,8 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         if let raw = message["snapshot"],
            let data = try? JSONSerialization.data(withJSONObject: raw),
            let incoming = try? JSONDecoder().decode(EngineSnapshot.self, from: data) {
-            let replaceDraft = snapshot == nil || !dirty || type == "saved"
+            let replaceDraft = snapshot == nil || (!dirty && !saving)
+                || (type == "saved" && draft == pendingSettings)
             snapshot = incoming
             if replaceDraft { draft = incoming.settings }
         }
@@ -196,8 +220,18 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
             case "timerTime": showTimer(awake: false, date: true)
             default: showSettings()
             }
-        case "saved": saving = false; notice = "Changes saved."
-        case "error": saving = false; notice = message["error"] as? String ?? "Unable to complete the request."
+        case "saved":
+            pendingSettings = nil
+            saving = false
+            applyChanges()
+        case "error":
+            if message["command"] as? String == "save" {
+                if draft == pendingSettings, let saved = snapshot?.settings { draft = saved }
+                pendingSettings = nil
+                saving = false
+                applyChanges()
+            }
+            notice = message["error"] as? String ?? "Unable to complete the request."
         case "countdown":
             if let countdown = message["countdown"] as? [String: Any] {
                 preview = false
@@ -299,16 +333,17 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
 
     func closeTimer() { timerWindow?.orderOut(nil) }
 
-    func save() {
+    func applyChanges() {
+        guard !verification, !saving, dirty else { return }
         guard let data = try? JSONEncoder().encode(draft),
               let settings = try? JSONSerialization.jsonObject(with: data) else { return }
+        pendingSettings = draft
         saving = true
         notice = ""
         send("save", extra: ["settings": settings])
     }
 
-    func discard() { if let saved = snapshot?.settings { draft = saved }; notice = "" }
-    func reset() { draft = Preferences(); notice = "Defaults restored. Save to apply." }
+    func reset() { notice = ""; draft = Preferences() }
 
     func openData() {
         guard let path = snapshot?.settingsPath else { return }
@@ -338,7 +373,6 @@ struct SettingsView: View {
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 220)
             .searchable(text: $model.search, placement: .sidebar, prompt: "Find a setting")
-            .disabled(model.saving)
         } detail: {
             VStack(spacing: 0) {
                 Form {
@@ -347,19 +381,6 @@ struct SettingsView: View {
                 .formStyle(.grouped)
                 // New native form identity also resets scroll when changing pages.
                 .id(model.page)
-                if let page = model.page, page != .about && page != .help {
-                    HStack {
-                        Text(model.dirty ? "You have unsaved changes." : "Changes apply when you save.")
-                            .font(.callout).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Reset defaults", action: model.reset)
-                        Button("Discard", action: model.discard).disabled(!model.dirty)
-                        Button("Save changes", action: model.save).keyboardShortcut("s", modifiers: .command)
-                            .disabled(!model.dirty)
-                    }
-                    .padding(16).navigationGlass().padding(12)
-                    .disabled(model.saving)
-                }
                 if !model.notice.isEmpty {
                     Text(model.notice).font(.callout).textSelection(.enabled).padding(12)
                 }
@@ -427,6 +448,10 @@ struct SettingsView: View {
                 Button("Show preferences in Finder", action: model.openData)
             }
             Section("Session safety") { Text("Rust validates settings and owns all power actions. Closing Settings keeps Doze running. Transient sessions are never restored from disk.") }
+            Section("Reset preferences") {
+                Text("Restore default preferences immediately. Existing timers keep their deadlines.").foregroundStyle(.secondary)
+                Button("Reset defaults", action: model.reset)
+            }
         case .help:
             Section("Menu guide") {
                 explanation("Normal sleep allowed", "No Doze session is holding your Mac awake. Your macOS sleep settings apply normally. Select Keep Awake to start a session.", "moon")
@@ -464,10 +489,17 @@ struct SettingsView: View {
     }
 
     private func number(_ title: String, _ binding: Binding<Int>, _ range: ClosedRange<Int>) -> some View {
-        LabeledContent(title) {
-            TextField(title, value: binding, format: .number).labelsHidden().frame(width: 90)
+        let validated = Binding<Int>(get: { binding.wrappedValue }, set: { value in
+            guard range.contains(value) else {
+                model.notice = "Choose a value between \(range.lowerBound) and \(range.upperBound)."
+                return
+            }
+            binding.wrappedValue = value
+        })
+        return LabeledContent(title) {
+            TextField(title, value: validated, format: .number).labelsHidden().frame(width: 90)
                 .accessibilityLabel(title)
-            Stepper(title, value: binding, in: range).labelsHidden().accessibilityLabel(title)
+            Stepper(title, value: validated, in: range).labelsHidden().accessibilityLabel(title)
         }
     }
 

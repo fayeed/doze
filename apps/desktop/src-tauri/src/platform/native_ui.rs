@@ -176,8 +176,12 @@ pub(super) fn send(open: Value, requests: Sender<Request>) -> Result<(), String>
                     Ok(_) => {}
                 }
                 let result = reply_to_ui(&line, &requests);
-                let value =
-                    result.unwrap_or_else(|error| json!({ "type": "error", "error": error }));
+                let value = result.unwrap_or_else(|error| {
+                    let command = serde_json::from_str::<UiRequest>(&line)
+                        .ok()
+                        .map(|request| request.command);
+                    json!({ "type": "error", "command": command, "error": error })
+                });
                 if replies.send(value).is_err() {
                     break;
                 }

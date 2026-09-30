@@ -14,11 +14,12 @@ public sealed partial class MainWindow : Window
 {
     private readonly EngineBridge bridge;
     private JsonObject snapshot;
-    private Preferences draft;
-    private Preferences saved;
+    private readonly LiveSettings preferences;
+    private Preferences draft => preferences.Draft;
     private string page = "Overview";
-    private bool saving;
-    private bool dirty;
+    private bool saving => preferences.IsApplying;
+    private bool closeAfterApply;
+    private readonly bool verification = Environment.GetCommandLineArgs().Contains("--verify-ui");
     private readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromSeconds(5) };
     private TextBlock? overviewStatus;
     private TextBlock? overviewTimer;
@@ -36,8 +37,7 @@ public sealed partial class MainWindow : Window
     {
         this.bridge = bridge;
         snapshot = initial["snapshot"]!.AsObject();
-        saved = ReadPreferences();
-        draft = saved with { };
+        preferences = new LiveSettings(ReadPreferences());
         InitializeComponent();
         Title = "Doze Settings";
         AppWindow.IsShownInSwitchers = true;
@@ -46,6 +46,13 @@ public sealed partial class MainWindow : Window
         SetTitleBar(TitleBar);
         SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
         AppWindow.Resize(new SizeInt32(1120, 780));
+        AppWindow.Closing += (window, args) =>
+        {
+            if (!preferences.HasChanges || verification) return;
+            args.Cancel = true;
+            closeAfterApply = true;
+            _ = ApplySettingsAsync();
+        };
         SelectPage(initial["view"]?.GetValue<string>() == "about" ? "About Doze" : "Overview");
         refresh.Tick += async (_, _) =>
         {
@@ -64,8 +71,15 @@ public sealed partial class MainWindow : Window
         {
             if (message["error"] is JsonValue error)
             {
-                saving = false;
-                SetBusy(false);
+                if (message["command"]?.GetValue<string>() == "save")
+                {
+                    preferences.Reject();
+                    closeAfterApply = false;
+                    var offset = PageScroll.VerticalOffset;
+                    ShowPage();
+                    PageScroll.ChangeView(null, offset, null, true);
+                    _ = ApplySettingsAsync();
+                }
                 Notify("Couldn't apply changes", error.GetValue<string>(), InfoBarSeverity.Error);
                 return;
             }
@@ -79,18 +93,14 @@ public sealed partial class MainWindow : Window
                 }
                 if (message["type"]?.GetValue<string>() == "saved")
                 {
-                    saved = ReadPreferences();
-                    draft = saved with { };
-                    dirty = false;
-                    saving = false;
-                    SetBusy(false);
-                    ShowPage();
-                    Notify("Settings saved", "Your preferences are stored on this computer.", InfoBarSeverity.Success);
+                    preferences.Confirm(ReadPreferences());
+                    _ = ApplySettingsAsync();
+                    if (closeAfterApply && !preferences.HasChanges) Close();
                 }
             }
             if (message["type"]?.GetValue<string>() == "open")
             {
-                if (!dirty) { saved = ReadPreferences(); draft = saved with { }; }
+                preferences.Refresh(ReadPreferences());
                 SelectPage(message["view"]?.GetValue<string>() == "about" ? "About Doze" : page);
                 Activate();
             }
@@ -101,6 +111,7 @@ public sealed partial class MainWindow : Window
     // requesting any engine operation. CI invokes this against inherited test pipes.
     public void VerifyPages()
     {
+        LiveSettings.Verify();
         var windowBackdrop = SystemBackdrop;
         foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
         {
@@ -182,8 +193,6 @@ public sealed partial class MainWindow : Window
         Cards.Children.Clear();
         PageTitle.Text = page;
         Notice.IsOpen = false;
-        Footer.Visibility = page == "About Doze" ? Visibility.Collapsed : Visibility.Visible;
-        SaveHint.Text = dirty ? "You have unsaved changes." : "Changes apply when you save.";
         switch (page)
         {
             case "Overview": Overview(); break;
@@ -223,7 +232,7 @@ public sealed partial class MainWindow : Window
     private void SessionDefaults()
     {
         PageDescription.Text = "Defaults for sessions started from the tray. Existing timers keep their deadlines.";
-        Toggle("Allow display sleep", "Let Windows turn off the screen while Doze keeps the computer awake. Applies immediately after saving.", "\uE7F4", draft.AllowDisplaySleep, value => draft.AllowDisplaySleep = value);
+        Toggle("Allow display sleep", "Let Windows turn off the screen while Doze keeps the computer awake. Changes apply immediately.", "\uE7F4", draft.AllowDisplaySleep, value => draft.AllowDisplaySleep = value);
         Number("Keep Awake duration", "Default length in minutes. Between 1 minute and 7 days.", "\uE708", draft.DefaultAwakeMinutes, 1, 10080, value => draft.DefaultAwakeMinutes = value);
         Number("Power Timer duration", "Default time in minutes before the final countdown begins.", "\uE823", draft.DefaultTimerMinutes, 1, 10080, value => draft.DefaultTimerMinutes = value);
         Action("Timer action", "The action performed after a timer and its final countdown finish.", draft.DefaultAction, value => draft.DefaultAction = value);
@@ -256,7 +265,7 @@ public sealed partial class MainWindow : Window
         Card("Data folder", snapshot["settingsPath"]!.GetValue<string>(), "\uE8B7", ActionButton("Open folder", OpenData));
         Card("Available power actions", string.Join(" · ", Actions.Select(action => ActionNames.GetValueOrDefault(action, action))), "\uE7E8");
         Card("Audio monitoring", Capability("audioSupported") ? "Available. Output levels are observed; audio is never recorded." : "Unavailable on this platform.", "\uE995");
-        Card("Reset preferences", "Reset fills in defaults for review. Existing preferences change only after Save; sessions are not restored from disk.", "\uE777", ActionButton("Reset defaults", () => { ResetDraft(); return Task.CompletedTask; }));
+        Card("Reset preferences", "Restore default preferences immediately. Existing timers keep their deadlines.", "\uE777", ActionButton("Reset defaults", () => { ResetDraft(); return Task.CompletedTask; }));
     }
 
     private void About()
@@ -297,7 +306,11 @@ public sealed partial class MainWindow : Window
         return descriptionText;
     }
 
-    private void Changed() { dirty = true; SaveHint.Text = "You have unsaved changes."; Notice.IsOpen = false; }
+    private void Changed()
+    {
+        Notice.IsOpen = false;
+        _ = ApplySettingsAsync();
+    }
 
     private void Toggle(string title, string description, string glyph, bool value, Action<bool> apply, bool enabled = true)
     {
@@ -311,7 +324,17 @@ public sealed partial class MainWindow : Window
     {
         var number = new NumberBox { Value = value, Minimum = minimum, Maximum = maximum, SmallChange = 1, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 160 };
         AutomationProperties.SetName(number, title);
-        number.ValueChanged += (_, args) => { apply(double.IsFinite(args.NewValue) ? (int)args.NewValue : 0); Changed(); };
+        number.ValueChanged += (_, args) =>
+        {
+            if (!double.IsFinite(args.NewValue) || args.NewValue < minimum || args.NewValue > maximum || args.NewValue != Math.Truncate(args.NewValue))
+            {
+                number.Value = args.OldValue;
+                Notify("Invalid value", $"Choose a whole number between {minimum} and {maximum}.", InfoBarSeverity.Error);
+                return;
+            }
+            apply((int)args.NewValue);
+            Changed();
+        };
         Card(title, description, glyph, number);
     }
 
@@ -340,19 +363,28 @@ public sealed partial class MainWindow : Window
         return Task.CompletedTask;
     }
 
-    private async void Save(object sender, RoutedEventArgs args)
+    private async Task ApplySettingsAsync()
     {
-        if (saving) return;
-        saving = true;
-        SetBusy(true);
-        try { await bridge.SendAsync("save", draft); }
-        catch (Exception error) { saving = false; SetBusy(false); Notify("Couldn't save settings", error.Message, InfoBarSeverity.Error); }
+        if (verification) return;
+        var change = preferences.BeginApply();
+        if (change is null) return;
+        try { await bridge.SendAsync("save", change); }
+        catch (Exception error)
+        {
+            preferences.Reject();
+            ShowPage();
+            Notify("Couldn't apply settings", error.Message, InfoBarSeverity.Error);
+        }
     }
 
-    private void SetBusy(bool busy) { SaveButton.IsEnabled = ResetButton.IsEnabled = DiscardButton.IsEnabled = !busy; Navigation.IsEnabled = !busy; }
-    private void ResetDraft() { draft = new Preferences(); if (!Actions.Contains("sleep")) draft.DefaultAction = draft.PlaybackAction = Actions.First(); dirty = true; ShowPage(); }
-    private void Reset(object sender, RoutedEventArgs args) => ResetDraft();
-    private void Discard(object sender, RoutedEventArgs args) { draft = saved with { }; dirty = false; ShowPage(); }
+    private void ResetDraft()
+    {
+        var defaults = new Preferences();
+        if (!Actions.Contains("sleep")) defaults.DefaultAction = defaults.PlaybackAction = Actions.First();
+        preferences.Reset(defaults);
+        ShowPage();
+        Changed();
+    }
     private void Notify(string title, string message, InfoBarSeverity severity) { Notice.Title = title; Notice.Message = message; Notice.Severity = severity; Notice.IsOpen = true; }
     private void SearchChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args) { if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput) sender.ItemsSource = Pages.Where(name => name.Contains(sender.Text, StringComparison.OrdinalIgnoreCase)).ToArray(); }
     private void SearchChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args) => SelectPage((string)args.SelectedItem);
