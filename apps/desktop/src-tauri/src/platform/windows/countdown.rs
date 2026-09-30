@@ -247,6 +247,9 @@ unsafe extern "system" fn dialog_proc(
         );
         return 1;
     }
+    if !matches!(message, WM_TIMER | WM_CLOSE | WM_COMMAND) {
+        return 0;
+    }
     let context = GetWindowLongPtrW(hwnd, USER_DATA) as *mut Dialog<'_>;
     if context.is_null() {
         return 0;

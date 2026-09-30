@@ -36,6 +36,7 @@ const MINUTES: u16 = 120;
 const DATE: u16 = 121;
 const TIME: u16 = 122;
 const HELP_TEXT: u16 = 123;
+const ABOUT_VERSION: u16 = 124;
 // Each window owns a native message loop. The tray remains responsive while settings are open.
 static ACTIVE_DIALOGS: [AtomicIsize; 4] = [const { AtomicIsize::new(0) }; 4];
 
@@ -117,9 +118,12 @@ fn template(view: DialogView) -> Vec<u32> {
         form.button(2, "Close", 286, 216, true);
         form.finish()
     } else if matches!(view, DialogView::About) {
-        let mut form = Template::new("About Doze", 360, 240);
-        form.read_only_text(HELP_TEXT, [12, 12, 336, 192]);
-        form.button(2, "Close", 286, 216, true);
+        let mut form = Template::new("About Doze", 360, 282);
+        form.label("Doze", 12, 12, 336);
+        form.label_with_id(ABOUT_VERSION, "", 12, 32, 336);
+        form.label("Your computer knows when it's bedtime.", 12, 52, 336);
+        form.read_only_text(HELP_TEXT, [12, 74, 336, 170]);
+        form.button(2, "Close", 286, 254, true);
         form.finish()
     } else if matches!(view, DialogView::Settings) {
         settings_ui::template()
@@ -183,11 +187,11 @@ unsafe extern "system" fn dialog_proc(
         let _ = EndDialog(hwnd, 0);
         return 1;
     }
-    let context = GetWindowLongPtrW(hwnd, DIALOG_USER_OFFSET) as *mut Dialog;
+    let context = GetWindowLongPtrW(hwnd, DIALOG_USER_OFFSET) as *const Dialog;
     if context.is_null() {
         return 0;
     }
-    let dialog = &mut *context;
+    let dialog = &*context;
     if matches!(dialog.snapshot.view, DialogView::Settings)
         && (id == settings_ui::PREVIEW || id == settings_ui::OPEN_DATA)
     {
@@ -249,6 +253,14 @@ fn wide(text: &str) -> Vec<u16> {
 
 unsafe fn initialize(hwnd: HWND, snapshot: &Snapshot) {
     if matches!(snapshot.view, DialogView::Help | DialogView::About) {
+        if matches!(snapshot.view, DialogView::About) {
+            let version = wide(&format!(
+                "Version {} · Windows {}",
+                env!("CARGO_PKG_VERSION"),
+                std::env::consts::ARCH
+            ));
+            let _ = SetDlgItemTextW(hwnd, ABOUT_VERSION as i32, PCWSTR(version.as_ptr()));
+        }
         let content = if matches!(snapshot.view, DialogView::About) {
             super::help::about(snapshot)
         } else {

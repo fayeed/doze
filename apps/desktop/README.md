@@ -31,8 +31,12 @@ The clickable status rows open native help. “Normal sleep allowed” means Doz
 - Preview countdown: opens a 60-second demonstration of the warning window for the selected timer action. Its buttons only affect the preview and cannot trigger a power action. A real countdown takes priority over the preview.
 - An explicit Sleep Timer takes precedence over After Playback. Manual Keep Awake blocks playback-triggered actions. An explicit timer can end a manual keep-awake session.
 - Defaults: 60s silence, 300s idle, 300s countdown, Sleep. Unsupported actions are disabled; saved defaults are normalized to supported actions.
+- Settings: native tabs for General, Session Defaults, After Playback, Notifications, and Advanced, with explanations, supported-action selectors, diagnostics, and a data-folder shortcut. Save applies edits; Cancel discards them. Reset fills in defaults and applies them only after Save.
+- Quick Settings: saved checkboxes for display sleep, notifications, launch at sign-in, starting in the tray, and diagnostic logging, plus default awake/timer durations. Changes persist immediately. Duration defaults apply to new sessions; unrelated preferences preserve existing timers and playback state.
+- About Doze: native version/platform information, product purpose, privacy, current-run status, local data location, and acknowledgements.
+- Allow display sleep: keeps the system awake while allowing Windows to turn off the screen. It updates an active power request immediately. Defaults are 30 minutes for both awake and timer shortcuts.
 
-Only settings persist, in Tauri's per-user configuration directory (`settings.json`). Writes use a flushed temporary file and atomic rename. Startup and local error logging are opt-in. Logs record changed errors and are bounded to roughly 256 KiB. Reset restores defaults and disables launch at startup.
+Only settings persist, in Tauri's per-user configuration directory (`settings.json`). Writes use a flushed temporary file and atomic rename. Startup and local error logging are opt-in. Logs record changed errors and are bounded to roughly 256 KiB. Saving reset defaults disables launch at startup. Older settings files receive defaults for newly added preferences.
 
 Sessions and power actions never restore after restart. Windows suspend/resume events clear transient sessions. Wall-clock discontinuities or excessive scheduler delays clear them too. Specific times become monotonic durations when scheduled.
 
@@ -44,6 +48,8 @@ Sessions and power actions never restore after restart. Windows suspend/resume e
 | `src-tauri/src/state/` | Single-owner runtime, validated operations, settings persistence |
 | `src-tauri/src/platform/` | PowerManager, AudioMonitor, IdleMonitor, NotificationManager adapters |
 | `src-tauri/src/tray.rs` | Native tray menus, checked states, status and countdown controls |
+| `src-tauri/src/quick_settings.rs` | Native shortcuts to saved preferences and default durations |
+| `src-tauri/src/platform/windows/settings_ui.rs` | Native tabbed preferences, validation, diagnostics, and draft reset |
 
 One channel-driven worker owns sessions, COM interfaces, and power requests. Native dialogs submit validated operations through the worker channel. The hidden app without audio monitoring wakes at most hourly or at a deadline; lifecycle events and commands wake it immediately. Audio meters and countdowns use one-second observations. Tray labels update when the worker wakes or the tray is clicked. Endpoint changes use OS callbacks. No React, HTML, CSS, JavaScript frontend, webview window, or browser interval is used. Node is only needed for development tooling.
 
@@ -52,7 +58,7 @@ One channel-driven worker owns sessions, COM interfaces, and power requests. Nat
 | Feature | API |
 | --- | --- |
 | Settings / custom timers | Win32 modal dialogs, standard controls and native date/time pickers |
-| Keep Awake | `SetThreadExecutionState` with continuous system/display requirements; released on the same worker thread |
+| Keep Awake | `SetThreadExecutionState` with a continuous system requirement and optional display requirement; released on the same worker thread |
 | Sleep / Hibernate | `GetPwrCapabilities`, `SetSuspendState` |
 | Shutdown | `InitiateSystemShutdownExW`; temporary `SeShutdownPrivilege`, restored after execution; no forced app closure |
 | Lock | `LockWorkStation` |

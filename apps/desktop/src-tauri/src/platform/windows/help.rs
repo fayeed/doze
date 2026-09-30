@@ -3,6 +3,11 @@ use crate::state::Snapshot;
 
 pub(super) fn text(snapshot: &Snapshot) -> String {
     let settings = &snapshot.settings;
+    let display = if settings.allow_display_sleep {
+        "The screen may sleep while the system stays awake."
+    } else {
+        "The screen stays awake too."
+    };
     format!(
         "{status}\n\n\
          STATUS AND GREY OPTIONS\n\
@@ -10,7 +15,7 @@ pub(super) fn text(snapshot: &Snapshot) -> String {
          The top two menu rows report the current state. Click either to open this help.\n\
          Grey options are unavailable right now. Stop needs an active session; Extend needs a timed awake session; Cancel and Snooze need a running countdown. Grey power actions are not supported on this computer.\n\n\
          KEEP AWAKE\n\
-         Choose how long to prevent automatic sleep and keep the display awake. Custom duration accepts minutes; a specific time accepts a local date and time. Indefinitely lasts until you stop it or quit Doze.\n\
+         Choose how long to prevent automatic system sleep. {display} Default starts a {awake_minutes}-minute session. Custom duration accepts minutes; a specific time accepts a local date and time. Indefinitely lasts until you stop it or quit Doze.\n\
          Stop keeping awake ends manual and audio-based awake sessions. Extend adds 15 minutes to a timed awake session.\n\n\
          KEEP AWAKE WHILE AUDIO PLAYS\n\
          Check this to keep the computer awake during audible playback and short pauses. It releases the awake request after {silence} seconds of silence. A checkmark means enabled; it may be waiting for audio.\n\n\
@@ -28,8 +33,10 @@ pub(super) fn text(snapshot: &Snapshot) -> String {
          COUNTDOWN, CANCEL AND SNOOZE\n\
          The native warning window shows the action and time remaining. Cancel, Escape, or closing the warning cancels the action. Snooze adds 15 minutes to the countdown.\n\
          Preview countdown opens a demonstration. Its buttons only affect the preview and cannot trigger a power action.\n\n\
-         SETTINGS AND QUIT\n\
-         Settings changes launch at sign-in, starting in the tray, notifications, default actions, silence/idle/countdown durations, and local logging.\n\
+         QUICK SETTINGS\n\
+         Checkmarks show saved preferences, rather than whether a session is running. Changes save immediately. Default durations apply to new sessions. Display sleep changes take effect on the current awake request; notification changes apply to future notifications.\n\n\
+         SETTINGS, ABOUT AND QUIT\n\
+         Settings has General, Session Defaults, After Playback, Notifications and Advanced tabs. Save applies changes; Cancel discards edits. Reset all fills in defaults for review, then Save applies them. Advanced shows local diagnostics and opens your data folder. About shows version, privacy information and acknowledgements.\n\
          Quit stops Doze and its sessions. Windows resumes its normal power settings. Sessions are also cleared after a restart or suspend/resume.",
         status = crate::tray::status_text(snapshot),
         silence = settings.silence_seconds,
@@ -37,13 +44,15 @@ pub(super) fn text(snapshot: &Snapshot) -> String {
         countdown = settings.countdown_seconds,
         timer_action = snapshot.selected_action.label(),
         playback_action = settings.playback_action.label(),
+        display = display,
+        awake_minutes = settings.default_awake_minutes,
     )
 }
 
 pub(super) fn about(snapshot: &Snapshot) -> String {
     format!(
-        "Doze\nVersion {} · Windows {}\n\nYour computer knows when it's bedtime.\n\nKeep your computer awake when it should be awake, and let it sleep when it should sleep. Doze lives in the tray, with native settings, timers and countdown warnings.\n\nLOCAL AND PRIVATE\nNo account, cloud service, ads, subscriptions or telemetry. Audio monitoring observes output levels; it does not record your audio. Preferences and optional error logs stay on this computer.\n\nTHIS RUN\nRunning for {} minutes. {}\n\nACKNOWLEDGEMENTS\nBuilt with Rust and Tauri. Windows API bindings, native power management, Core Audio and Windows notifications provide the system integration.\n\nDATA\nSettings: {}\n\nUse 'What do these options mean?' in the tray for feature explanations. Advanced Settings provides diagnostics and access to the data folder.",
-        env!("CARGO_PKG_VERSION"), std::env::consts::ARCH, snapshot.engine.now / 60,
+        "Keep your computer awake when it should be awake, and let it sleep when it should sleep. Doze lives in the tray, with native settings, timers and countdown warnings.\n\nLOCAL AND PRIVATE\nNo account, cloud service, ads, subscriptions or telemetry. Audio monitoring observes output levels; it does not record your audio. Preferences and optional error logs stay on this computer.\n\nTHIS RUN\nRunning for {} minutes. {}\n\nACKNOWLEDGEMENTS\nBuilt with Rust and Tauri. Windows API bindings, native power management, Core Audio and Windows notifications provide the system integration.\n\nDATA\nSettings: {}\n\nUse 'What do these options mean?' in the tray for feature explanations. Advanced Settings provides diagnostics and access to the data folder.",
+        snapshot.engine.now / 60,
         crate::tray::status_text(snapshot), snapshot.settings_path.display(),
     )
 }
