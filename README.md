@@ -20,7 +20,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Next.js site and the Tauri desktop app. Open the website at the URL printed by Next.js. Desktop development starts a tray app and requires the platform prerequisites above. Click the Doze tray icon to open its native system menu. Settings and custom timers use native Windows dialogs.
+This starts the Next.js site and the Tauri desktop app. Open the website at the URL printed by Next.js. Desktop development starts a tray app and requires the platform prerequisites above. Click the Doze tray icon to open its native system menu. Settings and About use native WinUI 3; custom timers use native Windows dialogs.
 
 To run one app at a time:
 
@@ -44,7 +44,7 @@ pnpm dev:desktop
 
 ## Workspace
 
-- `apps/desktop` — native tray menus and Windows dialogs, Tauri 2, and Rust
+- `apps/desktop` — native tray menus, WinUI 3 settings, Tauri 2, and Rust
 - `apps/web` — Next.js App Router placeholder
 - `packages/brand` — shared product name, domain, and tagline
 - `packages/config` — shared TypeScript compiler options

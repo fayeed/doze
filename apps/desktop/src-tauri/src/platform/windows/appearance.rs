@@ -1,14 +1,11 @@
-//! Documented DWM materials around a solid surface for native form controls.
+//! Full-window DWM materials with alpha-correct native label and checkbox painting.
 use windows::{
     core::w,
     Win32::{
         Foundation::{HANDLE, HWND, LPARAM, RECT, WPARAM},
         Graphics::{
             Dwm::*,
-            Gdi::{
-                FillRect, GetStockObject, GetSysColorBrush, InvalidateRect, BLACK_BRUSH,
-                COLOR_3DFACE, HBRUSH, HDC,
-            },
+            Gdi::{FillRect, GetStockObject, InvalidateRect, BLACK_BRUSH, HBRUSH, HDC},
         },
         UI::{
             Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW},
@@ -51,19 +48,13 @@ pub(super) unsafe fn apply(hwnd: HWND, surface: Surface) {
     };
     let supported = attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop);
     let _ = attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
-    let mut inset = RECT {
-        right: 4,
-        bottom: 4,
-        ..Default::default()
-    };
-    let _ = MapDialogRect(hwnd, &mut inset);
     let enabled = supported && !accessible;
     let margins = if enabled {
         MARGINS {
-            cxLeftWidth: inset.right,
-            cxRightWidth: inset.right,
-            cyTopHeight: inset.bottom,
-            cyBottomHeight: inset.bottom,
+            cxLeftWidth: -1,
+            cxRightWidth: -1,
+            cyTopHeight: -1,
+            cyBottomHeight: -1,
         }
     } else {
         MARGINS::default()
@@ -72,6 +63,7 @@ pub(super) unsafe fn apply(hwnd: HWND, surface: Surface) {
         // A small integer marker, never a pointer to owned memory.
         let _ = SetPropW(hwnd, MATERIAL, HANDLE(std::ptr::dangling_mut()));
     }
+    super::glass_controls::install(hwnd);
     let _ = InvalidateRect(hwnd, None, true);
 }
 
@@ -90,7 +82,7 @@ pub(super) unsafe fn message(
     hwnd: HWND,
     message: u32,
     wparam: WPARAM,
-    _: LPARAM,
+    lparam: LPARAM,
     surface: Surface,
 ) -> Option<isize> {
     match message {
@@ -102,6 +94,13 @@ pub(super) unsafe fn message(
             let _ = RemovePropW(hwnd, MATERIAL);
             None
         }
+        WM_CTLCOLORSTATIC if !GetPropW(hwnd, MATERIAL).is_invalid() => {
+            let control = HWND(lparam.0 as *mut _);
+            if super::glass_controls::is_composited(control) {
+                return Some(GetStockObject(BLACK_BRUSH).0 as isize);
+            }
+            None
+        }
         WM_ERASEBKGND if !GetPropW(hwnd, MATERIAL).is_invalid() => {
             let dc = HDC(wparam.0 as *mut _);
             let mut bounds = RECT::default();
@@ -110,21 +109,12 @@ pub(super) unsafe fn message(
             }
             // Black pixels in the extended frame reveal the compositor's real material.
             FillRect(dc, &bounds, HBRUSH(GetStockObject(BLACK_BRUSH).0));
-            let mut inset = RECT {
-                right: 4,
-                bottom: 4,
-                ..Default::default()
-            };
-            let _ = MapDialogRect(hwnd, &mut inset);
-            bounds.left += inset.right;
-            bounds.right -= inset.right;
-            bounds.top += inset.bottom;
-            bounds.bottom -= inset.bottom;
-            // Standard GDI controls stay on an opaque, system-colored content surface.
-            // Extending glass behind their text would break contrast and alpha rendering.
-            FillRect(dc, &bounds, GetSysColorBrush(COLOR_3DFACE));
             Some(1)
         }
         _ => None,
     }
+}
+
+pub(super) unsafe fn enabled(hwnd: HWND) -> bool {
+    !GetPropW(hwnd, MATERIAL).is_invalid()
 }

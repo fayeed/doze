@@ -1,8 +1,8 @@
 //! Standard Windows dialog templates. Windows owns layout scaling and control rendering.
 use windows::Win32::UI::WindowsAndMessaging::{
-    BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, CBS_DROPDOWNLIST, DS_CENTER, DS_MODALFRAME, DS_SETFONT,
-    ES_AUTOVSCROLL, ES_MULTILINE, ES_NUMBER, ES_READONLY, WS_BORDER, WS_CAPTION, WS_CHILD,
-    WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    BS_DEFPUSHBUTTON, DS_CENTER, DS_MODALFRAME, DS_SETFONT, ES_AUTOVSCROLL, ES_MULTILINE,
+    ES_NUMBER, ES_READONLY, WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_POPUP, WS_SYSMENU,
+    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 pub(super) struct Template {
@@ -18,6 +18,7 @@ impl Template {
         };
         template.dword(
             WS_POPUP.0
+                | WS_CLIPCHILDREN.0
                 | WS_CAPTION.0
                 | WS_SYSMENU.0
                 | DS_MODALFRAME as u32
@@ -73,13 +74,14 @@ impl Template {
     pub fn label_with_id(&mut self, id: u16, text: &str, x: i16, y: i16, width: i16) {
         self.control(id, "STATIC", text, [x, y, width, 12], 0);
     }
+    #[cfg(test)]
     pub fn checkbox_at(&mut self, id: u16, text: &str, bounds: [i16; 4]) {
         self.control(
             id,
             "BUTTON",
             text,
             bounds,
-            WS_TABSTOP.0 | BS_AUTOCHECKBOX as u32,
+            WS_TABSTOP.0 | windows::Win32::UI::WindowsAndMessaging::BS_AUTOCHECKBOX as u32,
         );
     }
     pub fn read_only_text(&mut self, id: u16, bounds: [i16; 4]) {
@@ -105,15 +107,6 @@ impl Template {
             WS_TABSTOP.0 | WS_BORDER.0 | ES_NUMBER as u32,
         );
     }
-    pub fn combo_at(&mut self, id: u16, bounds: [i16; 4]) {
-        self.control(
-            id,
-            "COMBOBOX",
-            "",
-            bounds,
-            WS_TABSTOP.0 | WS_VSCROLL.0 | CBS_DROPDOWNLIST as u32,
-        );
-    }
     pub fn date_time(&mut self, id: u16, x: i16, y: i16, width: i16, time: bool) {
         self.control(
             id,
@@ -122,9 +115,6 @@ impl Template {
             [x, y, width, 16],
             WS_TABSTOP.0 | if time { 9 } else { 0 },
         );
-    }
-    pub fn tabs(&mut self, id: u16, bounds: [i16; 4]) {
-        self.control(id, "SysTabControl32", "", bounds, WS_TABSTOP.0);
     }
     pub fn button(&mut self, id: u16, text: &str, x: i16, y: i16, default: bool) {
         self.control(

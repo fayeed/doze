@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "identifier": "app.getdoze.desktop",
   "build": {
+    "beforeDevCommand": "node scripts/build-native.mjs",
+    "beforeBuildCommand": "node scripts/build-native.mjs",
     "frontendDist": "../resources"
   },
   "app": {

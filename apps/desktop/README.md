@@ -15,9 +15,11 @@ pnpm --filter @doze/desktop test
 pnpm build:desktop
 ```
 
-Requires Rust 1.88+, Microsoft C++ desktop build tools on Windows. The app starts in the tray by default. Left-click or right-click opens the native system menu. Settings, custom durations, and specific dates/times use standard Windows dialogs. Closing a dialog keeps sessions running. Quit releases the native power request.
+Requires Rust 1.88+, Microsoft C++ desktop build tools, and a .NET 8 SDK on Windows. The native build script also recognizes a workspace-local SDK at `.tools/dotnet/`. The app starts in the tray by default. Left-click or right-click opens the native system menu. Settings and About use WinUI 3; custom durations and specific dates/times use native Windows dialogs. Closing a dialog keeps sessions running. Quit releases the native power request.
 
 Build output is in `src-tauri/target/release/`: `doze.exe`, `bundle/msi/`, and `bundle/nsis/`. Installers are unsigned development artifacts.
+
+`pnpm --filter @doze/desktop native:build` publishes the self-contained WinUI companion. `pnpm --filter @doze/desktop native:test` constructs all seven pages in light/dark modes and verifies draft preservation/reset without showing a window or writing preferences. Tauri dev/build hooks publish it automatically. Installers include the .NET and Windows App SDK runtimes. An unpackaged distribution must keep the `windows-ui` folder beside `doze.exe`; the EXE alone is no longer a complete distribution.
 
 ## Behavior
 
@@ -33,9 +35,9 @@ The tray uses native icon menu items with antialiased line glyphs, short live st
 - Preview countdown: opens a 60-second demonstration of the warning window for the selected timer action. Its buttons only affect the preview and cannot trigger a power action. A real countdown takes priority over the preview.
 - An explicit Sleep Timer takes precedence over After Playback. Manual Keep Awake blocks playback-triggered actions. An explicit timer can end a manual keep-awake session.
 - Defaults: 60s silence, 300s idle, 300s countdown, Sleep. Unsupported actions are disabled; saved defaults are normalized to supported actions.
-- Settings: native tabs for General, Session Defaults, After Playback, Notifications, and Advanced, with explanations, supported-action selectors, diagnostics, and a data-folder shortcut. Save applies edits; Cancel discards them. Reset fills in defaults and applies them only after Save.
+- Settings: a native WinUI sidebar, search, and cards for Overview, General, Session Defaults, After Playback, Notifications, Advanced, and About. ToggleSwitch, NumberBox, and ComboBox controls include explanations and supported-action selectors. Save applies edits; Discard reverts them. Reset fills in defaults and applies them only after Save. Overview refreshes live status every five seconds while visible.
 - Quick Settings: saved checkboxes for display sleep, notifications, launch at sign-in, starting in the tray, and diagnostic logging, plus default awake/timer durations. Changes persist immediately. Duration defaults apply to new sessions; unrelated preferences preserve existing timers and playback state.
-- About Doze: native version/platform information, product purpose, privacy, current-run status, local data location, and acknowledgements.
+- About Doze: native version/platform information, product purpose, privacy, local data location, and acknowledgements in the same WinUI window.
 - Allow display sleep: keeps the system awake while allowing Windows to turn off the screen. It updates an active power request immediately. Defaults are 30 minutes for both awake and timer shortcuts.
 
 Only settings persist, in Tauri's per-user configuration directory (`settings.json`). Writes use a flushed temporary file and atomic rename. Startup and local error logging are opt-in. Logs record changed errors and are bounded to roughly 256 KiB. Saving reset defaults disables launch at startup. Older settings files receive defaults for newly added preferences.
@@ -53,13 +55,14 @@ Sessions and power actions never restore after restart. Windows suspend/resume e
 | `src-tauri/src/quick_settings.rs` | Native shortcuts to saved preferences and default durations |
 | `src-tauri/src/platform/windows/settings_ui.rs` | Native tabbed preferences, validation, diagnostics, and draft reset |
 
-One channel-driven worker owns sessions, COM interfaces, and power requests. Native dialogs submit validated operations through the worker channel. The hidden app without audio monitoring wakes at most hourly or at a deadline; lifecycle events and commands wake it immediately. Audio meters and countdowns use one-second observations. Tray labels update when the worker wakes or the tray is clicked. Endpoint changes use OS callbacks. No React, HTML, CSS, JavaScript frontend, webview window, or browser interval is used. Node is only needed for development tooling.
+One channel-driven worker owns sessions, COM interfaces, and power requests. Native windows submit validated operations through the worker channel. The WinUI companion uses private inherited standard-I/O pipes; it has no power-action implementation or network endpoint. The hidden app without audio monitoring wakes at most hourly or at a deadline; lifecycle events and commands wake it immediately. Audio meters and countdowns use one-second observations. Tray labels update when the worker wakes or the tray is clicked. Endpoint changes use OS callbacks. No React, HTML, CSS, JavaScript frontend, webview window, or browser interval is used. Node is only needed for development tooling.
 
 ## Native Windows APIs
 
 | Feature | API |
 | --- | --- |
-| Settings / custom timers | Win32 modal dialogs, standard controls and native date/time pickers |
+| Settings / About | WinUI 3 companion; Rust owns validation and persistence |
+| Custom timers / countdown | Win32 native dialogs and date/time pickers; alpha-correct themed text over system glass |
 | Keep Awake | `SetThreadExecutionState` with a continuous system requirement and optional display requirement; released on the same worker thread |
 | Sleep / Hibernate | `GetPwrCapabilities`, `SetSuspendState` |
 | Shutdown | `InitiateSystemShutdownExW`; temporary `SeShutdownPrivilege`, restored after execution; no forced app closure |
@@ -77,7 +80,7 @@ Audio meters observe all active render endpoints, including non-default devices.
 
 ## macOS status
 
-Appearance follows each platform's native design language. On Windows 11 build 22621+, Settings, About, Help, and custom timer dialogs request DWM Mica; the temporary countdown requests Desktop Acrylic. Windows owns the material tint and rounded frame. Standard form controls sit on a solid system-colored surface, with glass in the title bar and surrounding inset, so their text remains readable. Unsupported Windows versions fall back to ordinary dialogs. High contrast disables the material, and system appearance changes refresh open windows. The system tray menu remains OS-rendered. This is an initial native material treatment, not a WinUI 3 control migration; visual and DPI verification is still required.
+Windows Settings uses WinUI 3 with a Mica Alt backdrop, native sidebar navigation, search, cards, toggles, number fields, and action selectors. About uses Desktop Acrylic in the same native window. Theme resources follow light/dark and accessibility settings. Custom timer and countdown windows extend DWM glass across their client area and paint labels with composited alpha, rather than covering the material with grey rectangles. Standard editable fields remain opaque for readability. The system tray menu remains OS-rendered.
 
 The macOS appearance target is AppKit's standard controls and native Liquid Glass (`NSGlassEffectView`, macOS 26+), with `NSVisualEffectView` vibrancy on older releases and solid surfaces when accessibility settings require them. This target is not implemented yet: there are currently no macOS settings or countdown windows to style. It requires building and verifying the native AppKit adapter on a Mac. References: [Windows materials](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type), [Apple's Liquid Glass guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
 

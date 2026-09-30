@@ -37,7 +37,7 @@ pub(super) fn text(snapshot: &Snapshot) -> String {
          QUICK SETTINGS\n\
          Checkmarks show saved preferences, rather than whether a session is running. Changes save immediately. Default durations apply to new sessions. Display sleep changes take effect on the current awake request; notification changes apply to future notifications.\n\n\
          SETTINGS, ABOUT AND QUIT\n\
-         Settings has General, Session Defaults, After Playback, Notifications and Advanced tabs. Save applies changes; Cancel discards edits. Reset all fills in defaults for review, then Save applies them. Advanced shows local diagnostics and opens your data folder. About shows version, privacy information and acknowledgements.\n\
+         Settings has a native sidebar for Overview, General, Session Defaults, After Playback, Notifications, Advanced and About. Save changes applies edits; Discard reverts them. Reset defaults fills in defaults for review, then Save applies them. Advanced shows local diagnostics and opens your data folder. About shows version, privacy information and acknowledgements.\n\
          Quit stops Doze and its sessions. Windows resumes its normal power settings. Sessions are also cleared after a restart or suspend/resume.",
         status = crate::tray::status_text(snapshot),
         silence = settings.silence_seconds,
@@ -47,13 +47,5 @@ pub(super) fn text(snapshot: &Snapshot) -> String {
         playback_action = settings.playback_action.label(),
         display = display,
         awake_minutes = settings.default_awake_minutes,
-    )
-}
-
-pub(super) fn about(snapshot: &Snapshot) -> String {
-    format!(
-        "Keep your computer awake when it should be awake, and let it sleep when it should sleep. Doze lives in the tray, with native settings, timers and countdown warnings.\n\nLOCAL AND PRIVATE\nNo account, cloud service, ads, subscriptions or telemetry. Audio monitoring observes output levels; it does not record your audio. Preferences and optional error logs stay on this computer.\n\nTHIS RUN\nRunning for {} minutes. {}\n\nACKNOWLEDGEMENTS\nBuilt with Rust and Tauri. Windows API bindings, native power management, Core Audio and Windows notifications provide the system integration.\n\nDATA\nSettings: {}\n\nUse 'Help & About → Menu Guide' in the tray for feature explanations. Advanced Settings provides diagnostics and access to the data folder.",
-        snapshot.engine.now / 60,
-        crate::tray::status_text(snapshot), snapshot.settings_path.display(),
     )
 }

@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "../native/windows/publish/": "windows-ui/"
+    }
+  }
+}

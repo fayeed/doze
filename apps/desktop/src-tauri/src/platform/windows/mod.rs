@@ -28,5 +28,6 @@ mod tests {
 mod appearance;
 mod dialog_template;
 pub mod dialogs;
+mod glass_controls;
 mod help;
-mod settings_ui;
+mod winui;

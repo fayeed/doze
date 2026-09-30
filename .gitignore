@@ -10,3 +10,7 @@ coverage/
 *.log
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
+.tools/
+apps/desktop/native/windows/bin/
+apps/desktop/native/windows/obj/
+apps/desktop/native/windows/publish/
