@@ -1,8 +1,8 @@
 //! Standard Windows dialog templates. Windows owns layout scaling and control rendering.
 use windows::Win32::UI::WindowsAndMessaging::{
     BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, CBS_DROPDOWNLIST, DS_CENTER, DS_MODALFRAME, DS_SETFONT,
-    ES_NUMBER, WS_BORDER, WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL,
+    ES_AUTOVSCROLL, ES_MULTILINE, ES_NUMBER, ES_READONLY, WS_BORDER, WS_CAPTION, WS_CHILD,
+    WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 pub(super) struct Template {
@@ -80,6 +80,20 @@ impl Template {
             text,
             [12, y, 252, 14],
             WS_TABSTOP.0 | BS_AUTOCHECKBOX as u32,
+        );
+    }
+    pub fn read_only_text(&mut self, id: u16, bounds: [i16; 4]) {
+        self.control(
+            id,
+            "EDIT",
+            "",
+            bounds,
+            WS_TABSTOP.0
+                | WS_BORDER.0
+                | WS_VSCROLL.0
+                | ES_MULTILINE as u32
+                | ES_READONLY as u32
+                | ES_AUTOVSCROLL as u32,
         );
     }
     pub fn edit(&mut self, id: u16, text: &str, x: i16, y: i16, width: i16) {

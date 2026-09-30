@@ -27,3 +27,4 @@ mod tests {
 }
 mod dialog_template;
 pub mod dialogs;
+mod help;

@@ -21,6 +21,8 @@ Build output is in `src-tauri/target/release/`: `doze.exe`, `bundle/msi/`, and `
 
 ## Behavior
 
+The clickable status rows open native help. “Normal sleep allowed” means Doze is not preventing Windows from sleeping; ordinary Windows power settings apply. Inactive controls explain their reason in the menu, and “What do these options mean?” explains every feature, checked state, unavailable action, and current timing setting.
+
 - Keep Awake: 15m, 30m, 1h, 2h, custom duration, a local date/time, or indefinitely. Timed sessions can be extended or stopped.
 - Keep awake while audio plays: retains the power request through the configured silence grace period.
 - Sleep Timer: supported native actions with presets or custom duration/date/time. The selected duration is followed by the common countdown. The timer holds the computer awake until it finishes.

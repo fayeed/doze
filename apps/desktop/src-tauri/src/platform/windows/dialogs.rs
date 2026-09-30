@@ -1,4 +1,4 @@
-use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
 // Modal native dialogs with standard buttons, checkboxes, edits and date/time pickers.
 use super::dialog_template::Template;
 use crate::{
@@ -45,6 +45,7 @@ const RESET: u16 = 110;
 const MINUTES: u16 = 120;
 const DATE: u16 = 121;
 const TIME: u16 = 122;
+const HELP_TEXT: u16 = 123;
 // Only the main thread accesses a dialog. Repeated tray clicks focus the existing dialog.
 static ACTIVE_DIALOG: AtomicIsize = AtomicIsize::new(0);
 
@@ -89,7 +90,12 @@ pub fn show(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
 }
 
 fn template(view: DialogView) -> Vec<u32> {
-    if matches!(view, DialogView::Settings) {
+    if matches!(view, DialogView::Help) {
+        let mut form = Template::new("Doze · What do these options mean?", 360, 240);
+        form.read_only_text(HELP_TEXT, [12, 12, 336, 192]);
+        form.button(2, "Close", 286, 216, true);
+        form.finish()
+    } else if matches!(view, DialogView::Settings) {
         let mut form = Template::new("Doze Settings", 278, 282);
         form.checkbox(STARTUP, "Launch Doze when I sign in", 12);
         form.checkbox(MINIMIZED, "Start in the tray", 31);
@@ -145,6 +151,12 @@ unsafe extern "system" fn dialog_proc(
         ACTIVE_DIALOG.store(hwnd.0 as isize, Ordering::Relaxed);
         let dialog = &*(lparam.0 as *const Dialog);
         initialize(hwnd, &dialog.snapshot);
+        if matches!(dialog.snapshot.view, DialogView::Help) {
+            if let Ok(close) = GetDlgItem(hwnd, 2) {
+                let _ = SetFocus(close);
+            }
+            return 0;
+        }
         return 1;
     }
     if message == WM_CLOSE {
@@ -167,6 +179,10 @@ unsafe extern "system" fn dialog_proc(
         return 0;
     }
     let dialog = &mut *context;
+    if matches!(dialog.snapshot.view, DialogView::Help) {
+        let _ = EndDialog(hwnd, 0);
+        return 1;
+    }
     let operation = if id == RESET {
         Ok(Operation::ResetSettings)
     } else {
@@ -208,6 +224,11 @@ fn wide(text: &str) -> Vec<u16> {
 }
 
 unsafe fn initialize(hwnd: HWND, snapshot: &Snapshot) {
+    if matches!(snapshot.view, DialogView::Help) {
+        let text = wide(&super::help::text(snapshot).replace('\n', "\r\n"));
+        let _ = SetDlgItemTextW(hwnd, HELP_TEXT as i32, PCWSTR(text.as_ptr()));
+        return;
+    }
     if !matches!(snapshot.view, DialogView::Settings) {
         return;
     }
@@ -374,6 +395,7 @@ mod tests {
         };
         for view in [
             DialogView::Settings,
+            DialogView::Help,
             DialogView::AwakeDuration,
             DialogView::TimerDuration,
             DialogView::AwakeTime,
@@ -395,6 +417,10 @@ mod tests {
             unsafe {
                 initialize(hwnd, &snapshot);
                 match view {
+                    DialogView::Help => {
+                        assert!(GetDlgItem(hwnd, HELP_TEXT as i32).is_ok());
+                        assert!(GetDlgItem(hwnd, MINUTES as i32).is_err());
+                    }
                     DialogView::Settings => {
                         let Operation::SaveSettings { settings } =
                             collect(hwnd, &snapshot).unwrap()

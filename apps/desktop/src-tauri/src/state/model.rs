@@ -25,6 +25,7 @@ pub enum Operation {
 #[derive(Clone, Copy, Debug)]
 pub enum DialogView {
     Settings,
+    Help,
     AwakeDuration,
     AwakeTime,
     TimerDuration,

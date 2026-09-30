@@ -9,6 +9,7 @@ use tauri::{
 };
 
 struct NativeMenu {
+    action_menu: Submenu<tauri::Wry>,
     status: MenuItem<tauri::Wry>,
     timer: MenuItem<tauri::Wry>,
     stop_awake: MenuItem<tauri::Wry>,
@@ -41,12 +42,10 @@ fn item(app: &tauri::App, id: &str, text: &str) -> tauri::Result<MenuItem<tauri:
 }
 
 pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
-    let status = item(app, "status", "Ready to rest")?;
-    status.set_enabled(false)?;
+    let status = item(app, "status", "Status: normal sleep allowed")?;
     let timer = item(app, "timer_status", "No sleep timer")?;
-    timer.set_enabled(false)?;
     let awake = Submenu::new(app, "Keep awake", true)?;
-    let sleep = Submenu::new(app, "Sleep timer", true)?;
+    let sleep = Submenu::new(app, "Start timer", true)?;
     for (seconds, label) in [
         (900, "15 minutes"),
         (1800, "30 minutes"),
@@ -95,20 +94,21 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
     let playback = CheckMenuItem::with_id(
         app,
         "playback",
-        "After Playback",
+        "Sleep after playback stops",
         crate::platform::audio_supported(),
         false,
         None::<&str>,
     )?;
-    let stop_awake = item(app, "stop_awake", "Stop keeping awake")?;
-    let extend = item(app, "extend", "Extend awake by 15 minutes")?;
-    let stop_timer = item(app, "stop_timer", "Stop sleep timer")?;
-    let cancel = item(app, "cancel", "Cancel countdown")?;
-    let snooze = item(app, "snooze", "Snooze 15 minutes")?;
+    let stop_awake = item(app, "stop_awake", "No awake session to stop")?;
+    let extend = item(app, "extend", "No timed awake session to extend")?;
+    let stop_timer = item(app, "stop_timer", "No timer to stop")?;
+    let cancel = item(app, "cancel", "No countdown to cancel")?;
+    let snooze = item(app, "snooze", "No countdown to snooze")?;
     let settings = item(app, "settings", "Settings…")?;
     let preview = item(app, "preview", "Preview countdown…")?;
     preview.set_enabled(cfg!(windows))?;
     let quit = item(app, "quit", "Quit Doze")?;
+    let help = item(app, "help", "What do these options mean?")?;
     let separators = (0..4)
         .map(|_| PredefinedMenuItem::separator(app))
         .collect::<tauri::Result<Vec<_>>>()?;
@@ -133,10 +133,12 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
             &separators[3],
             &settings,
             &preview,
+            &help,
             &quit,
         ],
     )?;
     app.manage(NativeMenu {
+        action_menu,
         status,
         timer,
         stop_awake,
@@ -150,12 +152,15 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
     });
     TrayIconBuilder::with_id("doze")
         .icon(image(0))
-        .tooltip("Doze · Ready to rest")
+        .tooltip("Doze · Normal sleep allowed")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
             let id = event.id.as_ref();
             let operation = match id {
+                "help" | "status" | "timer_status" => Operation::OpenDialog {
+                    view: DialogView::Help,
+                },
                 "preview" => Operation::PreviewCountdown,
                 "settings" => Operation::OpenDialog {
                     view: DialogView::Settings,
@@ -226,32 +231,34 @@ fn remaining(deadline: u64, now: u64) -> String {
     )
 }
 
+pub(crate) fn status_text(snapshot: &Snapshot) -> String {
+    let engine = &snapshot.engine;
+    if let Some(error) = &snapshot.error {
+        format!("Status: {error}")
+    } else if let Some(deadline) = engine.awake_deadline {
+        format!(
+            "Status: keeping awake for {}",
+            remaining(deadline, engine.now)
+        )
+    } else if engine.awake {
+        "Status: keeping awake indefinitely".into()
+    } else if engine.countdown.is_some() {
+        "Status: keeping awake during countdown".into()
+    } else if engine.timer.is_some() {
+        "Status: keeping awake until timer finishes".into()
+    } else if engine.should_hold_awake() {
+        "Status: keeping awake for audio playback".into()
+    } else {
+        "Status: normal sleep allowed".into()
+    }
+}
+
 pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
     let Some(menu) = app.try_state::<NativeMenu>() else {
         return;
     };
     let engine = &snapshot.engine;
-    let status = if let Some(error) = &snapshot.error {
-        format!("Doze: {error}")
-    } else if let Some(deadline) = engine.awake_deadline {
-        format!(
-            "Keeping awake: {} remaining",
-            remaining(deadline, engine.now)
-        )
-    } else if engine.awake {
-        "Keeping awake indefinitely".into()
-    } else if engine.while_audio {
-        format!(
-            "Audio awake: {}",
-            if engine.audio_active {
-                "playing"
-            } else {
-                "waiting"
-            }
-        )
-    } else {
-        "Ready to rest".into()
-    };
+    let status = status_text(snapshot);
     let timer = if let Some(countdown) = &engine.countdown {
         format!(
             "{} in {} — countdown",
@@ -274,10 +281,18 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
         };
         format!("After Playback: {phase}")
     } else {
-        "No sleep timer".into()
+        "No power action scheduled".into()
     };
     let _ = menu.status.set_text(&status);
     let _ = menu.timer.set_text(&timer);
+    let _ = menu.action_menu.set_text(format!(
+        "Timer action: {}",
+        snapshot.selected_action.label()
+    ));
+    let _ = menu.playback.set_text(format!(
+        "{} after playback stops",
+        snapshot.settings.playback_action.label()
+    ));
     let _ = menu
         .stop_awake
         .set_enabled(engine.awake || engine.while_audio);
@@ -291,6 +306,38 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
     );
     let _ = menu.cancel.set_enabled(engine.countdown.is_some());
     let _ = menu.snooze.set_enabled(engine.countdown.is_some());
+    let _ = menu
+        .stop_awake
+        .set_text(if engine.awake || engine.while_audio {
+            "Stop keeping awake"
+        } else {
+            "No awake session to stop"
+        });
+    let _ = menu.extend.set_text(if engine.awake_deadline.is_some() {
+        "Extend awake by 15 minutes"
+    } else {
+        "No timed awake session to extend"
+    });
+    let has_timer = engine.timer.is_some()
+        || engine
+            .countdown
+            .as_ref()
+            .is_some_and(|c| c.source == crate::core::countdown::Source::Timer);
+    let _ = menu.stop_timer.set_text(if has_timer {
+        "Stop timer"
+    } else {
+        "No timer to stop"
+    });
+    let _ = menu.cancel.set_text(if engine.countdown.is_some() {
+        "Cancel countdown"
+    } else {
+        "No countdown to cancel"
+    });
+    let _ = menu.snooze.set_text(if engine.countdown.is_some() {
+        "Snooze 15 minutes"
+    } else {
+        "No countdown to snooze"
+    });
     let _ = menu.audio.set_checked(engine.while_audio);
     let _ = menu.playback.set_checked(engine.playback_enabled);
     for (action, check) in &menu.actions {
