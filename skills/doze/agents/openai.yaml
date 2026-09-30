@@ -1,0 +1,13 @@
+interface:
+  display_name: "Doze"
+  short_description: "Keep awake during work with authorized completion"
+  default_prompt: "Use $doze to keep this computer awake while you finish my task, then put it to sleep."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "doze"
+      description: "Local Doze desktop MCP connection configured from Agents settings"
+
+policy:
+  allow_implicit_invocation: true

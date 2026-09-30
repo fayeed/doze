@@ -140,6 +140,37 @@ The object includes `type: "stdio"`, `command`, `args`, and `env.DOZE_MCP_KEY`. 
 
 Copy the generic JSON configuration into the client's MCP settings, or supply the generated `command`, `args` and `env` to its stdio launcher. MCP uses newline-delimited JSON-RPC over inherited stdin/stdout. It supports the `2025-11-25` lifecycle, with negotiation for `2024-11-05`, `2025-03-26` and `2025-06-18`. Clients using a newer protocol must support fallback negotiation. The transport follows the [MCP stdio specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports). There is no remotely reachable HTTP MCP endpoint.
 
+### Install the companion skill
+
+The repository ships a portable skill at [`skills/doze`](../../skills/doze/SKILL.md), including Codex UI metadata and a dependency on the `doze` MCP connection. Distribute this whole folder alongside a Doze release. It contains no credentials or runtime hooks. Configure MCP using the connection instructions above separately.
+
+Copy the `doze` folder into the appropriate personal skill directory:
+
+| Client | Destination | Explicit invocation |
+| --- | --- | --- |
+| Codex | `~/.agents/skills/doze/` | `$doze` |
+| Claude Code | `~/.claude/skills/doze/` | `/doze` |
+
+These locations follow the [official OpenAI skill documentation](https://learn.chatgpt.com/docs/build-skills) and [Claude Code skill documentation](https://code.claude.com/docs/en/skills). For project-only installation, use `.agents/skills/doze/` or `.claude/skills/doze/` inside the target project. Check an existing folder before replacing it to preserve local edits.
+
+From a Doze checkout, this PowerShell example installs a new Codex copy and refuses to overwrite an existing one:
+
+```powershell
+$dozeSkillSource = Join-Path (Get-Location) 'skills/doze'
+$dozeSkillParent = Join-Path $HOME '.agents/skills'
+$dozeSkillDestination = Join-Path $dozeSkillParent 'doze'
+if (!(Test-Path -LiteralPath (Join-Path $dozeSkillSource 'SKILL.md'))) {
+    throw 'Run this from the Doze repository root.'
+}
+if (Test-Path -LiteralPath $dozeSkillDestination) {
+    throw 'Doze skill already exists; review it before updating.'
+}
+New-Item -ItemType Directory -Path $dozeSkillParent -Force | Out-Null
+Copy-Item -LiteralPath $dozeSkillSource -Destination $dozeSkillDestination -Recurse
+```
+
+For Claude Code, change `.agents/skills` to `.claude/skills`. Reload or restart the client if the skill is absent. Example: “Use Doze to keep this computer awake while you finish the task, then put it to sleep.” Installing or loading the skill does not grant power permissions: Doze still requires Allow Once or an explicit Settings grant. The skill cannot guarantee heartbeat or Stop handling when the model is no longer running; see [Heartbeats without model turns](#heartbeats-without-model-turns).
+
 ### Agent lifecycle
 
 Example user request: “I'm going to bed. Keep my computer awake while you finish this task, then put it to sleep.”
