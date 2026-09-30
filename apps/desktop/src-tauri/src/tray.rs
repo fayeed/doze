@@ -10,6 +10,8 @@ use tauri::{
 };
 
 struct NativeMenu {
+    agents: Submenu<tauri::Wry>,
+    agent_signature: std::sync::Mutex<String>,
     quick: crate::quick_settings::QuickSettings,
     default_awake: MenuItem<tauri::Wry>,
     default_timer: MenuItem<tauri::Wry>,
@@ -148,6 +150,7 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
     let separators = (0..4)
         .map(|_| PredefinedMenuItem::separator(app))
         .collect::<tauri::Result<Vec<_>>>()?;
+    let agents = Submenu::new(app, "Agents", true)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -161,6 +164,7 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
             &playback,
             &countdown,
             &separators[2],
+            &agents,
             &quick.menu,
             &settings,
             &support,
@@ -169,6 +173,8 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         ],
     )?;
     app.manage(NativeMenu {
+        agents,
+        agent_signature: std::sync::Mutex::new(String::new()),
         quick,
         default_awake,
         default_timer,
@@ -192,6 +198,10 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         .icon_as_template(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| {
             let id = event.id.as_ref();
+            if let Some(operation) = agent_operation(id) {
+                dispatch(app, operation);
+                return;
+            }
             if let Some(operation) = crate::quick_settings::operation(id) {
                 dispatch(app, operation);
                 return;
@@ -280,6 +290,15 @@ pub(crate) fn status_text(snapshot: &Snapshot) -> String {
     let engine = &snapshot.engine;
     if let Some(error) = &snapshot.error {
         format!("Needs attention: {error}")
+    } else if engine
+        .agents
+        .items
+        .iter()
+        .any(|s| s.status == crate::mcp::sessions::Status::ConnectionLost)
+    {
+        "Agent connection lost · keeping awake".into()
+    } else if engine.agents.holds_awake() {
+        "Keeping awake · agents working".into()
     } else if let Some(deadline) = engine.awake_deadline {
         format!("Keeping awake · {} left", remaining(deadline, engine.now))
     } else if engine.awake {
@@ -302,6 +321,7 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
     let engine = &snapshot.engine;
     let status = status_text(snapshot);
     menu.quick.update(&snapshot.settings);
+    update_agents(app, &menu, snapshot);
     let _ = menu.default_awake.set_text(format!(
         "Default ({} minutes)",
         snapshot.settings.default_awake_minutes
@@ -454,5 +474,151 @@ mod tests {
         let center_alpha = (25 * 32 + 25) * 4 + 3;
         assert_eq!(super::image(1).rgba()[center_alpha], 255);
         assert_eq!(super::image(2).rgba()[center_alpha], 0);
+    }
+}
+
+fn agent_operation(id: &str) -> Option<Operation> {
+    let parts: Vec<_> = id.split(':').collect();
+    Some(match parts.as_slice() {
+        ["agents", "settings"] => Operation::OpenDialog {
+            view: DialogView::Agents,
+        },
+        ["agents", "enable"] => Operation::AgentEnabled,
+        ["agents", "connect", name] => Operation::ConnectAgent {
+            name: (*name).into(),
+        },
+        ["agents", "lease", seconds] => Operation::AgentLease {
+            seconds: seconds.parse().ok()?,
+        },
+        ["agents", "once" | "always" | "deny", id] => Operation::AuthorizeAgent {
+            id: (*id).into(),
+            decision: parts[1].into(),
+        },
+        ["agents", "cancel", id] => Operation::CancelAgent { id: (*id).into() },
+        ["agents", "wait", id] => Operation::WaitAgent { id: (*id).into() },
+        ["agents", "finish", id] => Operation::FinishAgent { id: (*id).into() },
+        ["agents", "revoke", id] => Operation::RevokeAgent { id: (*id).into() },
+        _ => return None,
+    })
+}
+fn update_agents(app: &tauri::AppHandle, menu: &NativeMenu, snapshot: &Snapshot) {
+    use crate::mcp::sessions::Status;
+    let signature = format!(
+        "{:?}{:?}{}",
+        snapshot.settings.agents,
+        snapshot.engine.agents.items,
+        snapshot.engine.now / 60
+    );
+    let Ok(mut previous) = menu.agent_signature.lock() else {
+        return;
+    };
+    if *previous == signature {
+        return;
+    }
+    *previous = signature;
+    let update = || -> tauri::Result<()> {
+        for item in menu.agents.items()? {
+            menu.agents.remove(&item)?;
+        }
+        menu.agents.append(&CheckMenuItem::with_id(
+            app,
+            "agents:enable",
+            "Enable MCP",
+            true,
+            snapshot.settings.agents.enabled,
+            None::<&str>,
+        )?)?;
+        menu.agents.append(&MenuItem::with_id(
+            app,
+            "agents:settings",
+            "Agent settings and connections…",
+            true,
+            None::<&str>,
+        )?)?;
+        for session in snapshot
+            .engine
+            .agents
+            .items
+            .iter()
+            .filter(|s| !s.status.terminal())
+        {
+            let text = format!(
+                "{} · {} · {}m · {}",
+                session.client_name,
+                session.reason,
+                snapshot.engine.now.saturating_sub(session.created_at) / 60,
+                if session.status == Status::AwaitingAuthorization {
+                    "Approval needed"
+                } else if session.status == Status::ConnectionLost {
+                    "Connection lost · keeping awake"
+                } else {
+                    "Working"
+                }
+            );
+            let row = Submenu::new(app, text.replace('&', "&&"), true)?;
+            let action = session
+                .completion_action
+                .map_or("Return to normal", PowerAction::label);
+            row.append(&MenuItem::new(
+                app,
+                format!("When finished: {action}"),
+                false,
+                None::<&str>,
+            )?)?;
+            if session.status == Status::AwaitingAuthorization {
+                for (id, label) in [
+                    ("once", "Allow Once"),
+                    ("always", "Always Allow"),
+                    ("deny", "Deny"),
+                ] {
+                    row.append(&MenuItem::with_id(
+                        app,
+                        format!("agents:{id}:{}", session.session_id),
+                        label,
+                        true,
+                        None::<&str>,
+                    )?)?;
+                }
+            } else {
+                row.append(&MenuItem::with_id(
+                    app,
+                    format!("agents:cancel:{}", session.session_id),
+                    "Cancel session",
+                    true,
+                    None::<&str>,
+                )?)?;
+                if session.status == Status::ConnectionLost {
+                    row.append(&MenuItem::new(
+                        app,
+                        format!(
+                            "Last heartbeat {}m ago",
+                            snapshot.engine.now.saturating_sub(session.last_heartbeat) / 60
+                        ),
+                        false,
+                        None::<&str>,
+                    )?)?;
+                    row.append(&MenuItem::with_id(
+                        app,
+                        format!("agents:wait:{}", session.session_id),
+                        "Wait 30 minutes",
+                        true,
+                        None::<&str>,
+                    )?)?;
+                    row.append(&MenuItem::with_id(
+                        app,
+                        format!("agents:finish:{}", session.session_id),
+                        "End and apply completion action",
+                        true,
+                        None::<&str>,
+                    )?)?;
+                }
+            }
+            menu.agents.append(&row)?;
+        }
+        Ok(())
+    };
+    if let Err(error) = update() {
+        eprintln!("Could not update agent menu: {error}");
+        previous.clear();
     }
 }

@@ -109,6 +109,7 @@ public sealed partial class CountdownWindow : Window
             : $"{seconds / 60:00}:{seconds % 60:00}";
         AutomationProperties.SetName(TimeText, $"{action} in {seconds / 60} minutes and {seconds % 60} seconds");
         PreviewHint.Visibility = preview ? Visibility.Visible : Visibility.Collapsed;
+        StayAwakeButton.Visibility = preview ? Visibility.Collapsed : Visibility.Visible;
         CancelButton.Content = preview ? "Dismiss preview" : "Cancel action";
     }
 
@@ -133,7 +134,7 @@ public sealed partial class CountdownWindow : Window
     private void SetPending(bool value)
     {
         pending = value;
-        CancelButton.IsEnabled = SnoozeButton.IsEnabled = !value;
+        CancelButton.IsEnabled = SnoozeButton.IsEnabled = StayAwakeButton.IsEnabled = !value;
     }
 
     private async Task CommandAsync(string command)
@@ -157,6 +158,7 @@ public sealed partial class CountdownWindow : Window
     }
 
     private async void Cancel(object sender, RoutedEventArgs args) => await CommandAsync("cancel");
+    private async void StayAwake(object sender, RoutedEventArgs args) => await CommandAsync("stay-awake");
     private async void Snooze(object sender, RoutedEventArgs args) => await CommandAsync("snooze");
     private async void KeyPressed(object sender, KeyRoutedEventArgs args)
     {

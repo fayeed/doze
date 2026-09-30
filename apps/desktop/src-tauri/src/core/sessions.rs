@@ -34,6 +34,7 @@ pub enum Theme {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
+    pub agents: crate::mcp::auth::AgentSettings,
     pub theme: Theme,
     pub launch_at_startup: bool,
     pub start_minimized: bool,
@@ -51,6 +52,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            agents: crate::mcp::auth::AgentSettings::default(),
             theme: Theme::System,
             launch_at_startup: false,
             start_minimized: true,
@@ -69,6 +71,7 @@ impl Default for Settings {
 }
 impl Settings {
     pub fn validate(&self) -> Result<(), String> {
+        self.agents.validate()?;
         if !(1..=10080).contains(&self.default_awake_minutes)
             || !(1..=10080).contains(&self.default_timer_minutes)
         {
@@ -105,6 +108,7 @@ pub struct Timer {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Engine {
+    pub agents: crate::mcp::sessions::Sessions,
     pub now: u64,
     pub awake: bool,
     pub awake_deadline: Option<u64>,
@@ -125,6 +129,7 @@ pub struct Engine {
 impl Default for Engine {
     fn default() -> Self {
         Self {
+            agents: crate::mcp::sessions::Sessions::default(),
             now: 0,
             awake: false,
             awake_deadline: None,

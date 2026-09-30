@@ -15,7 +15,14 @@ pub(super) fn persist(path: &std::path::Path, settings: &Settings) -> Result<(),
         .map_err(|e| e.to_string())?;
     let temporary = path.with_extension("tmp");
     use std::io::Write;
-    let mut file = std::fs::File::create(&temporary).map_err(|e| e.to_string())?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
     file.write_all(&serde_json::to_vec_pretty(settings).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())?;

@@ -24,7 +24,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromSeconds(5) };
     private TextBlock? overviewStatus;
     private TextBlock? overviewTimer;
-    private static readonly string[] Pages = ["Overview", "General", "Session defaults", "After playback", "Notifications", "Advanced", "Menu guide", "About Doze"];
+    private static readonly string[] Pages = ["Overview", "General", "Session defaults", "After playback", "Notifications", "Agents", "Advanced", "Menu guide", "About Doze"];
     private static readonly Dictionary<string, string> ActionNames = new()
     {
         ["sleep"] = "Sleep",
@@ -61,7 +61,7 @@ public sealed partial class MainWindow : Window
         SelectPage(ViewPage(initial["view"]?.GetValue<string>(), "Overview"));
         refresh.Tick += async (_, _) =>
         {
-            if (page != "Overview" || !AppWindow.IsVisible || saving) return;
+            if ((page != "Overview" && page != "Agents") || !AppWindow.IsVisible || saving) return;
             try { await bridge.SendAsync("refresh"); }
             catch (IOException) { refresh.Stop(); }
         };
@@ -91,7 +91,10 @@ public sealed partial class MainWindow : Window
             }
             if (message["snapshot"] is JsonObject next)
             {
+                var agentChanged = snapshot["settings"]?["agents"]?.ToJsonString() != next["settings"]?["agents"]?.ToJsonString()
+                    || snapshot["agentSessions"]?.ToJsonString() != next["agentSessions"]?.ToJsonString();
                 snapshot = next;
+                if (page == "Agents" && agentChanged) { var offset = PageScroll.VerticalOffset; ShowPage(); PageScroll.ChangeView(null, offset, null, true); }
                 if (page == "Overview")
                 {
                     if (overviewStatus is not null) overviewStatus.Text = snapshot["status"]!.GetValue<string>();
@@ -172,7 +175,7 @@ public sealed partial class MainWindow : Window
             foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
             {
                 Root.RequestedTheme = theme;
-                foreach (var name in new[] { "Session defaults", "Menu guide", "About Doze" })
+                foreach (var name in new[] { "Session defaults", "Agents", "Menu guide", "About Doze" })
                 {
                     SelectPage(name);
                     await Task.Delay(150);
@@ -188,6 +191,7 @@ public sealed partial class MainWindow : Window
     {
         "about" => "About Doze",
         "help" => "Menu guide",
+        "agents" => "Agents",
         _ => fallback
     };
     private IEnumerable<string> Actions => snapshot["actions"]!.AsArray().Select(action => action!.GetValue<string>());
@@ -219,6 +223,7 @@ public sealed partial class MainWindow : Window
             case "Session defaults": SessionDefaults(); break;
             case "After playback": AfterPlayback(); break;
             case "Notifications": Notifications(); break;
+            case "Agents": Agents(); break;
             case "Advanced": Advanced(); break;
             case "Menu guide": MenuGuide(); break;
             case "About Doze": About(); break;
@@ -283,6 +288,86 @@ public sealed partial class MainWindow : Window
         Number("Final countdown", "Seconds to Cancel or Snooze. Applies to both timers and After Playback.", "\uE823", draft.CountdownSeconds, 15, 1800, value => draft.CountdownSeconds = value);
         Card("Try the warning", "A preview never triggers a power action. Cancel and Snooze dismiss the demonstration.", "\uE768", ActionButton("Preview", async () => await bridge.SendAsync("preview")));
         Card("Cancel and Snooze", "Closing the real warning window or pressing Escape cancels the action. Snooze adds 15 minutes. A real countdown always takes priority over a preview.", "\uE946");
+    }
+
+    private void Agents()
+    {
+        PageDescription.Text = "Keep your computer awake while agents work, then let Doze handle completion safely.";
+        var settings = snapshot["settings"]?["agents"] as JsonObject;
+        var enabled = settings?["enabled"]?.GetValue<bool>() == true;
+        var enable = new ToggleSwitch { IsOn = enabled, OnContent = "", OffContent = "" };
+        AutomationProperties.SetName(enable, "Enable MCP");
+        enable.Toggled += async (_, _) => await bridge.SendAgentAsync("agent-enable");
+        Card("Enable MCP", "Agents connect locally. New profiles need your approval before keeping awake or requesting a power action.", "\uE716", enable);
+        var leases = new ComboBox { Width = 160, ItemsSource = new[] { 60, 300, 900, 1800, 3600 }, SelectedItem = settings?["leaseSeconds"]?.GetValue<int>() ?? 300 };
+        leases.SelectionChanged += async (_, _) => { if (leases.SelectedItem is int seconds) await bridge.SendAgentAsync("agent-lease", seconds: seconds); };
+        Card("Default lease (seconds)", "Agents must heartbeat before this expires. A lost connection keeps the computer awake until resolved.", "\uE823", leases);
+        var completion = new ComboBox { Width = 180 };
+        completion.Items.Add(new ComboBoxItem { Content = "Return to normal", Tag = "normal" });
+        foreach (var action in Actions) completion.Items.Add(new ComboBoxItem { Content = ActionNames[action], Tag = action });
+        var defaultAction = settings?["defaultCompletion"]?.GetValue<string>() ?? "normal";
+        completion.SelectedItem = completion.Items.OfType<ComboBoxItem>().FirstOrDefault(item => (string)item.Tag == defaultAction);
+        completion.SelectionChanged += async (_, _) => { if (completion.SelectedItem is ComboBoxItem item) await bridge.SendAgentAsync("agent-default", action: (string)item.Tag == "normal" ? null : (string)item.Tag); };
+        Card("Default completion behavior", "Power actions always require permission. Conflicting requests return to normal. Agent countdowns last at least five minutes.", "\uE708", completion);
+        Section("Connect an agent");
+        foreach (var name in new[] { "Codex", "Claude Code", "Generic MCP client" })
+            Card(name, "Create a separate local credential and copy its connection configuration below.", "\uE8A7", ActionButton("Connect", () => bridge.SendAgentAsync("agent-connect", name: name)));
+        Section("Sessions");
+        if (snapshot["agentSessions"] is JsonArray sessions)
+            foreach (var session in sessions.OfType<JsonObject>().Where(s => new[] { "active", "connection_lost", "awaiting_authorization" }.Contains(s["status"]!.GetValue<string>())))
+            {
+                var id = session["session_id"]!.GetValue<string>();
+                var status = session["status"]!.GetValue<string>();
+                var whenDone = session["completion_action"]?.GetValue<string>();
+                var action = whenDone is null ? "Return to normal" : ActionNames.GetValueOrDefault(whenDone, whenDone);
+                var controls = new StackPanel { Spacing = 6 };
+                if (status == "awaiting_authorization")
+                    foreach (var (decision, label) in new[] { ("once", "Allow Once"), ("always", "Always Allow"), ("deny", "Deny") })
+                        controls.Children.Add(ActionButton(label, () => bridge.SendAgentAsync("agent-authorize", id: id, decision: decision)));
+                else
+                {
+                    controls.Children.Add(ActionButton("Cancel session", () => bridge.SendAgentAsync("agent-cancel", id: id)));
+                    if (status == "connection_lost")
+                    {
+                        controls.Children.Add(ActionButton("Wait 30 minutes", () => bridge.SendAgentAsync("agent-wait", id: id)));
+                        controls.Children.Add(ActionButton("End and apply action", () => bridge.SendAgentAsync("agent-finish", id: id)));
+                    }
+                }
+                var lastActivity = Math.Max(0, (snapshot["agentNow"]?.GetValue<long>() ?? 0) - session["last_heartbeat"]!.GetValue<long>()) / 60;
+                Card(session["client_name"]!.GetValue<string>(), $"{session["reason"]!.GetValue<string>()}\n{status.Replace('_', ' ')} · last activity {lastActivity}m ago\nWhen finished: {action}", "\uE716", controls);
+            }
+        Section("Trusted agents and permissions");
+        if (settings?["clients"] is JsonArray clients)
+            foreach (var client in clients.OfType<JsonObject>())
+            {
+                var id = client["id"]!.GetValue<string>();
+                var name = client["name"]!.GetValue<string>();
+                var permissions = new StackPanel { Spacing = 6 };
+                permissions.Children.Add(ActionButton($"Keep awake: {(client["keepAwake"]?.GetValue<bool>() == true ? "allowed" : "ask")}", () => bridge.SendAgentAsync("agent-permission", id: id)));
+                foreach (var action in Actions)
+                {
+                    var allowed = client["actions"]!.AsArray().Any(a => a!.GetValue<string>() == action);
+                    permissions.Children.Add(ActionButton($"{ActionNames[action]}: {(allowed ? "allowed" : "ask")}", () => bridge.SendAgentAsync("agent-permission", id: id, action: action)));
+                }
+                permissions.Children.Add(ActionButton("Revoke connection", () => bridge.SendAgentAsync("agent-revoke", id: id)));
+                Card(name, "Changing permissions cancels this agent’s active sessions. Revoking also invalidates its connection credential.", "\uE72E", permissions);
+            }
+        if (snapshot["agentConnections"] is JsonArray connections)
+            foreach (var connection in connections.OfType<JsonObject>())
+            {
+                var name = connection["name"]!.GetValue<string>();
+                var config = connection[name == "Codex" ? "codex" : name == "Claude Code" ? "claude" : "generic"]!.GetValue<string>();
+                var content = new StackPanel { Spacing = 8 };
+                content.Children.Add(new TextBlock { Text = name == "Codex" ? "Add to ~/.codex/config.toml" : "Use with claude mcp add-json doze '<JSON>' or your client’s MCP configuration", TextWrapping = TextWrapping.Wrap });
+                content.Children.Add(new TextBox { Text = config, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 150 });
+                content.Children.Add(ActionButton("Copy configuration", () => {
+                    var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                    data.SetText(config);
+                    Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+                    return Task.CompletedTask;
+                }));
+                Cards.Children.Add(content);
+            }
     }
 
     private void Advanced()

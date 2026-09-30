@@ -4,31 +4,83 @@ use std::sync::mpsc::Sender;
 
 #[derive(Clone, Debug)]
 pub enum Operation {
-    KeepAwake { seconds: Option<u64> },
+    KeepAwake {
+        seconds: Option<u64>,
+    },
     KeepAwakeDefault,
     ScheduleDefault,
-    TogglePreference { preference: Preference },
-    SetDefaultDuration { awake: bool, minutes: u64 },
-    ExtendAwake { seconds: u64 },
+    TogglePreference {
+        preference: Preference,
+    },
+    SetDefaultDuration {
+        awake: bool,
+        minutes: u64,
+    },
+    ExtendAwake {
+        seconds: u64,
+    },
     StopAwake,
     ToggleWhileAudio,
     TogglePlayback,
-    SelectAction { action: PowerAction },
-    ScheduleSelected { seconds: u64 },
-    Schedule { seconds: u64, action: PowerAction },
+    SelectAction {
+        action: PowerAction,
+    },
+    ScheduleSelected {
+        seconds: u64,
+    },
+    Schedule {
+        seconds: u64,
+        action: PowerAction,
+    },
     StopTimer,
     Cancel,
+    StayAwake,
     Snooze,
-    SaveSettings { settings: Settings },
+    SaveSettings {
+        settings: Settings,
+    },
+    ConnectAgent {
+        name: String,
+    },
+    AuthorizeAgent {
+        id: String,
+        decision: String,
+    },
+    CancelAgent {
+        id: String,
+    },
+    WaitAgent {
+        id: String,
+    },
+    FinishAgent {
+        id: String,
+    },
+    RevokeAgent {
+        id: String,
+    },
+    AgentPermission {
+        id: String,
+        action: Option<PowerAction>,
+    },
+    AgentEnabled,
+    AgentLease {
+        seconds: u64,
+    },
+    AgentDefault {
+        action: Option<PowerAction>,
+    },
     Refresh,
     PreviewCountdown,
-    OpenDialog { view: DialogView },
+    OpenDialog {
+        view: DialogView,
+    },
     Quit,
 }
 #[derive(Clone, Copy, Debug)]
 pub enum DialogView {
     Settings,
     Help,
+    Agents,
     About,
     AwakeDuration,
     AwakeTime,
@@ -37,6 +89,10 @@ pub enum DialogView {
 }
 pub enum Request {
     Operation(Operation, Sender<Result<Snapshot, String>>),
+    Mcp(
+        crate::mcp::tools::Call,
+        Sender<Result<serde_json::Value, String>>,
+    ),
     Lifecycle,
     WarningFailed(String),
 }

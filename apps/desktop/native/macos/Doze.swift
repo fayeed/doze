@@ -17,6 +17,21 @@ struct Preferences: Codable, Equatable {
     var defaultTimerMinutes = 30
 }
 
+struct AgentClient: Codable, Identifiable {
+    var id: String; var name: String; var keepAwake: Bool; var actions: [String]
+}
+struct AgentSettings: Codable {
+    var enabled: Bool; var leaseSeconds: Int; var defaultCompletion: String?; var clients: [AgentClient]
+}
+struct AgentSession: Codable, Identifiable {
+    var session_id: String; var client_name: String; var reason: String; var status: String
+    var completion_action: String?; var last_heartbeat: Int
+    var id: String { session_id }
+}
+struct AgentConnection: Codable, Identifiable {
+    var clientId: String; var name: String; var generic: String; var codex: String; var claude: String
+    var id: String { clientId }
+}
 struct EngineSnapshot: Codable {
     var settings: Preferences
     var settingsPath: String
@@ -26,6 +41,9 @@ struct EngineSnapshot: Codable {
     var status: String
     var timerStatus: String
     var version: String
+    var agentSessions: [AgentSession]?
+    var agentConnections: [AgentConnection]?
+    var agentNow: Int?
 }
 
 enum Page: String, CaseIterable, Identifiable {
@@ -34,6 +52,7 @@ enum Page: String, CaseIterable, Identifiable {
     case session = "Session defaults"
     case playback = "After playback"
     case notifications = "Notifications"
+    case agents = "Agents"
     case advanced = "Advanced"
     case help = "Menu guide"
     case about = "About Doze"
@@ -46,6 +65,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .session: return "moon"
         case .playback: return "speaker.wave.2"
         case .notifications: return "bell"
+        case .agents: return "person.2"
         case .advanced: return "slider.horizontal.3"
         case .help: return "book"
         case .about: return "info.circle"
@@ -55,6 +75,7 @@ enum Page: String, CaseIterable, Identifiable {
 
 @MainActor
 final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
+    @Published var agentSettings: AgentSettings?
     @Published var snapshot: EngineSnapshot?
     @Published var draft = Preferences() {
         didSet { applyAppearance(draft.theme); applyChanges() }
@@ -216,6 +237,11 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     private func receive(_ message: [String: Any]) {
+        if let rawSnapshot = message["snapshot"] as? [String: Any],
+           let settings = rawSnapshot["settings"] as? [String: Any], let agents = settings["agents"],
+           let data = try? JSONSerialization.data(withJSONObject: agents) {
+            agentSettings = try? JSONDecoder().decode(AgentSettings.self, from: data)
+        }
         if let theme = message["theme"] as? String { applyAppearance(theme) }
         let type = message["type"] as? String ?? ""
         if let raw = message["snapshot"],
@@ -231,6 +257,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
             switch message["view"] as? String {
             case "about": page = .about; showSettings()
             case "help": page = .help; showSettings()
+            case "agents": page = .agents; showSettings()
             case "awakeDuration": showTimer(awake: true, date: false)
             case "awakeTime": showTimer(awake: true, date: true)
             case "timerDuration": showTimer(awake: false, date: false)
@@ -464,6 +491,8 @@ struct SettingsView: View {
                 Text("The native countdown window always provides Cancel and Snooze, even when notifications are disabled.").foregroundStyle(.secondary)
                 Button("Preview countdown") { model.send("preview") }
             }
+        case .agents:
+            agentsView
         case .advanced:
             Section("Local data") {
                 Toggle("Enable diagnostic logging", isOn: $model.draft.logging)
@@ -497,6 +526,71 @@ struct SettingsView: View {
                 explanation("Rust and Tauri", "The Rust engine owns sessions, power assertions, validation and countdown safety. The menu bar uses native macOS menus.", "terminal")
                 explanation("SwiftUI and AppKit", "Settings, About, custom timers and countdown windows use Apple's native controls and system materials. Open-source components retain their respective licenses.", "swift")
                 Button("Show local preferences", action: model.openData)
+            }
+        }
+    }
+
+    @ViewBuilder private var agentsView: some View {
+        Section("Agents") {
+            Toggle("Enable MCP", isOn: Binding(get: { model.agentSettings?.enabled ?? false }, set: { _ in model.send("agent-enable") }))
+            Picker("Default lease (seconds)", selection: Binding(get: { model.agentSettings?.leaseSeconds ?? 300 }, set: { model.send("agent-lease", extra: ["agent_seconds": $0]) })) {
+                ForEach([60, 300, 900, 1800, 3600], id: \.self) { Text("\($0)").tag($0) }
+            }
+            Picker("Default completion", selection: Binding(get: { model.agentSettings?.defaultCompletion ?? "normal" }, set: { model.send("agent-default", extra: ["action": $0 == "normal" ? NSNull() : $0 as Any]) })) {
+                Text("Return to normal").tag("normal")
+                ForEach(model.snapshot?.actions ?? [], id: \.self) { Text($0.capitalized).tag($0) }
+            }
+            Text("A lost connection keeps the computer awake until resolved. Automatic completion requires all overlapping agents to finish with the same authorized action, followed by at least five minutes to cancel.").foregroundStyle(.secondary)
+        }
+        Section("Connect an agent") {
+            ForEach(["Codex", "Claude Code", "Generic MCP client"], id: \.self) { name in
+                Button("Connect to \(name)") { model.send("agent-connect", extra: ["name": name]) }
+            }
+        }
+        Section("Sessions") {
+            ForEach((model.snapshot?.agentSessions ?? []).filter { ["active", "connection_lost", "awaiting_authorization"].contains($0.status) }) { session in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(session.client_name).bold()
+                    Text(session.reason)
+                    Text("\(session.status.replacingOccurrences(of: "_", with: " ")) · When finished: \(session.completion_action ?? "Return to normal")").foregroundStyle(.secondary)
+                    if session.status == "awaiting_authorization" {
+                        HStack {
+                            Button("Allow Once") { model.send("agent-authorize", extra: ["id": session.id, "decision": "once"]) }
+                            Button("Always Allow") { model.send("agent-authorize", extra: ["id": session.id, "decision": "always"]) }
+                            Button("Deny") { model.send("agent-authorize", extra: ["id": session.id, "decision": "deny"]) }
+                        }
+                    } else {
+                        Button("Cancel session") { model.send("agent-cancel", extra: ["id": session.id]) }
+                        if session.status == "connection_lost" {
+                            Text("Last activity \(max(0, (model.snapshot?.agentNow ?? 0) - session.last_heartbeat) / 60)m ago")
+                            Button("Wait 30 minutes") { model.send("agent-wait", extra: ["id": session.id]) }
+                            Button("End and apply completion action") { model.send("agent-finish", extra: ["id": session.id]) }
+                        }
+                    }
+                }
+            }
+        }
+        Section("Trusted agents and permissions") {
+            ForEach(model.agentSettings?.clients ?? []) { client in
+                VStack(alignment: .leading) {
+                    Text(client.name).bold()
+                    Button("Keep awake: \(client.keepAwake ? "allowed" : "ask")") { model.send("agent-permission", extra: ["id": client.id]) }
+                    ForEach(model.snapshot?.actions ?? [], id: \.self) { action in
+                        Button("\(action.capitalized): \(client.actions.contains(action) ? "allowed" : "ask")") { model.send("agent-permission", extra: ["id": client.id, "action": action]) }
+                    }
+                    Button("Revoke connection") { model.send("agent-revoke", extra: ["id": client.id]) }
+                }
+            }
+        }
+        Section("Connection configuration") {
+            ForEach(model.snapshot?.agentConnections ?? []) { connection in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(connection.name).bold()
+                    Text(connection.name == "Codex" ? "Add to ~/.codex/config.toml" : "Add to your MCP client configuration").foregroundStyle(.secondary)
+                    let config = connection.name == "Codex" ? connection.codex : connection.name == "Claude Code" ? connection.claude : connection.generic
+                    Text(config).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                    Button("Copy configuration") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(config, forType: .string) }
+                }
             }
         }
     }
@@ -549,6 +643,7 @@ struct WarningView: View {
             HStack {
                 Button("Snooze 15 minutes", action: model.snoozeWarning)
                 Button("Cancel", action: model.cancelWarning).keyboardShortcut(.cancelAction)
+                if !model.preview { Button("Stay Awake") { model.send("stay-awake") } }
             }.padding(12).navigationGlass()
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -51,7 +51,10 @@ pub(super) fn worker(
     loop {
         let now = origin.elapsed().as_secs();
         snapshot.engine.now = now;
-        let wait = if snapshot.engine.needs_audio() || snapshot.engine.countdown.is_some() {
+        let wait = if snapshot.engine.agents.unsettled()
+            || snapshot.engine.needs_audio()
+            || snapshot.engine.countdown.is_some()
+        {
             Duration::from_secs(1)
         } else if let Some(deadline) = snapshot
             .engine
@@ -84,12 +87,29 @@ pub(super) fn worker(
             previous_idle = None;
         }
         let mut reply = None;
+        let mut mcp_reply = None;
         let mut quit = false;
         let mut snoozing = false;
         let mut open_dialog = false;
         let mut preview_countdown = false;
         if let Some(request) = request {
             match request {
+                Request::Mcp(call, tx) => {
+                    let result = crate::mcp::tools::call(
+                        &mut snapshot.engine,
+                        &snapshot.settings,
+                        &snapshot.actions,
+                        call,
+                    );
+                    if result
+                        .as_ref()
+                        .is_ok_and(|value| value["status"] == "awaiting_authorization")
+                    {
+                        snapshot.view = super::DialogView::Agents;
+                        open_dialog = true;
+                    }
+                    mcp_reply = Some((tx, result));
+                }
                 Request::WarningFailed(error) => {
                     if snapshot.engine.countdown.is_some() {
                         snapshot.engine.cancel_countdown();
@@ -107,7 +127,10 @@ pub(super) fn worker(
                 Request::Operation(op, tx) => {
                     quit = matches!(op, Operation::Quit);
                     snoozing = matches!(op, Operation::Snooze);
-                    open_dialog = matches!(op, Operation::OpenDialog { .. });
+                    open_dialog = matches!(
+                        op,
+                        Operation::OpenDialog { .. } | Operation::ConnectAgent { .. }
+                    );
                     preview_countdown = matches!(op, Operation::PreviewCountdown);
                     let result = apply(op, &mut snapshot, &path);
                     if let Err(error) = &result {
@@ -172,7 +195,7 @@ pub(super) fn worker(
             .countdown
             .as_ref()
             .map(|c| (c.deadline, c.source));
-        let action = snapshot.engine.tick(
+        let mut action = snapshot.engine.tick(
             snapshot.engine.now,
             observation,
             idle_seconds,
@@ -189,6 +212,10 @@ pub(super) fn worker(
             snapshot.engine.should_hold_awake(),
             snapshot.settings.allow_display_sleep,
         ) {
+            action = None;
+            if let Some((_, result)) = mcp_reply.as_mut() {
+                *result = Err(format!("Wake assertion failed: {e}"));
+            }
             snapshot.error = Some(e);
             snapshot
                 .engine
@@ -250,6 +277,9 @@ pub(super) fn worker(
         }
         logged_error.clone_from(&snapshot.error);
 
+        if let Some((tx, result)) = mcp_reply {
+            let _ = tx.send(result);
+        }
         if let Some((tx, result)) = reply {
             let _ = tx.send(result.map(|_| snapshot.clone()));
         }

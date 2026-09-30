@@ -32,6 +32,7 @@
                 <NavigationViewItem Content="Session defaults" Tag="Session defaults"><NavigationViewItem.Icon><FontIcon Glyph="&#xE708;" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="After playback" Tag="After playback"><NavigationViewItem.Icon><FontIcon Glyph="&#xE995;" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="Notifications" Tag="Notifications"><NavigationViewItem.Icon><FontIcon Glyph="&#xEA8F;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Agents" Tag="Agents"><NavigationViewItem.Icon><FontIcon Glyph="&#xE716;" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="Advanced" Tag="Advanced"><NavigationViewItem.Icon><FontIcon Glyph="&#xE115;" /></NavigationViewItem.Icon></NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>

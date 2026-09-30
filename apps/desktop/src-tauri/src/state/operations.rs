@@ -19,6 +19,36 @@ pub(super) fn apply(
     snapshot: &mut Snapshot,
     path: &std::path::Path,
 ) -> Result<(), String> {
+    if matches!(
+        op,
+        Operation::CancelAgent { .. } | Operation::WaitAgent { .. } | Operation::FinishAgent { .. }
+    ) {
+        let (id, status) = match op {
+            Operation::CancelAgent { id } => (id, crate::mcp::sessions::Status::Cancelled),
+            Operation::WaitAgent { id } => (id, crate::mcp::sessions::Status::Active),
+            Operation::FinishAgent { id } => (id, crate::mcp::sessions::Status::Finished),
+            _ => return Err("Invalid agent operation.".into()),
+        };
+        let session = snapshot
+            .engine
+            .agents
+            .items
+            .iter_mut()
+            .find(|s| s.session_id == id)
+            .ok_or("Session not found.")?;
+        if session.status.terminal() {
+            return Err("Session already ended.".into());
+        }
+        if status != crate::mcp::sessions::Status::Cancelled && !session.status.holds_awake() {
+            return Err("Session not authorized.".into());
+        }
+        session.status = status;
+        if status == crate::mcp::sessions::Status::Active {
+            session.lease_expires_at = snapshot.engine.now.saturating_add(1800);
+            session.timeout_at = None;
+        }
+        return Ok(());
+    }
     match op {
         Operation::KeepAwakeDefault => snapshot
             .engine
@@ -107,9 +137,120 @@ pub(super) fn apply(
         }
 
         Operation::Cancel => snapshot.engine.cancel_countdown(),
+        Operation::StayAwake => {
+            snapshot.engine.cancel_countdown();
+            snapshot.engine.keep_awake(None);
+        }
         Operation::Snooze => snapshot.engine.snooze()?,
-        Operation::SaveSettings { settings } => save(snapshot, path, settings)?,
+        Operation::SaveSettings { mut settings } => {
+            // Native general settings edits cannot overwrite credentials or agent permissions.
+            settings.agents = snapshot.settings.agents.clone();
+            save(snapshot, path, settings)?;
+        }
         Operation::OpenDialog { view } => snapshot.view = view,
+        Operation::ConnectAgent { name } => {
+            let mut settings = snapshot.settings.clone();
+            crate::mcp::tools::connect(&mut settings, &name)?;
+            save(snapshot, path, settings)?;
+            snapshot.view = super::DialogView::Agents;
+        }
+        Operation::AuthorizeAgent { id, decision } => {
+            let mut engine = snapshot.engine.clone();
+            let mut settings = snapshot.settings.clone();
+            crate::mcp::tools::authorize(&mut engine, &mut settings, &id, &decision)?;
+            save(snapshot, path, settings)?;
+            snapshot.engine = engine;
+        }
+        Operation::CancelAgent { id }
+        | Operation::WaitAgent { id }
+        | Operation::FinishAgent { id } => {
+            // Handled below with the operation discriminator.
+            return Err(format!("Unexpected agent operation for {id}"));
+        }
+        Operation::AgentEnabled => {
+            let mut settings = snapshot.settings.clone();
+            settings.agents.enabled = !settings.agents.enabled;
+            save(snapshot, path, settings)?;
+            if !snapshot.settings.agents.enabled {
+                for session in &mut snapshot.engine.agents.items {
+                    if !session.status.terminal() {
+                        session.status = crate::mcp::sessions::Status::Cancelled;
+                    }
+                }
+                snapshot.engine.agents.completion_consumed = true;
+                if snapshot
+                    .engine
+                    .countdown
+                    .as_ref()
+                    .is_some_and(|c| c.source == Source::Agents)
+                {
+                    snapshot.engine.cancel_countdown();
+                }
+            }
+        }
+        Operation::RevokeAgent { id } => {
+            let mut settings = snapshot.settings.clone();
+            settings.agents.clients.retain(|c| c.id != id);
+            save(snapshot, path, settings)?;
+            for session in &mut snapshot.engine.agents.items {
+                if session.client_id == id && !session.status.terminal() {
+                    session.status = crate::mcp::sessions::Status::Cancelled;
+                }
+            }
+            snapshot.engine.agents.completion_consumed = true;
+            if snapshot
+                .engine
+                .countdown
+                .as_ref()
+                .is_some_and(|c| c.source == Source::Agents)
+            {
+                snapshot.engine.cancel_countdown();
+            }
+        }
+        Operation::AgentLease { seconds } => {
+            let mut settings = snapshot.settings.clone();
+            settings.agents.lease_seconds = seconds;
+            save(snapshot, path, settings)?;
+        }
+        Operation::AgentDefault { action } => {
+            let mut settings = snapshot.settings.clone();
+            settings.agents.default_completion = action;
+            save(snapshot, path, settings)?;
+        }
+        Operation::AgentPermission { id, action } => {
+            let mut settings = snapshot.settings.clone();
+            let client = settings
+                .agents
+                .clients
+                .iter_mut()
+                .find(|c| c.id == id)
+                .ok_or("Client not found.")?;
+            if let Some(action) = action {
+                if client.actions.contains(&action) {
+                    client.actions.retain(|a| *a != action);
+                } else {
+                    client.actions.push(action);
+                }
+            } else {
+                client.keep_awake = !client.keep_awake;
+            }
+            save(snapshot, path, settings)?;
+            // Permission changes never leave an already authorized automatic action behind.
+            for session in &mut snapshot.engine.agents.items {
+                if session.client_id == id && session.status.holds_awake() {
+                    session.status = crate::mcp::sessions::Status::Cancelled;
+                }
+            }
+            snapshot.engine.agents.completion_consumed = true;
+            if snapshot
+                .engine
+                .countdown
+                .as_ref()
+                .is_some_and(|c| c.source == Source::Agents)
+            {
+                snapshot.engine.cancel_countdown();
+            }
+        }
         Operation::Refresh | Operation::PreviewCountdown | Operation::Quit => {}
     }
     Ok(())
@@ -160,9 +301,15 @@ mod tests {
     fn appearance_settings_roundtrip_and_reject_unknown_values() {
         use crate::core::sessions::Theme;
         for theme in [Theme::System, Theme::Light, Theme::Dark] {
-            let settings = Settings { theme, ..Settings::default() };
+            let settings = Settings {
+                theme,
+                ..Settings::default()
+            };
             let text = serde_json::to_string(&settings).unwrap();
-            assert_eq!(serde_json::from_str::<Settings>(&text).unwrap().theme, theme);
+            assert_eq!(
+                serde_json::from_str::<Settings>(&text).unwrap().theme,
+                theme
+            );
         }
         assert!(serde_json::from_str::<Settings>(r#"{"theme":"invalid"}"#).is_err());
     }

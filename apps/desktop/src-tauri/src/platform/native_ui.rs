@@ -24,6 +24,11 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 struct UiRequest {
     command: String,
     settings: Option<crate::core::sessions::Settings>,
+    id: Option<String>,
+    decision: Option<String>,
+    name: Option<String>,
+    action: Option<crate::core::sessions::PowerAction>,
+    agent_seconds: Option<u64>,
     #[cfg(target_os = "macos")]
     seconds: Option<u64>,
 }
@@ -36,7 +41,38 @@ impl UiRequest {
             },
             "preview" => Operation::PreviewCountdown,
             "refresh" => Operation::Refresh,
+            "agent-enable" => Operation::AgentEnabled,
+            "agent-connect" => Operation::ConnectAgent {
+                name: self.name.ok_or("Client name missing.")?,
+            },
+            "agent-authorize" => Operation::AuthorizeAgent {
+                id: self.id.ok_or("Session missing.")?,
+                decision: self.decision.ok_or("Decision missing.")?,
+            },
+            "agent-cancel" => Operation::CancelAgent {
+                id: self.id.ok_or("Session missing.")?,
+            },
+            "agent-wait" => Operation::WaitAgent {
+                id: self.id.ok_or("Session missing.")?,
+            },
+            "agent-finish" => Operation::FinishAgent {
+                id: self.id.ok_or("Session missing.")?,
+            },
+            "agent-revoke" => Operation::RevokeAgent {
+                id: self.id.ok_or("Client missing.")?,
+            },
+            "agent-permission" => Operation::AgentPermission {
+                id: self.id.ok_or("Client missing.")?,
+                action: self.action,
+            },
+            "agent-lease" => Operation::AgentLease {
+                seconds: self.agent_seconds.ok_or("Lease duration missing.")?,
+            },
+            "agent-default" => Operation::AgentDefault {
+                action: self.action,
+            },
             "cancel" => Operation::Cancel,
+            "stay-awake" => Operation::StayAwake,
             "snooze" => Operation::Snooze,
             #[cfg(target_os = "macos")]
             "quit" => Operation::Quit,
@@ -91,6 +127,9 @@ fn snapshot_json(snapshot: &Snapshot) -> Value {
     };
     json!({
         "settings": snapshot.settings,
+        "agentSessions": snapshot.engine.agents.items,
+        "agentNow": snapshot.engine.now,
+        "agentConnections": crate::mcp::server::connection_configs(&snapshot.settings, &snapshot.settings_path),
         "settingsPath": snapshot.settings_path,
         "actions": snapshot.actions,
         "audioSupported": snapshot.audio_supported,
@@ -104,6 +143,7 @@ fn snapshot_json(snapshot: &Snapshot) -> Value {
 pub(super) fn show(snapshot: Snapshot, requests: Sender<Request>) -> Result<(), String> {
     let view = match snapshot.view {
         DialogView::Settings => "settings",
+        DialogView::Agents => "agents",
         DialogView::About => "about",
         DialogView::Help => "help",
         DialogView::AwakeDuration => "awakeDuration",

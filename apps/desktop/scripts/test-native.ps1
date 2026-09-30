@@ -4,12 +4,21 @@ $desktop = Split-Path $PSScriptRoot -Parent
 $executable = Join-Path $desktop 'native/windows/publish/Doze.Settings.exe'
 $snapshot = @{
     settings = @{
-        theme = 'system'
+        agents = @{ enabled = $true; leaseSeconds = 300; defaultCompletion = 'sleep'; clients = @(
+            @{ id = 'test-client'; name = 'Codex'; secret = 'test-only'; keepAwake = $true; actions = @('sleep') }
+        ) }
+        theme = 'system' 
         launchAtStartup = $false; startMinimized = $true; notifications = $true
         defaultAction = 'sleep'; playbackAction = 'sleep'; silenceSeconds = 60
         idleSeconds = 300; countdownSeconds = 300; logging = $false
         allowDisplaySleep = $false; defaultAwakeMinutes = 30; defaultTimerMinutes = 30
     }
+    agentNow = 600
+    agentSessions = @(
+        @{ session_id = 'test-pending'; client_name = 'Claude Code'; reason = 'Running tests'; status = 'awaiting_authorization'; completion_action = 'sleep'; last_heartbeat = 500 },
+        @{ session_id = 'test-lost'; client_name = 'Codex'; reason = 'Refactoring'; status = 'connection_lost'; completion_action = 'sleep'; last_heartbeat = 0 }
+    )
+    agentConnections = @(@{ name = 'Codex'; codex = 'Test configuration'; generic = '{}'; claude = '{}' })
     actions = @('sleep', 'hibernate', 'shutdown', 'lock', 'displayOff')
     settingsPath = (Join-Path $desktop 'native-test/settings.json')
     audioSupported = $true; startupSupported = $true
@@ -39,6 +48,6 @@ try {
     if ($process.ExitCode -ne 0 -or $output -notmatch '"command":"verified"' -or $errors) {
         throw "Native WinUI verification failed (exit $($process.ExitCode)): $errors $output"
     }
-    Write-Output 'Verified: eight native pages, immediate changes/rollback, 72-point countdown, topmost preview/real warnings, safe preview dismissal, and Cancel/Snooze routing. No power actions or settings writes.'
+    Write-Output 'Verified: nine native pages including agent authorization/connection-loss/permissions/configuration controls, immediate changes/rollback, 72-point countdown, topmost preview/real warnings, safe preview dismissal, and Cancel/Snooze routing. No power actions or settings writes.'
 }
 finally { $process.Dispose() }

@@ -30,6 +30,13 @@ public sealed class EngineBridge
         finally { writeLock.Release(); }
     }
 
+    public async Task SendAgentAsync(string command, string? id = null, string? decision = null, string? name = null, string? action = null, int? seconds = null)
+    {
+        await writeLock.WaitAsync();
+        try { await output.WriteLineAsync(JsonSerializer.Serialize(new { command, id, decision, name, action, agent_seconds = seconds }, Json)); }
+        finally { writeLock.Release(); }
+    }
+
     private static JsonObject Parse(string? line) =>
         JsonNode.Parse(line ?? throw new IOException("Doze engine disconnected."))?.AsObject()
         ?? throw new IOException("Invalid engine response.");

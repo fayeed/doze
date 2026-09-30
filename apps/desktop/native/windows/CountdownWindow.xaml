@@ -39,7 +39,10 @@
                 <Button x:Name="CancelButton" Grid.Column="1" Content="Cancel action" Click="Cancel"
                         MinHeight="40" HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" />
             </Grid>
-            <InfoBar x:Name="Notice" Grid.Row="2" IsOpen="False" IsClosable="True" />
+            <StackPanel Grid.Row="2" Spacing="8">
+            <Button x:Name="StayAwakeButton" Content="Stay Awake" Click="StayAwake" HorizontalAlignment="Center" />
+            <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True" />
+            </StackPanel>
         </Grid>
     </Grid>
 </Window>

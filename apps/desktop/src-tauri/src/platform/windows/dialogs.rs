@@ -35,7 +35,7 @@ static ACTIVE_DIALOGS: [AtomicIsize; 4] = [const { AtomicIsize::new(0) }; 4];
 
 fn dialog_slot(view: DialogView) -> usize {
     match view {
-        DialogView::Settings => 0,
+        DialogView::Settings | DialogView::Agents => 0,
         DialogView::About => 1,
         DialogView::Help => 2,
         _ => 3,
@@ -50,7 +50,7 @@ struct Dialog {
 pub fn show(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
     if matches!(
         snapshot.view,
-        DialogView::Settings | DialogView::About | DialogView::Help
+        DialogView::Settings | DialogView::Agents | DialogView::About | DialogView::Help
     ) {
         return super::winui::show(snapshot, sender);
     }
@@ -86,7 +86,7 @@ pub fn show(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
 fn show_modal(snapshot: Snapshot, sender: Sender<Request>) -> Result<(), String> {
     if matches!(
         snapshot.view,
-        DialogView::Settings | DialogView::About | DialogView::Help
+        DialogView::Settings | DialogView::Agents | DialogView::About | DialogView::Help
     ) {
         return Err("Settings, About and Menu Guide are handled by WinUI.".into());
     }
@@ -335,7 +335,10 @@ mod tests {
                     super::super::appearance::Surface::Persistent,
                 );
                 match view {
-                    DialogView::Settings | DialogView::About | DialogView::Help => {
+                    DialogView::Settings
+                    | DialogView::Agents
+                    | DialogView::About
+                    | DialogView::Help => {
                         panic!("WinUI pages use the native smoke test")
                     }
                     DialogView::AwakeDuration => assert!(matches!(
