@@ -1,5 +1,6 @@
 [package]
 name = "doze"
+default-run = "doze"
 version = "0.1.0"
 description = "A lightweight utility for a better bedtime."
 authors = ["Doze"]
