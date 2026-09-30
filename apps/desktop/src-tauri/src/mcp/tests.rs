@@ -367,3 +367,39 @@ fn json_rpc_lifecycle_and_tool_errors_are_compliant() {
         true
     );
 }
+
+#[test]
+fn connection_configuration_uses_documented_schemas_and_escaped_paths() {
+    let settings = settings();
+    let path = std::path::Path::new("C:\\Users\\Name With Spaces\\settings.json");
+    let configs = super::server::connection_configs(&settings, path);
+    let generic: Value = serde_json::from_str(configs[0]["generic"].as_str().unwrap()).unwrap();
+    let claude: Value = serde_json::from_str(configs[0]["claude"].as_str().unwrap()).unwrap();
+    assert_eq!(claude["type"], "stdio");
+    assert_eq!(generic["mcpServers"]["doze"], claude);
+    assert_eq!(
+        claude["env"]["DOZE_MCP_KEY"],
+        settings.agents.clients[0].secret
+    );
+    assert!(configs[0]["codex"]
+        .as_str()
+        .unwrap()
+        .contains("[mcp_servers.doze.env]"));
+}
+#[test]
+fn existing_timer_countdown_pauses_without_repeated_warnings() {
+    let (mut engine, settings) = (Engine::default(), settings());
+    engine.schedule(1, PowerAction::Sleep);
+    tick(&mut engine, &settings, 1);
+    assert!(engine.countdown.is_some());
+    let id = start(&mut engine, &settings, "codex", "sleep");
+    tick(&mut engine, &settings, 2);
+    assert!(engine.countdown.is_none());
+    assert!(engine.timer.is_some());
+    tick(&mut engine, &settings, 1000);
+    assert!(engine.countdown.is_none());
+    finish(&mut engine, &settings, "codex", &id);
+    tick(&mut engine, &settings, 1001);
+    assert_eq!(engine.countdown.as_ref().unwrap().source, Source::Timer);
+    assert_eq!(engine.countdown.as_ref().unwrap().deadline, 1301);
+}

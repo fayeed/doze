@@ -189,6 +189,11 @@ public sealed partial class CountdownWindow : Window
         await CommandAsync("snooze");
         Receive(new JsonObject { ["type"] = "countdown" });
         if (visible) throw new InvalidOperationException("Snoozed countdown did not hide.");
+        Receive(new JsonObject { ["type"] = "countdown", ["countdown"] = new JsonObject { ["action"] = "Sleep", ["remaining"] = 300UL } });
+        if (StayAwakeButton.Visibility != Visibility.Visible) throw new InvalidOperationException("Stay Awake is missing from the real countdown.");
+        await CommandAsync("stay-awake");
+        Receive(new JsonObject { ["type"] = "countdown" });
+        if (visible) throw new InvalidOperationException("Stay Awake did not dismiss the countdown.");
     }
 
     public async Task RenderVerificationAsync(string directory)

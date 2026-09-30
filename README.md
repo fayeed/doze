@@ -50,3 +50,7 @@ pnpm dev:desktop
 - `packages/config` — shared TypeScript compiler options
 
 See [the desktop README](apps/desktop/README.md) for native API choices, verification commands, and remaining hardware/macOS validation. No MCP or marketing website is implemented.
+
+## Coding agents
+
+Doze supports local MCP clients through its existing session engine. Open **Agents** in Doze to enable MCP, connect Codex/Claude Code, and grant per-agent wake and completion permissions. Agents renew leases and explicitly report completion; lost connections keep the computer awake. See the [desktop MCP connection guide](apps/desktop/README.md#agents-and-mcp) for configuration, lifecycle, security and safe integration tests.

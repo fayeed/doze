@@ -28,9 +28,12 @@ struct Envelope {
     call: super::tools::Call,
 }
 fn read_line(reader: &mut impl BufRead) -> Result<String, String> {
+    read_line_limited(reader, LIMIT)
+}
+fn read_line_limited(reader: &mut impl BufRead, limit: u64) -> Result<String, String> {
     let mut line = String::new();
     reader
-        .take(LIMIT)
+        .take(limit)
         .read_line(&mut line)
         .map_err(|e| e.to_string())?;
     if !line.ends_with('\n') {
@@ -64,6 +67,12 @@ pub fn start(path: PathBuf, sender: Sender<Request>) -> Result<(), String> {
         options.mode(0o600);
     }
     let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
+    }
     file.write_all(&serde_json::to_vec(&endpoint).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())?;
@@ -141,9 +150,11 @@ fn forward(path: &Path, call: super::tools::Call) -> Result<Value, String> {
             call
         }),
     )?;
-    let result: Result<Value, String> =
-        serde_json::from_str(&read_line(&mut BufReader::new(stream))?)
-            .map_err(|e| e.to_string())?;
+    let result: Result<Value, String> = serde_json::from_str(&read_line_limited(
+        &mut BufReader::new(stream),
+        1024 * 1024,
+    )?)
+    .map_err(|e| e.to_string())?;
     result
 }
 pub fn bridge() -> Result<(), String> {
@@ -159,11 +170,7 @@ pub fn bridge() -> Result<(), String> {
     let mut output = std::io::stdout().lock();
     let mut initialized = false;
     let mut ready = false;
-    loop {
-        let line = match read_line(&mut input) {
-            Ok(line) => line,
-            Err(_) => break,
-        };
+    while let Ok(line) = read_line(&mut input) {
         let value: Value = match serde_json::from_str(&line) {
             Ok(value) => value,
             Err(_) => {
@@ -286,7 +293,7 @@ pub fn connection_configs(
         .to_string_lossy()
         .into_owned();
     json!(settings.agents.clients.iter().map(|client| {
-        let command = json!({"command":executable,"args":["--mcp","--endpoint",endpoint],"env":{"DOZE_MCP_KEY":client.secret}});
+        let command = json!({"type":"stdio","command":executable,"args":["--mcp","--endpoint",endpoint],"env":{"DOZE_MCP_KEY":client.secret}});
         // JSON quoted strings are valid TOML basic strings, including Windows backslashes.
         let codex = format!("[mcp_servers.doze]\ncommand = {}\nargs = [\"--mcp\", \"--endpoint\", {}]\n[mcp_servers.doze.env]\nDOZE_MCP_KEY = {}\n", json!(executable), json!(endpoint), json!(client.secret));
         json!({"clientId":client.id,"name":client.name,"generic":json!({"mcpServers":{"doze":command}}).to_string(),"claude":command.to_string(),"codex":codex})

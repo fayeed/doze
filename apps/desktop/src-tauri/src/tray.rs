@@ -467,16 +467,6 @@ pub(crate) fn image(status: u8) -> tauri::image::Image<'static> {
     tauri::image::Image::new_owned(pixels, 32, 32)
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn template_badges_distinguish_awake_from_countdown_without_color() {
-        let center_alpha = (25 * 32 + 25) * 4 + 3;
-        assert_eq!(super::image(1).rgba()[center_alpha], 255);
-        assert_eq!(super::image(2).rgba()[center_alpha], 0);
-    }
-}
-
 fn agent_operation(id: &str) -> Option<Operation> {
     let parts: Vec<_> = id.split(':').collect();
     Some(match parts.as_slice() {
@@ -620,5 +610,15 @@ fn update_agents(app: &tauri::AppHandle, menu: &NativeMenu, snapshot: &Snapshot)
     if let Err(error) = update() {
         eprintln!("Could not update agent menu: {error}");
         previous.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn template_badges_distinguish_awake_from_countdown_without_color() {
+        let center_alpha = (25 * 32 + 25) * 4 + 3;
+        assert_eq!(super::image(1).rgba()[center_alpha], 255);
+        assert_eq!(super::image(2).rgba()[center_alpha], 0);
     }
 }

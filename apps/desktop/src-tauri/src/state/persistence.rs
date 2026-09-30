@@ -23,6 +23,12 @@ pub(super) fn persist(path: &std::path::Path, settings: &Settings) -> Result<(),
         options.mode(0o600);
     }
     let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
+    }
     file.write_all(&serde_json::to_vec_pretty(settings).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())?;

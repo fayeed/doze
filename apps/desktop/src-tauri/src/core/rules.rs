@@ -215,17 +215,15 @@ impl Engine {
             });
         }
         // Every power path respects agent wake leases, including timers already counting down.
-        if !self.agents.unsettled()
-            && !self.awake
-            && !self.while_audio
-            && self.timer.is_none()
-            && !(self.playback_enabled
+        let other_wake_required = self.awake
+            || self.while_audio
+            || self.timer.is_some()
+            || (self.playback_enabled
                 && matches!(
                     self.playback_phase,
                     Phase::Active | Phase::GracePeriod | Phase::Countdown
-                ))
-            && self.countdown.is_none()
-        {
+                ));
+        if !(self.agents.unsettled() || other_wake_required || self.countdown.is_some()) {
             if let Some(action) = self.agents.completion() {
                 self.countdown = Some(Countdown {
                     deadline: now.saturating_add(settings.countdown_seconds.max(300)),

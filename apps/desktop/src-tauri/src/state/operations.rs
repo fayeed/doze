@@ -395,4 +395,136 @@ mod tests {
             Settings::default()
         );
     }
+    struct AgentFixture {
+        snapshot: Snapshot,
+        directory: std::path::PathBuf,
+    }
+    impl AgentFixture {
+        fn new() -> Self {
+            use crate::core::sessions::{Engine, PowerAction};
+            let directory =
+                std::env::temp_dir().join(format!("doze-agents-{}", uuid::Uuid::new_v4()));
+            let path = directory.join("settings.json");
+            let mut settings = Settings::default();
+            settings.agents.enabled = true;
+            crate::mcp::tools::connect(&mut settings, "Codex").unwrap();
+            settings.agents.clients[0].keep_awake = true;
+            settings.agents.clients[0].actions = vec![PowerAction::Sleep];
+            let mut engine = Engine::default();
+            crate::mcp::tools::call(
+                &mut engine,
+                &settings,
+                &[PowerAction::Sleep],
+                crate::mcp::tools::Call {
+                    key: settings.agents.clients[0].secret.clone(),
+                    name: "doze.start_session".into(),
+                    arguments: serde_json::json!({"reason":"tests", "completion_action":"sleep"}),
+                },
+            )
+            .unwrap();
+            Self {
+                snapshot: Snapshot {
+                    settings_path: path,
+                    engine,
+                    settings,
+                    actions: vec![PowerAction::Sleep],
+                    audio_supported: false,
+                    startup_supported: false,
+                    error: None,
+                    selected_action: PowerAction::Sleep,
+                    view: super::super::DialogView::Agents,
+                },
+                directory,
+            }
+        }
+        fn apply(&mut self, op: Operation) {
+            let path = self.snapshot.settings_path.clone();
+            apply(op, &mut self.snapshot, &path).unwrap();
+        }
+    }
+    impl Drop for AgentFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.directory);
+        }
+    }
+    #[test]
+    fn general_settings_and_reset_preserve_client_permissions() {
+        let mut fixture = AgentFixture::new();
+        let expected = fixture.snapshot.settings.agents.clone();
+        fixture.apply(Operation::SaveSettings {
+            settings: Settings::default(),
+        });
+        assert_eq!(fixture.snapshot.settings.agents, expected);
+        assert!(fixture.snapshot.engine.should_hold_awake());
+    }
+    #[test]
+    fn disabling_mcp_cancels_leases_without_completion() {
+        let mut fixture = AgentFixture::new();
+        fixture.apply(Operation::AgentEnabled);
+        assert!(!fixture.snapshot.settings.agents.enabled);
+        assert!(!fixture.snapshot.engine.should_hold_awake());
+        let s = fixture.snapshot.settings.clone();
+        assert_eq!(
+            fixture.snapshot.engine.tick(1000, None, None, false, &s),
+            None
+        );
+    }
+    #[test]
+    fn revoked_credentials_and_active_sessions_cannot_continue() {
+        let mut fixture = AgentFixture::new();
+        let client = fixture.snapshot.settings.agents.clients[0].clone();
+        fixture.apply(Operation::RevokeAgent { id: client.id });
+        assert!(fixture
+            .snapshot
+            .settings
+            .agents
+            .authenticate(&client.secret)
+            .is_err());
+        assert!(!fixture.snapshot.engine.should_hold_awake());
+        assert!(fixture.snapshot.engine.agents.completion_consumed);
+    }
+    #[test]
+    fn permission_reduction_cancels_authorized_sessions() {
+        let mut fixture = AgentFixture::new();
+        let id = fixture.snapshot.settings.agents.clients[0].id.clone();
+        fixture.apply(Operation::AgentPermission {
+            id,
+            action: Some(crate::core::sessions::PowerAction::Sleep),
+        });
+        assert!(fixture.snapshot.settings.agents.clients[0]
+            .actions
+            .is_empty());
+        assert!(!fixture.snapshot.engine.should_hold_awake());
+    }
+    #[test]
+    fn wait_thirty_minutes_and_manual_resolution_preserve_authorization() {
+        let mut fixture = AgentFixture::new();
+        let settings = fixture.snapshot.settings.clone();
+        fixture
+            .snapshot
+            .engine
+            .tick(600, None, None, false, &settings);
+        let id = fixture.snapshot.engine.agents.items[0].session_id.clone();
+        fixture.apply(Operation::WaitAgent { id: id.clone() });
+        assert_eq!(
+            fixture.snapshot.engine.agents.items[0].lease_expires_at,
+            2400
+        );
+        fixture.apply(Operation::FinishAgent { id });
+        fixture
+            .snapshot
+            .engine
+            .tick(601, None, None, false, &settings);
+        assert!(fixture.snapshot.engine.countdown.is_some());
+        fixture.apply(Operation::StayAwake);
+        assert!(fixture.snapshot.engine.countdown.is_none());
+        assert!(fixture.snapshot.engine.awake);
+        assert_eq!(
+            fixture
+                .snapshot
+                .engine
+                .tick(5000, None, None, false, &settings),
+            None
+        );
+    }
 }

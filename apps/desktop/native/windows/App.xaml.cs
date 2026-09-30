@@ -32,7 +32,7 @@ public partial class App : Application
                 var commands = new List<string>();
                 countdown = new CountdownWindow(command => { commands.Add(command); return Task.CompletedTask; }, true);
                 await countdown.VerifyAsync();
-                if (!commands.SequenceEqual(new[] { "cancel", "snooze" }))
+                if (!commands.SequenceEqual(new[] { "cancel", "snooze", "stay-awake" }))
                     throw new InvalidOperationException("Preview submitted an engine operation.");
                 var arguments = Environment.GetCommandLineArgs();
                 var render = Array.IndexOf(arguments, "--render-dir");
@@ -85,7 +85,7 @@ public partial class App : Application
                 window.SetTheme(theme);
             }
             countdown?.Receive(message);
-            if (message["command"]?.GetValue<string>() is not ("cancel" or "snooze"))
+            if (message["command"]?.GetValue<string>() is not ("cancel" or "snooze" or "stay-awake"))
                 window?.Receive(message);
         }
     }
