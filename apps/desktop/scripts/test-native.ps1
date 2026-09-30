@@ -19,6 +19,7 @@ $snapshot = @{
         @{ session_id = 'test-lost'; client_name = 'Codex'; reason = 'Refactoring'; status = 'connection_lost'; completion_action = 'sleep'; last_heartbeat = 0 }
     )
     agentConnections = @(@{ name = 'Codex'; codex = 'Test configuration'; generic = '{}'; claude = '{}' })
+    agentSkills = @(@{ name = 'Codex'; path = 'C:\Users\example\.agents\skills\doze'; status = 'not_installed' })
     actions = @('sleep', 'hibernate', 'shutdown', 'lock', 'displayOff')
     settingsPath = (Join-Path $desktop 'native-test/settings.json')
     audioSupported = $true; startupSupported = $true

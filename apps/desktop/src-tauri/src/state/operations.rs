@@ -148,6 +148,10 @@ pub(super) fn apply(
             save(snapshot, path, settings)?;
         }
         Operation::OpenDialog { view } => snapshot.view = view,
+        Operation::InstallAgentSkill { name, update } => {
+            snapshot.engine.message = Some(crate::mcp::skill::install(&name, update)?);
+        }
+        Operation::OpenAgentSkillFolder => crate::mcp::skill::open_folder(path)?,
         Operation::ConnectAgent { name } => {
             let mut settings = snapshot.settings.clone();
             crate::mcp::tools::connect(&mut settings, &name)?;

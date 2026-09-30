@@ -67,7 +67,7 @@ public sealed partial class MainWindow
         if (agentDialogPermissions && client is null) { agentDialog.Hide(); return; }
         var connection = (snapshot["agentConnections"] as JsonArray)?.OfType<JsonObject>()
             .FirstOrDefault(c => c["name"]?.GetValue<string>() == agentDialogName);
-        var fingerprint = agentDialogPermissions ? client?.ToJsonString() : connection?.ToJsonString();
+        var fingerprint = agentDialogPermissions ? client?.ToJsonString() : connection?.ToJsonString() + snapshot["agentSkills"]?.ToJsonString() + snapshot["agentSkillMessage"]?.ToJsonString();
         if (fingerprint is not null && fingerprint == agentDialogFingerprint) return;
         agentDialogFingerprint = fingerprint;
         agentDialog.Content = agentDialogPermissions && client is not null
@@ -118,9 +118,52 @@ public sealed partial class MainWindow
             catch (Exception error) { Notify("Couldn't copy configuration", error.Message, InfoBarSeverity.Error); }
         };
         content.Children.Add(copy);
+        AddAgentSkillControls(content, name);
         content.Children.Add(new TextBlock { Text = "2. Reload your client and ask it to use Doze.\n3. Approve its first request in Doze, or choose persistent permissions in Settings.", TextWrapping = TextWrapping.Wrap });
         content.Children.Add(new TextBlock { Text = "This configuration contains a private credential. Keep it out of shared files and source control.", Opacity = 0.7, FontSize = 12, TextWrapping = TextWrapping.Wrap });
         return content;
+    }
+
+    private void AddAgentSkillControls(StackPanel content, string name)
+    {
+        content.Children.Add(new TextBlock { Text = "Companion skill", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var skill = (snapshot["agentSkills"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(s => s["name"]?.GetValue<string>() == name);
+        var status = skill?["status"]?.GetValue<string>() ?? "manual";
+        var path = skill?["path"]?.GetValue<string>();
+        var description = status switch
+        {
+            "installed" => "Installed · " + path,
+            "update_available" => "An existing copy differs from this release. Update only after reviewing your local edits.",
+            "blocked" => skill?["error"]?.GetValue<string>() ?? "Automatic installation is unavailable for this folder. Copy the skill manually.",
+            "not_installed" => "Install for this client at " + path,
+            _ => "Copy the bundled doze folder into your client’s skill directory."
+        };
+        content.Children.Add(new TextBlock { Text = description, TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7 });
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        if (status == "not_installed")
+        {
+            var install = ActionButton("Install Doze skill", () => bridge.SendAgentAsync("agent-skill-install", name: name));
+            install.Click += (_, _) => install.IsEnabled = false;
+            controls.Children.Add(install);
+        }
+        if (status == "update_available")
+        {
+            var confirmation = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed };
+            confirmation.Children.Add(new TextBlock { Text = "Update replaces the bundled instruction files. Your entire current copy is saved in a separate backup folder; extra files are retained. Local instruction edits are not merged.", TextWrapping = TextWrapping.Wrap });
+            var confirm = ActionButton("Confirm update", () => bridge.SendAgentAsync("agent-skill-update", name: name));
+            confirm.Click += (_, _) => confirm.IsEnabled = false;
+            var choices = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            choices.Children.Add(confirm);
+            choices.Children.Add(ActionButton("Cancel", () => { confirmation.Visibility = Visibility.Collapsed; return Task.CompletedTask; }));
+            confirmation.Children.Add(choices);
+            controls.Children.Add(ActionButton("Review update", () => { confirmation.Visibility = Visibility.Visible; return Task.CompletedTask; }));
+            content.Children.Add(confirmation);
+        }
+        controls.Children.Add(ActionButton("Open skill folder", () => bridge.SendAgentAsync("agent-skill-folder")));
+        content.Children.Add(controls);
+        var message = snapshot["agentSkillMessage"]?.GetValue<string>();
+        if (message?.StartsWith("Doze skill", StringComparison.Ordinal) == true)
+            content.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
     }
 
     private StackPanel AgentPermissionContent(JsonObject client)

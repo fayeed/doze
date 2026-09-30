@@ -142,7 +142,9 @@ Copy the generic JSON configuration into the client's MCP settings, or supply th
 
 ### Install the companion skill
 
-The repository ships a portable skill at [`skills/doze`](../../skills/doze/SKILL.md), including Codex UI metadata and a dependency on the `doze` MCP connection. Distribute this whole folder alongside a Doze release. It contains no credentials or runtime hooks. Configure MCP using the connection instructions above separately.
+Every Doze build embeds the portable [`Doze skill`](../../skills/doze/SKILL.md) and its Codex metadata, so installation works offline. In an agent's **Set up / Configure** dialog, choose **Install Doze skill** for Codex or Claude Code. The dialog shows the destination and detects an identical installed copy. If the bundled files differ, **Review update** asks for confirmation before replacing them. Updates retain extra files and preserve the complete original in a `doze-skill-backups/<unique-id>` folder beside the client's `skills` directory. Local instruction edits are not merged; the completion message gives the backup path. Backups are outside the discovery directory to prevent duplicate skills. Linked or oversized folders require manual installation.
+
+**Open skill folder** exports the bundled folder into Doze's data directory and opens it in Explorer/Finder for copying into other clients. The skill contains no credentials or runtime hooks and grants no power permissions. Configure MCP separately using the connection instructions above. Reload the client if the skill does not appear. The repository also ships `skills/doze` for manual installation:
 
 Copy the `doze` folder into the appropriate personal skill directory:
 

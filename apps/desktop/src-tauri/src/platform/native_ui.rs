@@ -45,6 +45,15 @@ impl UiRequest {
             "agent-connect" => Operation::ConnectAgent {
                 name: self.name.ok_or("Client name missing.")?,
             },
+            "agent-skill-install" => Operation::InstallAgentSkill {
+                name: self.name.ok_or("Client name missing.")?,
+                update: false,
+            },
+            "agent-skill-update" => Operation::InstallAgentSkill {
+                name: self.name.ok_or("Client name missing.")?,
+                update: true,
+            },
+            "agent-skill-folder" => Operation::OpenAgentSkillFolder,
             "agent-authorize" => Operation::AuthorizeAgent {
                 id: self.id.ok_or("Session missing.")?,
                 decision: self.decision.ok_or("Decision missing.")?,
@@ -130,6 +139,8 @@ fn snapshot_json(snapshot: &Snapshot) -> Value {
         "agentSessions": snapshot.engine.agents.items,
         "agentNow": snapshot.engine.now,
         "agentConnections": crate::mcp::server::connection_configs(&snapshot.settings, &snapshot.settings_path),
+        "agentSkills": crate::mcp::skill::states(),
+        "agentSkillMessage": snapshot.engine.message,
         "settingsPath": snapshot.settings_path,
         "actions": snapshot.actions,
         "audioSupported": snapshot.audio_supported,

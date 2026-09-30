@@ -42,6 +42,11 @@ pub enum Operation {
     ConnectAgent {
         name: String,
     },
+    InstallAgentSkill {
+        name: String,
+        update: bool,
+    },
+    OpenAgentSkillFolder,
     AuthorizeAgent {
         id: String,
         decision: String,

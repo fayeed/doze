@@ -32,6 +32,10 @@ struct AgentConnection: Codable, Identifiable {
     var clientId: String; var name: String; var generic: String; var codex: String; var claude: String
     var id: String { clientId }
 }
+struct AgentSkill: Codable, Identifiable {
+    var name: String; var status: String; var path: String?; var error: String?
+    var id: String { name }
+}
 struct EngineSnapshot: Codable {
     var settings: Preferences
     var settingsPath: String
@@ -44,6 +48,8 @@ struct EngineSnapshot: Codable {
     var agentSessions: [AgentSession]?
     var agentConnections: [AgentConnection]?
     var agentNow: Int?
+    var agentSkills: [AgentSkill]?
+    var agentSkillMessage: String?
 }
 
 enum Page: String, CaseIterable, Identifiable {
@@ -411,6 +417,7 @@ struct SettingsView: View {
     @State private var showAgentPermissions = false
     @State private var copiedAgentConfig = false
     @State private var confirmAgentRevocation = false
+    @State private var confirmSkillUpdate = false
 
     var body: some View {
         NavigationSplitView {
@@ -633,6 +640,7 @@ struct SettingsView: View {
                     NSPasteboard.general.clearContents()
                     copiedAgentConfig = NSPasteboard.general.setString(config, forType: .string)
                 }
+                agentSkillControls(name)
                 Text("2. Reload your client and ask it to use Doze.\n3. Approve its first request in Doze, or choose persistent permissions in Settings.")
                 Text("This configuration contains a private credential. Keep it out of shared files and source control.").font(.caption).foregroundStyle(.secondary)
             } else {
@@ -641,6 +649,31 @@ struct SettingsView: View {
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.secondary) }
             HStack { Spacer(); Button("Done") { selectedAgent = nil }.keyboardShortcut(.defaultAction) }
         }.padding(24).frame(width: 520)
+    }
+
+    @ViewBuilder private func agentSkillControls(_ name: String) -> some View {
+        let skill = model.snapshot?.agentSkills?.first { $0.name == name }
+        Text("Companion skill").fontWeight(.semibold)
+        if let skill = skill {
+            Text(skill.status == "installed" ? "Installed · \(skill.path ?? "")" : skill.status == "not_installed" ? "Install for this client at \(skill.path ?? "")" : skill.status == "update_available" ? "An existing copy differs from this release. Review local edits before updating." : "Automatic installation is unavailable. Copy the skill manually.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else {
+            Text("Copy the bundled doze folder into your client’s skill directory.").font(.caption).foregroundStyle(.secondary)
+        }
+        HStack {
+            if skill?.status == "not_installed" {
+                Button("Install Doze skill") { model.send("agent-skill-install", extra: ["name": name]) }
+            } else if skill?.status == "update_available" {
+                Button("Review update") { confirmSkillUpdate = true }
+                    .confirmationDialog("Update Doze skill? Your current copy will be saved in a separate backup folder. Extra files are retained; local instruction edits are not merged.", isPresented: $confirmSkillUpdate) {
+                        Button("Update and keep backup") { model.send("agent-skill-update", extra: ["name": name]) }
+                    }
+            }
+            Button("Open skill folder") { model.send("agent-skill-folder") }
+        }
+        if let message = model.snapshot?.agentSkillMessage, message.hasPrefix("Doze skill") {
+            Text(message).font(.caption).textSelection(.enabled)
+        }
     }
 
     private func explanation(_ title: String, _ detail: String, _ symbol: String) -> some View {
