@@ -6,14 +6,16 @@ pub trait PowerManager {
     fn execute(&mut self, action: PowerAction) -> Result<(), String>;
 }
 #[cfg(windows)]
-pub use windows::dialogs;
-#[cfg(windows)]
 pub use windows::countdown;
+#[cfg(windows)]
+pub use windows::dialogs;
 #[cfg(target_os = "macos")]
 pub mod countdown {
     pub struct Warning;
     impl Warning {
-        pub fn new(_: std::sync::mpsc::Sender<crate::state::Request>) -> Result<Self, String> { Ok(Self) }
+        pub fn new(_: std::sync::mpsc::Sender<crate::state::Request>) -> Result<Self, String> {
+            Ok(Self)
+        }
         pub fn update(&self, _: Option<&crate::core::countdown::Countdown>, _: u64) {}
         pub fn preview(&self, _: crate::core::sessions::PowerAction) {}
     }

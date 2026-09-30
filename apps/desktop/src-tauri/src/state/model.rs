@@ -33,6 +33,8 @@ pub enum DialogView {
 pub enum Request {
     Operation(Operation, Sender<Result<Snapshot, String>>),
     Lifecycle,
+    #[cfg(windows)]
+    WarningFailed(String),
 }
 #[derive(Clone)]
 pub struct Snapshot {

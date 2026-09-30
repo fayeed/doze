@@ -19,6 +19,10 @@ pub(super) fn worker(
     let mut power = platform::NativePower::new();
     let idle = platform::NativeIdle;
     let notifications = platform::NativeNotifications(app.clone());
+    let warning = platform::countdown::Warning::new(sender.clone());
+    if let Err(error) = &warning {
+        snapshot.error = Some(format!("Countdown window unavailable: {error}"));
+    }
     let lifecycle = platform::lifecycle::Registration::new(sender.clone());
     if let Err(error) = &lifecycle {
         snapshot.error = Some(format!("Suspend notifications unavailable: {error}"));
@@ -83,8 +87,14 @@ pub(super) fn worker(
         let mut quit = false;
         let mut snoozing = false;
         let mut open_dialog = false;
+        let mut preview_countdown = false;
         if let Some(request) = request {
             match request {
+                #[cfg(windows)]
+                Request::WarningFailed(error) => {
+                    snapshot.engine.cancel_countdown();
+                    snapshot.error = Some(format!("Countdown cancelled: {error}"));
+                }
                 Request::Lifecycle => {
                     snapshot
                         .engine
@@ -97,6 +107,7 @@ pub(super) fn worker(
                     quit = matches!(op, Operation::Quit);
                     snoozing = matches!(op, Operation::Snooze);
                     open_dialog = matches!(op, Operation::OpenDialog { .. });
+                    preview_countdown = matches!(op, Operation::PreviewCountdown);
                     let result = apply(op, &mut snapshot, &path);
                     if let Err(error) = &result {
                         snapshot.error = Some(error.clone());
@@ -167,6 +178,12 @@ pub(super) fn worker(
             user_active,
             &snapshot.settings,
         );
+        if let Err(error) = &warning {
+            if snapshot.engine.countdown.is_some() {
+                snapshot.engine.cancel_countdown();
+                snapshot.error = Some(format!("Countdown cancelled: {error}"));
+            }
+        }
         if let Err(e) = power.set_awake(snapshot.engine.should_hold_awake()) {
             snapshot.error = Some(e);
             snapshot
@@ -180,6 +197,12 @@ pub(super) fn worker(
                 {
                     snapshot.error = Some(format!("Notification unavailable: {e}"));
                 }
+            }
+        }
+        if let Ok(warning) = &warning {
+            warning.update(snapshot.engine.countdown.as_ref(), snapshot.engine.now);
+            if preview_countdown {
+                warning.preview(snapshot.selected_action);
             }
         }
         if let Some(action) = action {

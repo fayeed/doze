@@ -107,6 +107,7 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
     let snooze = item(app, "snooze", "Snooze 15 minutes")?;
     let settings = item(app, "settings", "Settings…")?;
     let preview = item(app, "preview", "Preview countdown…")?;
+    preview.set_enabled(cfg!(windows))?;
     let quit = item(app, "quit", "Quit Doze")?;
     let separators = (0..4)
         .map(|_| PredefinedMenuItem::separator(app))

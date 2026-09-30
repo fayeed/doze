@@ -25,7 +25,8 @@ Build output is in `src-tauri/target/release/`: `doze.exe`, `bundle/msi/`, and `
 - Keep awake while audio plays: retains the power request through the configured silence grace period.
 - Sleep Timer: supported native actions with presets or custom duration/date/time. The selected duration is followed by the common countdown. The timer holds the computer awake until it finishes.
 - After Playback: three meaningful observations in distinct seconds arm the rule. Silence alone cannot arm it. After the silence grace and required idle duration, a countdown starts. Resumed audio, user activity during grace/countdown, observation failures, or device changes cancel the playback action. Cancellation requires fresh playback to arm again.
-- Countdown: Cancel removes the action; Snooze adds 15 minutes. Native notifications announce the countdown and direct users to tray controls. Notification action buttons are not implemented.
+- Countdown: a native Windows warning window shows the action and remaining time. Cancel (including Escape or closing the window) removes the action; Snooze adds 15 minutes. The window closes when the countdown is cleared or completed. Native notifications remain optional. Notification action buttons are not implemented.
+- Preview countdown: opens a 60-second demonstration of the warning window for the selected timer action. Its buttons only affect the preview and cannot trigger a power action. A real countdown takes priority over the preview.
 - An explicit Sleep Timer takes precedence over After Playback. Manual Keep Awake blocks playback-triggered actions. An explicit timer can end a manual keep-awake session.
 - Defaults: 60s silence, 300s idle, 300s countdown, Sleep. Unsupported actions are disabled; saved defaults are normalized to supported actions.
 
