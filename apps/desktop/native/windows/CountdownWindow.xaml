@@ -13,7 +13,9 @@
                 <TextBlock Text="Doze · Countdown" FontSize="12" />
             </StackPanel>
         </Grid>
-        <Border Grid.Row="1" Margin="16,0,16,16" Style="{StaticResource SettingsCardStyle}">
+        <Border Grid.Row="1" Margin="16,0,16,16" Style="{StaticResource SettingsCardStyle}"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
             <Grid RowSpacing="24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />

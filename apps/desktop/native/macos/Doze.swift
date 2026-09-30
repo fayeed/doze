@@ -186,7 +186,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     private func tick() {
         if let deadline = previewDeadline, preview {
             remaining = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
-            if remaining == 0 { dismissWarning() }
+            if remaining == 0 { previewDeadline = nil }
         }
         ticks += 1
         if ticks % 5 == 0, settingsWindow?.isVisible == true, !saving { send("refresh") }
@@ -517,8 +517,8 @@ struct SettingsView: View {
 struct WarningView: View {
     @ObservedObject var model: NativeUI
     var body: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "moon.zzz").font(.system(size: 32)).foregroundStyle(.tint)
+        VStack(spacing: 12) {
+            Image(systemName: "moon.zzz").font(.system(size: 24)).foregroundStyle(.tint)
             Text("\(model.warningAction) in").font(.title2.weight(.semibold))
             Text("\(model.remaining / 60):\(String(format: "%02d", model.remaining % 60))")
                 .font(.system(size: 64, weight: .semibold, design: .rounded))

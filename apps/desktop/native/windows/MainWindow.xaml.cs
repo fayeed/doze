@@ -228,7 +228,7 @@ public sealed partial class MainWindow : Window
         PageDescription.Text = "Choose how Doze starts and where it lives.";
         Toggle("Launch at sign-in", "Start Doze automatically when you sign in to Windows.", "\uE7E8", draft.LaunchAtStartup, value => draft.LaunchAtStartup = value, Capability("startupSupported"));
         Toggle("Start in the tray", "Keep this window closed at launch. Start sessions from the tray menu.", "\uE73F", draft.StartMinimized, value => draft.StartMinimized = value);
-        Card("Appearance", "Native Windows controls follow your Windows light, dark, and accessibility settings. Settings and About share the same Mica backdrop; countdown panels use Acrylic.", "\uE790");
+        Card("Appearance", "Native Windows controls follow your Windows light, dark, and accessibility settings. Settings, About, and countdown windows share the same Mica backdrop.", "\uE790");
         Card("Session safety", "Sessions are cleared after restart or suspend/resume. Closing Settings keeps Doze and existing sessions running.", "\uE72E");
     }
 

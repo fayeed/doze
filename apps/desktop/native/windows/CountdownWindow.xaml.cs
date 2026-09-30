@@ -52,7 +52,7 @@ public sealed partial class CountdownWindow : Window
         {
             var remaining = Math.Max(0, 60 - (int)previewClock.Elapsed.TotalSeconds);
             UpdateTime((ulong)remaining);
-            if (remaining == 0) HideWarning();
+            if (remaining == 0) clock.Stop();
         };
     }
 
