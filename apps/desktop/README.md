@@ -17,7 +17,7 @@ pnpm build:desktop
 
 Requires Rust 1.88+, Microsoft C++ desktop build tools, and a .NET 8 SDK on Windows. The native build script also recognizes a workspace-local SDK at `.tools/dotnet/`. The app starts in the tray by default. Left-click or right-click opens the native system menu. Settings and About use WinUI 3; custom durations and specific dates/times use native Windows dialogs. Closing a dialog keeps sessions running. Quit releases the native power request.
 
-Build output is in `src-tauri/target/release/`: `doze.exe`, `bundle/msi/`, and `bundle/nsis/`. Installers are unsigned development artifacts.
+Build output is in `src-tauri/target/release/`: `doze.exe`, its `windows-ui/` companion folder, and `bundle/nsis/`. Windows uses NSIS: MSI validation rejects language IDs in the bundled Microsoft runtime DLLs. Installers are unsigned development artifacts.
 
 `pnpm --filter @doze/desktop native:build` publishes the self-contained WinUI companion. `pnpm --filter @doze/desktop native:test` constructs all seven pages in light/dark modes and verifies draft preservation/reset without showing a window or writing preferences. Tauri dev/build hooks publish it automatically. Installers include the .NET and Windows App SDK runtimes. An unpackaged distribution must keep the `windows-ui` folder beside `doze.exe`; the EXE alone is no longer a complete distribution.
 
@@ -80,7 +80,7 @@ Audio meters observe all active render endpoints, including non-default devices.
 
 ## macOS status
 
-Windows Settings uses WinUI 3 with a Mica Alt backdrop, native sidebar navigation, search, cards, toggles, number fields, and action selectors. About uses Desktop Acrylic in the same native window. Theme resources follow light/dark and accessibility settings. Custom timer and countdown windows extend DWM glass across their client area and paint labels with composited alpha, rather than covering the material with grey rectangles. Standard editable fields remain opaque for readability. The system tray menu remains OS-rendered.
+Windows Settings and About share a WinUI 3 Mica Alt backdrop, native sidebar navigation, search, cards, toggles, number fields, and action selectors. Navigation keeps the window backdrop intact and resets page scrolling. Theme resources follow light/dark and accessibility settings. Custom timer and countdown windows extend DWM glass across their client area and paint labels with composited alpha, rather than covering the material with grey rectangles. Standard editable fields remain opaque for readability. The system tray menu remains OS-rendered.
 
 The macOS appearance target is AppKit's standard controls and native Liquid Glass (`NSGlassEffectView`, macOS 26+), with `NSVisualEffectView` vibrancy on older releases and solid surfaces when accessibility settings require them. This target is not implemented yet: there are currently no macOS settings or countdown windows to style. It requires building and verifying the native AppKit adapter on a Mac. References: [Windows materials](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type), [Apple's Liquid Glass guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
 

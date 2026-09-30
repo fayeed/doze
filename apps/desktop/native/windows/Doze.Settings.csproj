@@ -22,6 +22,6 @@
     <ItemGroup>
       <NativeXamlResource Include="$(OutputPath)**\*.xbf;$(OutputPath)$(AssemblyName).pri" />
     </ItemGroup>
-    <Copy SourceFiles="@(NativeXamlResource)" DestinationFiles="@(NativeXamlResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(NativeXamlResource)" DestinationFiles="@(NativeXamlResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

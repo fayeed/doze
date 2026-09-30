@@ -47,7 +47,7 @@
                     <TextBlock x:Name="PageTitle" FontSize="28" FontWeight="SemiBold" />
                     <TextBlock x:Name="PageDescription" TextWrapping="Wrap" Opacity="0.7" />
                 </StackPanel>
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer x:Name="PageScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel x:Name="Cards" Spacing="8" Padding="0,0,12,12" />
                 </ScrollViewer>
                 <StackPanel x:Name="Footer" Grid.Row="2" Spacing="12" Margin="0,16,0,0">

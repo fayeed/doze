@@ -99,6 +99,7 @@ public sealed partial class MainWindow : Window
     // requesting any engine operation. CI invokes this against inherited test pipes.
     public void VerifyPages()
     {
+        var windowBackdrop = SystemBackdrop;
         foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
         {
             Root.RequestedTheme = theme;
@@ -107,6 +108,8 @@ public sealed partial class MainWindow : Window
                 SelectPage(name);
                 if (Cards.Children.Count == 0 || PageTitle.Text != name)
                     throw new InvalidOperationException($"Could not construct {name} in {theme} mode.");
+                if (!ReferenceEquals(SystemBackdrop, windowBackdrop))
+                    throw new InvalidOperationException($"Navigation replaced the window backdrop on {name}.");
             }
         }
         var before = draft.DefaultAwakeMinutes;
@@ -179,7 +182,6 @@ public sealed partial class MainWindow : Window
         Notice.IsOpen = false;
         Footer.Visibility = page == "About Doze" ? Visibility.Collapsed : Visibility.Visible;
         SaveHint.Text = dirty ? "You have unsaved changes." : "Changes apply when you save.";
-        SystemBackdrop = page == "About Doze" ? new DesktopAcrylicBackdrop() : new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
         switch (page)
         {
             case "Overview": Overview(); break;
@@ -190,6 +192,7 @@ public sealed partial class MainWindow : Window
             case "Advanced": Advanced(); break;
             case "About Doze": About(); break;
         }
+        PageScroll.ChangeView(null, 0, null, true);
     }
 
     private void Overview()
@@ -211,7 +214,7 @@ public sealed partial class MainWindow : Window
         PageDescription.Text = "Choose how Doze starts and where it lives.";
         Toggle("Launch at sign-in", "Start Doze automatically when you sign in to Windows.", "\uE7E8", draft.LaunchAtStartup, value => draft.LaunchAtStartup = value, Capability("startupSupported"));
         Toggle("Start in the tray", "Keep this window closed at launch. Start sessions from the tray menu.", "\uE73F", draft.StartMinimized, value => draft.StartMinimized = value);
-        Card("Appearance", "Native Windows controls follow your Windows light, dark, and accessibility settings. Mica is used for settings; Acrylic is used for About and countdown panels.", "\uE790");
+        Card("Appearance", "Native Windows controls follow your Windows light, dark, and accessibility settings. Settings and About share the same Mica backdrop; countdown panels use Acrylic.", "\uE790");
         Card("Session safety", "Sessions are cleared after restart or suspend/resume. Closing Settings keeps Doze and existing sessions running.", "\uE72E");
     }
 
