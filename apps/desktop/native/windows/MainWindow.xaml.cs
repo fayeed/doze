@@ -87,6 +87,7 @@ public sealed partial class MainWindow : Window
                     _ = ApplySettingsAsync();
                 }
                 Notify("Couldn't apply changes", error.GetValue<string>(), InfoBarSeverity.Error);
+                if (agentDialog is not null) agentDialog.Content = new TextBlock { Text = error.GetValue<string>(), TextWrapping = TextWrapping.Wrap };
                 return;
             }
             if (message["snapshot"] is JsonObject next)
@@ -94,6 +95,7 @@ public sealed partial class MainWindow : Window
                 var agentChanged = snapshot["settings"]?["agents"]?.ToJsonString() != next["settings"]?["agents"]?.ToJsonString()
                     || snapshot["agentSessions"]?.ToJsonString() != next["agentSessions"]?.ToJsonString();
                 snapshot = next;
+                RefreshAgentDialog();
                 if (page == "Agents" && agentChanged) { var offset = PageScroll.VerticalOffset; ShowPage(); PageScroll.ChangeView(null, offset, null, true); }
                 if (page == "Overview")
                 {
@@ -153,6 +155,16 @@ public sealed partial class MainWindow : Window
                     throw new InvalidOperationException($"Could not construct {name} in {theme} mode.");
                 if (!ReferenceEquals(SystemBackdrop, windowBackdrop))
                     throw new InvalidOperationException($"Navigation replaced the window backdrop on {name}.");
+                if (name == "Agents" && AgentClient("Codex") is JsonObject client)
+                {
+                    var permissions = AgentPermissionContent(client);
+                    var grid = permissions.Children.OfType<Grid>().Single();
+                    if (grid.Children.OfType<ToggleSwitch>().Count() != Actions.Count() + 1)
+                        throw new InvalidOperationException("Agent permission controls are missing.");
+                    var setup = AgentSetupContent("Codex", (snapshot["agentConnections"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault());
+                    if (!setup.Children.OfType<TextBox>().Any(t => t.IsReadOnly))
+                        throw new InvalidOperationException("Agent setup has no configuration to copy.");
+                }
             }
         }
         var before = draft.DefaultAwakeMinutes;
@@ -180,6 +192,21 @@ public sealed partial class MainWindow : Window
                     SelectPage(name);
                     await Task.Delay(150);
                     await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"{name.Replace(' ', '-')}-{theme}.png"));
+                    if (name == "Agents" && AgentClient("Codex") is JsonObject client)
+                    {
+                        foreach (var permissions in new[] { false, true })
+                        {
+                            var dialog = new ContentDialog
+                            {
+                                XamlRoot = Root.XamlRoot, RequestedTheme = theme,
+                                Title = permissions ? "Codex permissions" : "Set up Codex", CloseButtonText = "Done",
+                                Content = permissions ? AgentPermissionContent(client) : AgentSetupContent("Codex", (snapshot["agentConnections"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault())
+                            };
+                            var shown = dialog.ShowAsync();
+                            try { await Task.Delay(150); await VisualVerification.SaveAsync(dialog, Path.Combine(directory, $"Agents-{(permissions ? "Permissions" : "Setup")}-{theme}.png")); }
+                            finally { dialog.Hide(); await shown; }
+                        }
+                    }
                 }
             }
         }
@@ -309,9 +336,15 @@ public sealed partial class MainWindow : Window
         completion.SelectedItem = completion.Items.OfType<ComboBoxItem>().FirstOrDefault(item => (string)item.Tag == defaultAction);
         completion.SelectionChanged += async (_, _) => { if (completion.SelectedItem is ComboBoxItem item) await bridge.SendAgentAsync("agent-default", action: (string)item.Tag == "normal" ? null : (string)item.Tag); };
         Card("Default completion behavior", "Power actions always require permission. Conflicting requests return to normal. Agent countdowns last at least five minutes.", "\uE708", completion);
-        Section("Connect an agent");
+        Section("Agent connections");
         foreach (var name in new[] { "Codex", "Claude Code", "Generic MCP client" })
-            Card(name, "Create a separate local credential and copy its connection configuration below.", "\uE8A7", ActionButton("Connect", () => bridge.SendAgentAsync("agent-connect", name: name)));
+        {
+            var client = (settings?["clients"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(c => c["name"]?.GetValue<string>() == name);
+            var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            controls.Children.Add(ActionButton(client is null ? "Set up" : "Configure", () => OpenAgentSetupAsync(name)));
+            if (client is not null) controls.Children.Add(ActionButton("Permissions", () => OpenAgentPermissionsAsync(name)));
+            Card(name, client is null ? "Set up a local connection to Doze." : "Profile created · " + (client["keepAwake"]?.GetValue<bool>() == true ? "Keep awake allowed" : "Ask before keeping awake"), "\uE8A7", controls);
+        }
         Section("Sessions");
         if (snapshot["agentSessions"] is JsonArray sessions)
             foreach (var session in sessions.OfType<JsonObject>().Where(s => new[] { "active", "connection_lost", "awaiting_authorization" }.Contains(s["status"]!.GetValue<string>())))
@@ -320,7 +353,7 @@ public sealed partial class MainWindow : Window
                 var status = session["status"]!.GetValue<string>();
                 var whenDone = session["completion_action"]?.GetValue<string>();
                 var action = whenDone is null ? "Return to normal" : ActionNames.GetValueOrDefault(whenDone, whenDone);
-                var controls = new StackPanel { Spacing = 6 };
+                var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
                 if (status == "awaiting_authorization")
                     foreach (var (decision, label) in new[] { ("once", "Allow Once"), ("deny", "Deny") })
                         controls.Children.Add(ActionButton(label, () => bridge.SendAgentAsync("agent-authorize", id: id, decision: decision)));
@@ -329,45 +362,21 @@ public sealed partial class MainWindow : Window
                     controls.Children.Add(ActionButton("Cancel session", () => bridge.SendAgentAsync("agent-cancel", id: id)));
                     if (status == "connection_lost")
                     {
-                        controls.Children.Add(ActionButton("Wait 30 minutes", () => bridge.SendAgentAsync("agent-wait", id: id)));
-                        controls.Children.Add(ActionButton("End and apply action", () => bridge.SendAgentAsync("agent-finish", id: id)));
+                        var resolve = new Button { Content = "Resolve" };
+                        var menu = new MenuFlyout();
+                        var wait = new MenuFlyoutItem { Text = "Wait 30 minutes" };
+                        wait.Click += async (_, _) => await bridge.SendAgentAsync("agent-wait", id: id);
+                        var end = new MenuFlyoutItem { Text = "End and apply completion action" };
+                        end.Click += async (_, _) => await bridge.SendAgentAsync("agent-finish", id: id);
+                        menu.Items.Add(wait); menu.Items.Add(end); resolve.Flyout = menu;
+                        controls.Children.Add(resolve);
                     }
                 }
                 var lastActivity = Math.Max(0, (snapshot["agentNow"]?.GetValue<long>() ?? 0) - session["last_heartbeat"]!.GetValue<long>()) / 60;
                 Card(session["client_name"]!.GetValue<string>(), $"{session["reason"]!.GetValue<string>()}\n{status.Replace('_', ' ')} · last activity {lastActivity}m ago\nWhen finished: {action}", "\uE716", controls);
             }
-        Section("Trusted agents and permissions");
-        if (settings?["clients"] is JsonArray clients)
-            foreach (var client in clients.OfType<JsonObject>())
-            {
-                var id = client["id"]!.GetValue<string>();
-                var name = client["name"]!.GetValue<string>();
-                var permissions = new StackPanel { Spacing = 6 };
-                permissions.Children.Add(ActionButton($"Keep awake: {(client["keepAwake"]?.GetValue<bool>() == true ? "allowed" : "ask")}", () => bridge.SendAgentAsync("agent-permission", id: id)));
-                foreach (var action in Actions)
-                {
-                    var allowed = client["actions"]!.AsArray().Any(a => a!.GetValue<string>() == action);
-                    permissions.Children.Add(ActionButton($"{ActionNames[action]}: {(allowed ? "allowed" : "ask")}", () => bridge.SendAgentAsync("agent-permission", id: id, action: action)));
-                }
-                permissions.Children.Add(ActionButton("Revoke connection", () => bridge.SendAgentAsync("agent-revoke", id: id)));
-                Card(name, "Changing permissions cancels this agent’s active sessions. Revoking also invalidates its connection credential.", "\uE72E", permissions);
-            }
-        if (snapshot["agentConnections"] is JsonArray connections)
-            foreach (var connection in connections.OfType<JsonObject>())
-            {
-                var name = connection["name"]!.GetValue<string>();
-                var config = connection[name == "Codex" ? "codex" : name == "Claude Code" ? "claude" : "generic"]!.GetValue<string>();
-                var content = new StackPanel { Spacing = 8 };
-                content.Children.Add(new TextBlock { Text = name == "Codex" ? "Add to ~/.codex/config.toml" : "Use with claude mcp add-json doze '<JSON>' or your client’s MCP configuration", TextWrapping = TextWrapping.Wrap });
-                content.Children.Add(new TextBox { Text = config, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 150 });
-                content.Children.Add(ActionButton("Copy configuration", () => {
-                    var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
-                    data.SetText(config);
-                    Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
-                    return Task.CompletedTask;
-                }));
-                Cards.Children.Add(content);
-            }
+        if ((snapshot["agentSessions"] as JsonArray)?.OfType<JsonObject>().Any(s => new[] { "active", "connection_lost", "awaiting_authorization" }.Contains(s["status"]?.GetValue<string>())) != true)
+            Cards.Children.Add(new TextBlock { Text = "No active agent sessions", Opacity = 0.7, Margin = new Thickness(0, 4, 0, 12) });
     }
 
     private void Advanced()

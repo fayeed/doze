@@ -407,6 +407,10 @@ private extension View {
 
 struct SettingsView: View {
     @ObservedObject var model: NativeUI
+    @State private var selectedAgent: String?
+    @State private var showAgentPermissions = false
+    @State private var copiedAgentConfig = false
+    @State private var confirmAgentRevocation = false
 
     var body: some View {
         NavigationSplitView {
@@ -430,6 +434,9 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle(model.page?.rawValue ?? "Doze")
+        }
+        .sheet(isPresented: Binding(get: { selectedAgent != nil }, set: { if !$0 { selectedAgent = nil } })) {
+            agentSheet
         }
     }
 
@@ -542,12 +549,30 @@ struct SettingsView: View {
             }
             Text("A lost connection keeps the computer awake until resolved. Automatic completion requires all overlapping agents to finish with the same authorized action, followed by at least five minutes to cancel.").foregroundStyle(.secondary)
         }
-        Section("Connect an agent") {
+        Section("Agent connections") {
             ForEach(["Codex", "Claude Code", "Generic MCP client"], id: \.self) { name in
-                Button("Connect to \(name)") { model.send("agent-connect", extra: ["name": name]) }
+                let client = model.agentSettings?.clients.first { $0.name == name }
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(name).bold()
+                        Text(client == nil ? "Set up a local connection to Doze." : "Profile created · \(client!.keepAwake ? "Keep awake allowed" : "Ask before keeping awake")")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(client == nil ? "Set up" : "Configure") {
+                        showAgentPermissions = false; copiedAgentConfig = false; selectedAgent = name
+                        if client == nil { model.send("agent-connect", extra: ["name": name]) }
+                    }
+                    if client != nil {
+                        Button("Permissions") { showAgentPermissions = true; selectedAgent = name }
+                    }
+                }
             }
         }
         Section("Sessions") {
+            if !(model.snapshot?.agentSessions ?? []).contains(where: { ["active", "connection_lost", "awaiting_authorization"].contains($0.status) }) {
+                Text("No active agent sessions").foregroundStyle(.secondary)
+            }
             ForEach((model.snapshot?.agentSessions ?? []).filter { ["active", "connection_lost", "awaiting_authorization"].contains($0.status) }) { session in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(session.client_name).bold()
@@ -559,39 +584,63 @@ struct SettingsView: View {
                             Button("Deny") { model.send("agent-authorize", extra: ["id": session.id, "decision": "deny"]) }
                         }
                     } else {
-                        Button("Cancel session") { model.send("agent-cancel", extra: ["id": session.id]) }
                         if session.status == "connection_lost" {
                             Text("Last activity \(max(0, (model.snapshot?.agentNow ?? 0) - session.last_heartbeat) / 60)m ago")
-                            Button("Wait 30 minutes") { model.send("agent-wait", extra: ["id": session.id]) }
-                            Button("End and apply completion action") { model.send("agent-finish", extra: ["id": session.id]) }
+                        }
+                        HStack {
+                            Button("Cancel session") { model.send("agent-cancel", extra: ["id": session.id]) }
+                            if session.status == "connection_lost" {
+                                Menu("Resolve") {
+                                    Button("Wait 30 minutes") { model.send("agent-wait", extra: ["id": session.id]) }
+                                    Button("End and apply completion action") { model.send("agent-finish", extra: ["id": session.id]) }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        Section("Trusted agents and permissions") {
-            ForEach(model.agentSettings?.clients ?? []) { client in
-                VStack(alignment: .leading) {
-                    Text(client.name).bold()
-                    Button("Keep awake: \(client.keepAwake ? "allowed" : "ask")") { model.send("agent-permission", extra: ["id": client.id]) }
+    }
+
+    private func agentActionName(_ action: String) -> String {
+        ["sleep": "Sleep", "hibernate": "Hibernate", "lock": "Lock", "displayOff": "Turn display off", "shutdown": "Shut down"][action] ?? action
+    }
+
+    @ViewBuilder private var agentSheet: some View {
+        let name = selectedAgent ?? "Agent"
+        VStack(alignment: .leading, spacing: 16) {
+            Text(showAgentPermissions ? "\(name) permissions" : "Set up \(name)").font(.title2).bold()
+            if showAgentPermissions, let client = model.agentSettings?.clients.first(where: { $0.name == name }) {
+                Text("Allow automatically when a switch is on. Otherwise, Doze asks for each session. Changes apply immediately and cancel this agent’s active sessions.").foregroundStyle(.secondary)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 20) {
+                    Toggle("Keep awake", isOn: Binding(get: { client.keepAwake }, set: { _ in model.send("agent-permission", extra: ["id": client.id]) }))
                     ForEach(model.snapshot?.actions ?? [], id: \.self) { action in
-                        Button("\(action.capitalized): \(client.actions.contains(action) ? "allowed" : "ask")") { model.send("agent-permission", extra: ["id": client.id, "action": action]) }
+                        Toggle(agentActionName(action), isOn: Binding(get: { client.actions.contains(action) }, set: { _ in model.send("agent-permission", extra: ["id": client.id, "action": action]) }))
                     }
-                    Button("Revoke connection") { model.send("agent-revoke", extra: ["id": client.id]) }
+                }.toggleStyle(.switch)
+                Button("Revoke connection", role: .destructive) { confirmAgentRevocation = true }
+                    .confirmationDialog("Revoke \(name)? This cancels its sessions and invalidates its credential.", isPresented: $confirmAgentRevocation) {
+                        Button("Revoke", role: .destructive) { model.send("agent-revoke", extra: ["id": client.id]); selectedAgent = nil }
+                    }
+            } else if let connection = model.snapshot?.agentConnections?.first(where: { $0.name == name }) {
+                Text("Add Doze to your client, then reload it. Creating a profile here does not install or verify the client connection.").foregroundStyle(.secondary)
+                Text(name == "Codex" ? "1. Add this to ~/.codex/config.toml." : name == "Claude Code" ? "1. Add this JSON with claude mcp add-json --scope user doze '<JSON>'." : "1. Add this to your client’s mcpServers configuration.")
+                let config = name == "Codex" ? connection.codex : name == "Claude Code" ? connection.claude : connection.generic
+                ScrollView([.horizontal, .vertical]) {
+                    Text(config).font(.system(.callout, design: .monospaced)).textSelection(.enabled).padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(height: 180).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                Button(copiedAgentConfig ? "Copied" : "Copy configuration") {
+                    NSPasteboard.general.clearContents()
+                    copiedAgentConfig = NSPasteboard.general.setString(config, forType: .string)
                 }
+                Text("2. Reload your client and ask it to use Doze.\n3. Approve its first request in Doze, or choose persistent permissions in Settings.")
+                Text("This configuration contains a private credential. Keep it out of shared files and source control.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                ProgressView("Creating your local profile…")
             }
-        }
-        Section("Connection configuration") {
-            ForEach(model.snapshot?.agentConnections ?? []) { connection in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(connection.name).bold()
-                    Text(connection.name == "Codex" ? "Add to ~/.codex/config.toml" : "Add to your MCP client configuration").foregroundStyle(.secondary)
-                    let config = connection.name == "Codex" ? connection.codex : connection.name == "Claude Code" ? connection.claude : connection.generic
-                    Text(config).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    Button("Copy configuration") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(config, forType: .string) }
-                }
-            }
-        }
+            if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.secondary) }
+            HStack { Spacer(); Button("Done") { selectedAgent = nil }.keyboardShortcut(.defaultAction) }
+        }.padding(24).frame(width: 520)
     }
 
     private func explanation(_ title: String, _ detail: String, _ symbol: String) -> some View {
