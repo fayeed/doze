@@ -16,25 +16,41 @@ if (process.platform === "darwin") {
   }
   const output = path.join(desktop, "native/macos/publish");
   mkdirSync(output, { recursive: true });
-  const arch = process.arch === "arm64" ? "arm64" : "x86_64";
-  const build = spawnSync(
+  const slices = [];
+  for (const arch of ["arm64", "x86_64"]) {
+    const slice = path.join(output, `Doze.NativeUI-${arch}`);
+    const build = spawnSync(
+      "xcrun",
+      [
+        "swiftc",
+        "-swift-version",
+        "5",
+        "-O",
+        "-parse-as-library",
+        "-target",
+        `${arch}-apple-macos13.0`,
+        "native/macos/Doze.swift",
+        "-o",
+        slice,
+      ],
+      { cwd: desktop, stdio: "inherit" },
+    );
+    if (build.error) console.error(build.error.message);
+    if (build.status !== 0) process.exit(build.status ?? 1);
+    slices.push(slice);
+  }
+  const executable = path.join(output, "Doze.NativeUI");
+  const merged = spawnSync(
     "xcrun",
-    [
-      "swiftc",
-      "-swift-version",
-      "5",
-      "-O",
-      "-parse-as-library",
-      "-target",
-      `${arch}-apple-macos13.0`,
-      "native/macos/Doze.swift",
-      "-o",
-      path.join(output, "Doze.NativeUI"),
-    ],
-    { cwd: desktop, stdio: "inherit" },
+    ["lipo", "-create", ...slices, "-output", executable],
+    { stdio: "inherit" },
   );
-  if (build.error) console.error(build.error.message);
-  process.exit(build.status ?? 1);
+  if (merged.status !== 0) process.exit(merged.status ?? 1);
+  // Developer builds need a valid local signature after combining the architecture slices.
+  const signed = spawnSync("codesign", ["--force", "--sign", "-", executable], {
+    stdio: "inherit",
+  });
+  process.exit(signed.status ?? 1);
 }
 if (process.platform !== "win32") process.exit(0);
 

@@ -28,6 +28,50 @@ struct UiRequest {
     seconds: Option<u64>,
 }
 
+impl UiRequest {
+    fn operation(self) -> Result<Operation, String> {
+        Ok(match self.command.as_str() {
+            "save" => Operation::SaveSettings {
+                settings: self.settings.ok_or("Settings were not supplied.")?,
+            },
+            "preview" => Operation::PreviewCountdown,
+            "refresh" => Operation::Refresh,
+            #[cfg(target_os = "macos")]
+            "cancel" => Operation::Cancel,
+            #[cfg(target_os = "macos")]
+            "snooze" => Operation::Snooze,
+            #[cfg(target_os = "macos")]
+            "quit" => Operation::Quit,
+            #[cfg(target_os = "macos")]
+            "awake" => Operation::KeepAwake {
+                seconds: Some(self.seconds.ok_or("Duration missing.")?),
+            },
+            #[cfg(target_os = "macos")]
+            "timer" => Operation::ScheduleSelected {
+                seconds: self.seconds.ok_or("Duration missing.")?,
+            },
+            _ => return Err("Unknown native UI command.".into()),
+        })
+    }
+}
+
+fn reply_to_ui(line: &str, requests: &Sender<Request>) -> Result<Value, String> {
+    let request: UiRequest = serde_json::from_str(line).map_err(|error| error.to_string())?;
+    let saved = request.command == "save";
+    let operation = request.operation()?;
+    let (reply, response) = mpsc::channel();
+    requests
+        .send(Request::Operation(operation, reply))
+        .map_err(|_| "Doze engine stopped.")?;
+    let snapshot = response
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Doze engine did not respond.")??;
+    Ok(json!({
+        "type": if saved { "saved" } else { "state" },
+        "snapshot": snapshot_json(&snapshot),
+    }))
+}
+
 fn snapshot_json(snapshot: &Snapshot) -> Value {
     let engine = &snapshot.engine;
     let timer = if let Some(countdown) = &engine.countdown {
@@ -119,51 +163,40 @@ pub(super) fn send(open: Value, requests: Sender<Request>) -> Result<(), String>
         .map_err(|error| error.to_string())?;
     let replies = queue.clone();
     let generation = GENERATION.fetch_add(1, Ordering::Relaxed);
-    std::thread::Builder::new().name("doze-native-ui-read".into()).spawn(move || {
-        let mut output = BufReader::new(output);
-        loop {
-            let mut line = String::new();
-            // Bound messages from the UI; no network-facing endpoint exists.
-            match output.by_ref().take(64 * 1024).read_line(&mut line) {
-                Ok(0) | Err(_) => break,
-                Ok(_) if !line.ends_with('\n') => break,
-                Ok(_) => {}
+    std::thread::Builder::new()
+        .name("doze-native-ui-read".into())
+        .spawn(move || {
+            let mut output = BufReader::new(output);
+            loop {
+                let mut line = String::new();
+                // Bound messages from the UI; no network-facing endpoint exists.
+                match output.by_ref().take(64 * 1024).read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) if !line.ends_with('\n') => break,
+                    Ok(_) => {}
+                }
+                let result = reply_to_ui(&line, &requests);
+                let value =
+                    result.unwrap_or_else(|error| json!({ "type": "error", "error": error }));
+                if replies.send(value).is_err() {
+                    break;
+                }
             }
-            let result = serde_json::from_str::<UiRequest>(&line).map_err(|error| error.to_string()).and_then(|request| {
-                let saved = request.command == "save";
-                let operation = match request.command.as_str() {
-                    "save" => Operation::SaveSettings { settings: request.settings.ok_or("Settings were not supplied.")? },
-                    "preview" => Operation::PreviewCountdown,
-                    "refresh" => Operation::Refresh,
-                    #[cfg(target_os = "macos")]
-                    "cancel" => Operation::Cancel,
-                    #[cfg(target_os = "macos")]
-                    "snooze" => Operation::Snooze,
-                    #[cfg(target_os = "macos")]
-                    "quit" => Operation::Quit,
-                    #[cfg(target_os = "macos")]
-                    "awake" => Operation::KeepAwake { seconds: Some(request.seconds.ok_or("Duration missing.")?) },
-                    #[cfg(target_os = "macos")]
-                    "timer" => Operation::ScheduleSelected { seconds: request.seconds.ok_or("Duration missing.")? },
-                    _ => return Err("Unknown Settings command.".into()),
-                };
-                let (reply, response) = mpsc::channel();
-                requests.send(Request::Operation(operation, reply)).map_err(|_| "Doze engine stopped.")?;
-                let snapshot = response.recv_timeout(Duration::from_secs(10)).map_err(|_| "Doze engine did not respond.")??;
-                Ok(json!({ "type": if saved { "saved" } else { "state" }, "snapshot": snapshot_json(&snapshot) }))
-            });
-            let value = result.unwrap_or_else(|error| json!({ "type": "error", "error": error }));
-            if replies.send(value).is_err() { break; }
-        }
-        let _ = child.wait();
-        #[cfg(target_os = "macos")]
-        let _ = requests.send(Request::WarningFailed("Native warning window closed unexpectedly.".into()));
-        if let Ok(mut active) = UI.get_or_init(|| Mutex::new(None)).lock() {
-            if active.as_ref().is_some_and(|(current, _)| *current == generation) {
-                *active = None;
+            let _ = child.wait();
+            #[cfg(target_os = "macos")]
+            let _ = requests.send(Request::WarningFailed(
+                "Native warning window closed unexpectedly.".into(),
+            ));
+            if let Ok(mut active) = UI.get_or_init(|| Mutex::new(None)).lock() {
+                if active
+                    .as_ref()
+                    .is_some_and(|(current, _)| *current == generation)
+                {
+                    *active = None;
+                }
             }
-        }
-    }).map_err(|error| error.to_string())?;
+        })
+        .map_err(|error| error.to_string())?;
     *active = Some((generation, queue));
     Ok(())
 }

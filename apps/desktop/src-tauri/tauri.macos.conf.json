@@ -1,7 +1,7 @@
 {
   "bundle": {
     "resources": {
-      "../native/macos/publish/": "macos-ui/"
+      "../native/macos/publish/Doze.NativeUI": "macos-ui/Doze.NativeUI"
     },
     "macOS": {
       "minimumSystemVersion": "13.0"

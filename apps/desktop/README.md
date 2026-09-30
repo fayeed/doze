@@ -31,7 +31,7 @@ The tray uses native icon menu items with antialiased line glyphs, short live st
 - Keep awake while audio plays: retains the power request through the configured silence grace period.
 - Sleep Timer: supported native actions with presets or custom duration/date/time. The selected duration is followed by the common countdown. The timer holds the computer awake until it finishes.
 - After Playback: three meaningful observations in distinct seconds arm the rule. Silence alone cannot arm it. After the silence grace and required idle duration, a countdown starts. Resumed audio, user activity during grace/countdown, observation failures, or device changes cancel the playback action. Cancellation requires fresh playback to arm again.
-- Countdown: a native Windows warning window shows the action and remaining time. Cancel (including Escape or closing the window) removes the action; Snooze adds 15 minutes. The window closes when the countdown is cleared or completed. Native notifications remain optional. Notification action buttons are not implemented.
+- Countdown: a native platform warning window shows the action and remaining time. Cancel (including Escape or closing the window) removes the action; Snooze adds 15 minutes. The window closes when the countdown is cleared or completed. Native notifications remain optional. Notification action buttons are not implemented.
 - Preview countdown: opens a 60-second demonstration of the warning window for the selected timer action. Its buttons only affect the preview and cannot trigger a power action. A real countdown takes priority over the preview.
 - An explicit Sleep Timer takes precedence over After Playback. Manual Keep Awake blocks playback-triggered actions. An explicit timer can end a manual keep-awake session.
 - Defaults: 60s silence, 300s idle, 300s countdown, Sleep. Unsupported actions are disabled; saved defaults are normalized to supported actions.
@@ -53,7 +53,9 @@ Sessions and power actions never restore after restart. Windows suspend/resume e
 | `src-tauri/src/platform/` | PowerManager, AudioMonitor, IdleMonitor, NotificationManager adapters |
 | `src-tauri/src/tray.rs` | Native tray menus, checked states, status and countdown controls |
 | `src-tauri/src/quick_settings.rs` | Native shortcuts to saved preferences and default durations |
-| `src-tauri/src/platform/windows/settings_ui.rs` | Native tabbed preferences, validation, diagnostics, and draft reset |
+| `native/windows/` | Native WinUI preferences and About |
+| `native/macos/Doze.swift` | Native SwiftUI/AppKit preferences, About, timers, and countdown |
+| `src-tauri/src/platform/native_ui.rs` | Private platform UI pipes; engine validation and persistence |
 
 One channel-driven worker owns sessions, COM interfaces, and power requests. Native windows submit validated operations through the worker channel. The WinUI companion uses private inherited standard-I/O pipes; it has no power-action implementation or network endpoint. The hidden app without audio monitoring wakes at most hourly or at a deadline; lifecycle events and commands wake it immediately. Audio meters and countdowns use one-second observations. Tray labels update when the worker wakes or the tray is clicked. Endpoint changes use OS callbacks. No React, HTML, CSS, JavaScript frontend, webview window, or browser interval is used. Node is only needed for development tooling.
 
@@ -78,13 +80,15 @@ Audio meters observe all active render endpoints, including non-default devices.
 
 [Microsoft documents](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudiometerinformation) that software peak meters report zero in exclusive mode. Exclusive playback without hardware meters, very quiet content, and short bursts between samples are limitations. Protected/exclusive media and Bluetooth transitions need hardware validation before treating After Playback as dependable for every media source.
 
-## macOS status
+## Native appearance
 
 Windows Settings and About share a WinUI 3 Mica Alt backdrop, native sidebar navigation, search, cards, toggles, number fields, and action selectors. Navigation keeps the window backdrop intact and resets page scrolling. Theme resources follow light/dark and accessibility settings. Custom timer and countdown windows extend DWM glass across their client area and paint labels with composited alpha, rather than covering the material with grey rectangles. Standard editable fields remain opaque for readability. The system tray menu remains OS-rendered.
 
-The macOS appearance target is AppKit's standard controls and native Liquid Glass (`NSGlassEffectView`, macOS 26+), with `NSVisualEffectView` vibrancy on older releases and solid surfaces when accessibility settings require them. This target is not implemented yet: there are currently no macOS settings or countdown windows to style. It requires building and verifying the native AppKit adapter on a Mac. References: [Windows materials](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type), [Apple's Liquid Glass guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
+macOS uses native SwiftUI/AppKit windows: sidebar preferences, About, custom durations/end times, and a floating countdown with Cancel/Snooze. Native navigation and controls adopt the current OS design when built against its SDK. Command surfaces use `glassEffect` on macOS 26+ and native material on older releases; system accessibility preferences govern transparency and contrast. Settings and About use the same window shell. The menu bar continues to use native macOS menus, template status icons, grouped actions, checkmarks, and Command shortcuts. Windows uses its native tray menu and WinUI controls. References: [Windows materials](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type), [Apple's Liquid Glass guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
 
-Separate adapters include IOKit keep-awake assertions and Sleep, Core Graphics idle detection, and native notifications through Tauri. These have not been compiled or tested on a Mac. Native settings/custom timer dialogs, After Playback, launch at login, and native suspend/resume observation remain unimplemented on macOS; controls are hidden or the limitation is reported. Other macOS power actions are hidden.
+Build macOS on a Mac with Xcode and a macOS 26 or newer SDK selected through `xcode-select`. `pnpm --filter @doze/desktop native:build` compiles a universal Swift companion for Apple Silicon and Intel; `native:test` constructs the native pages in light/dark without saving preferences or performing power actions. `pnpm build:desktop` includes the companion in the app's Resources/macos-ui folder. Native macOS sources and packaging have not been compiled or visually verified from this Windows workspace. Use the newest available Xcode SDK for the latest system appearance.
+
+Separate adapters include IOKit keep-awake assertions and Sleep, Core Graphics idle detection, and native notifications through Tauri. These have not been compiled or tested on a Mac. After Playback, launch at login, and native suspend/resume observation remain unimplemented on macOS; controls are disabled and the limitation is reported. Other macOS power actions are disabled. The Rust engine remains the only owner of countdown time and power execution. Preview controls submit no power operation; losing the native companion cancels any pending real countdown.
 
 ## Hardware verification
 

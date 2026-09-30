@@ -11,7 +11,7 @@ Doze is a lightweight desktop utility for keeping your computer awake when it sh
 - Rust 1.88 or newer and Cargo
 - Tauri desktop prerequisites for your operating system
 
-For Windows, install the Microsoft C++ Build Tools with the **Desktop development with C++** workload. For macOS, install Xcode Command Line Tools. The desktop currently targets Windows and macOS.
+For Windows, install the Microsoft C++ Build Tools with the **Desktop development with C++** workload. For macOS, install Xcode with a macOS 26 or newer SDK for the native SwiftUI/AppKit companion and current Liquid Glass appearance. The desktop currently targets Windows and macOS.
 
 ## Get started
 

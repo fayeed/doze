@@ -405,28 +405,54 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
         let _ = tray.set_icon_with_as_template(Some(image(state)), cfg!(target_os = "macos"));
     }
 }
-// Crisp native tray glyph, with a violet awake dot or amber countdown dot.
+// Native template images ignore color, so countdown uses a ring and awake a filled dot.
 pub(crate) fn image(status: u8) -> tauri::image::Image<'static> {
     let mut pixels = vec![0u8; 32 * 32 * 4];
     for y in 0..32 {
         for x in 0..32 {
-            let moon = (x as f64 - 14.0).powi(2) + (y as f64 - 15.0).powi(2) < 11.0f64.powi(2)
-                && (x as f64 - 19.0).powi(2) + (y as f64 - 10.0).powi(2) > 10.0f64.powi(2);
-            let dot = status > 0
-                && (x as f64 - 25.0).powi(2) + (y as f64 - 25.0).powi(2) < 4.0f64.powi(2);
-            if moon || dot {
+            let mut moon_samples = 0;
+            let mut badge_samples = 0;
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    let px = x as f64 + (sx as f64 + 0.5) / 4.0;
+                    let py = y as f64 + (sy as f64 + 0.5) / 4.0;
+                    let moon =
+                        (px - 14.0).hypot(py - 15.0) < 11.0 && (px - 19.0).hypot(py - 10.0) > 10.0;
+                    let radius = (px - 25.0).hypot(py - 25.0);
+                    let badge = status > 0 && radius < 4.0 && (status != 2 || radius > 2.2);
+                    if badge {
+                        badge_samples += 1;
+                    } else if moon {
+                        moon_samples += 1;
+                    }
+                }
+            }
+            let coverage = moon_samples + badge_samples;
+            if coverage > 0 {
                 let i = (y * 32 + x) * 4;
-                pixels[i..i + 4].copy_from_slice(if dot {
+                let color = if badge_samples > moon_samples {
                     if status == 2 {
-                        &[238, 174, 74, 255]
+                        [238, 174, 74]
                     } else {
-                        &[155, 139, 239, 255]
+                        [155, 139, 239]
                     }
                 } else {
-                    &[165, 166, 180, 255]
-                });
+                    [165, 166, 180]
+                };
+                pixels[i..i + 3].copy_from_slice(&color);
+                pixels[i + 3] = (coverage * 255 / 16) as u8;
             }
         }
     }
     tauri::image::Image::new_owned(pixels, 32, 32)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn template_badges_distinguish_awake_from_countdown_without_color() {
+        let center_alpha = (25 * 32 + 25) * 4 + 3;
+        assert_eq!(super::image(1).rgba()[center_alpha], 255);
+        assert_eq!(super::image(2).rgba()[center_alpha], 0);
+    }
 }
