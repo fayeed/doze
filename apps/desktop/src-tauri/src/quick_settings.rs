@@ -13,7 +13,14 @@ const PREFERENCES: [(Preference, &str); 5] = [
     ),
     (Preference::Notifications, "Show countdown notifications"),
     (Preference::LaunchAtStartup, "Launch when I sign in"),
-    (Preference::StartMinimized, "Start in the tray"),
+    (
+        Preference::StartMinimized,
+        if cfg!(target_os = "macos") {
+            "Start in the menu bar"
+        } else {
+            "Start in the tray"
+        },
+    ),
     (Preference::Logging, "Write local diagnostic logs"),
 ];
 type DurationMenu = (Submenu<tauri::Wry>, Vec<(u64, CheckMenuItem<tauri::Wry>)>);
