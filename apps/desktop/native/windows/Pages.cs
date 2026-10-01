@@ -97,7 +97,7 @@ public sealed partial class MainWindow
         Code(Row(rows, "Program", path, CopyButton("Copy path", path, "Copy the doze-cli.exe path")));
         Code(Row(rows, "PowerShell alias", alias, CopyButton("Copy alias", alias, "Copy the PowerShell alias")));
         Code(Row(rows, "Example", example + "\ndoze watch --pid 1234 --then sleep", CopyButton("Copy example", example, "Copy the example command")));
-        Footer("Add the alias to your PowerShell profile (notepad $PROFILE) to type doze run and doze watch. The -2060-2060then option accepts nothing, sleep, display-off, lock, hibernate or shutdown. The action runs only after the job succeeds and its final warning ends; a failed job or Ctrl-C releases the computer without any action. Running jobs appear in Agents. Doze must be running.");
+        Footer("Add the alias to your PowerShell profile (notepad $PROFILE) to type doze run and doze watch. The -⁠-⁠then option accepts nothing, sleep, display-off, lock, hibernate or shutdown. The action runs only after the job succeeds and its final warning ends; a failed job or Ctrl-C releases the computer without any action. Running jobs appear in Agents. Doze must be running.");
     }
 
     private static void Code(TextBlock text) => text.Style = Style("CodeTextStyle");

@@ -310,7 +310,7 @@ public sealed partial class MainWindow : Window
             foreach (var text in Descendants(Cards).OfType<TextBlock>().Select(block => block.Text)
                          .Concat(Descendants(Cards).OfType<ComboBoxItem>().Select(item => item.Content as string ?? "")))
             {
-                foreach (var banned in new[] { "displayOff", "Display off", "Shutdown ", "awaiting_authorization", "connection_lost", "(seconds)" })
+                foreach (var banned in new[] { "displayOff", "Display off", "Shutdown ", "awaiting_authorization", "connection_lost", "(seconds)", "2060" })
                     if (text.Contains(banned, StringComparison.Ordinal))
                         throw new InvalidOperationException($"{name} shows \"{banned}\" in \"{text}\".");
             }
