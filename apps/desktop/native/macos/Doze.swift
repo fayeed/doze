@@ -111,6 +111,24 @@ enum Page: String, CaseIterable, Identifiable {
     case about = "About Doze"
 
     var id: String { rawValue }
+    /// Settings that live on each page, so search finds them as well as page titles.
+    var keywords: String {
+        switch self {
+        case .overview: return "status session control keep awake stop extend timer countdown audio playback start"
+        case .general: return "launch login sign in startup menu bar theme appearance dark light time remaining"
+        case .session: return "keep awake display sleep screen default duration minutes power timer action"
+        case .playback: return "audio music video silence inactivity idle after playback"
+        case .notifications: return "final warning countdown duration seconds notification preview snooze"
+        case .agents: return "mcp codex claude code agent lease heartbeat permissions skill connection"
+        case .advanced: return "logging diagnostics log reset defaults data finder preferences"
+        case .help: return "menu guide help explain"
+        case .about: return "version privacy about acknowledgements"
+        }
+    }
+    func matches(_ query: String) -> Bool {
+        let words = query.split(separator: " ")
+        return words.allSatisfy { rawValue.localizedCaseInsensitiveContains($0) || keywords.localizedCaseInsensitiveContains($0) }
+    }
     var symbol: String {
         switch self {
         case .overview: return "house"
@@ -238,6 +256,9 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         page = .about
         page = .session
         guard draft.defaultAwakeMinutes == 42 else { throw verificationError("Navigation lost edits.") }
+        guard Page.session.matches("display sleep"), Page.general.matches("Login"), !Page.about.matches("lease") else {
+            throw verificationError("Search does not find settings by keyword.")
+        }
         var first = Preferences()
         first.notifications = false
         draft = first
@@ -552,7 +573,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $model.page) {
-                ForEach(Page.allCases.filter { model.search.isEmpty || $0.rawValue.localizedCaseInsensitiveContains(model.search) }) { page in
+                ForEach(Page.allCases.filter { model.search.isEmpty || $0.matches(model.search) }) { page in
                     Label(page.rawValue, systemImage: page.symbol).tag(page)
                 }
             }
