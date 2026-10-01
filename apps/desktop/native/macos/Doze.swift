@@ -658,18 +658,19 @@ struct SettingsView: View {
                 Button("Show preferences in Finder", action: model.openData)
             }
             Section("Command line") {
-                let command = commandLinePath
+                let alias = "alias doze=" + shellQuoted(model.snapshot?.executable ?? "/Applications/Doze.app/Contents/MacOS/doze")
                 Text("Keep this Mac awake while a job runs, then optionally sleep. Doze must be running; a failed job or Ctrl-C releases without any action.")
                     .foregroundStyle(.secondary)
-                Text("\(command) run --then sleep -- ffmpeg -i in.mov out.mp4\n\(command) watch --pid 1234 --then sleep")
-                    .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-                HStack {
-                    Button("Copy example") {
+                LabeledContent("Add to ~/.zshrc") {
+                    Button("Copy alias") {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString("\(command) run --then sleep -- ", forType: .string)
+                        NSPasteboard.general.setString(alias, forType: .string)
                     }
-                    Spacer()
                 }
+                Text("doze run --then sleep -- ffmpeg -i in.mov out.mp4\ndoze watch --pid 1234 --then sleep")
+                    .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                Text("--then accepts nothing, sleep, display-off, lock or shutdown.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             Section("Session safety") { Text("Rust validates settings and owns all power actions. Closing Settings keeps Doze running. Transient sessions are never restored from disk.") }
             Section("Reset preferences") {
@@ -902,10 +903,10 @@ struct SettingsView: View {
 
     private func agentActionName(_ action: String) -> String { actionLabel(action) }
 
-    /// The quoted path to Doze's binary, which also handles `doze run` and `doze watch`.
-    private var commandLinePath: String {
-        let path = model.snapshot?.executable ?? "/Applications/Doze.app/Contents/MacOS/doze"
-        return path.contains(" ") ? "\"\(path)\"" : path
+    /// Doze's binary also handles `doze run` and `doze watch`; single quotes keep paths with
+    /// spaces intact in the shell alias.
+    private func shellQuoted(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     private func leaseLabel(_ seconds: Int) -> String {
