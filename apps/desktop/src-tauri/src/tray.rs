@@ -328,6 +328,25 @@ pub(crate) fn status_text(snapshot: &Snapshot) -> String {
     }
 }
 
+/// Short text beside the menu bar icon: the final warning in seconds, otherwise the power
+/// timer, otherwise a timed keep-awake session.
+pub(crate) fn menu_bar_title(snapshot: &Snapshot) -> Option<String> {
+    let engine = &snapshot.engine;
+    if !snapshot.settings.menu_bar_time {
+        return None;
+    }
+    if let Some(countdown) = &engine.countdown {
+        let seconds = countdown.deadline.saturating_sub(engine.now);
+        return Some(format!("{}:{:02}", seconds / 60, seconds % 60));
+    }
+    engine
+        .timer
+        .as_ref()
+        .map(|timer| timer.deadline)
+        .or(engine.awake_deadline)
+        .map(|deadline| minutes_left(deadline, engine.now))
+}
+
 pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
     let Some(menu) = app.try_state::<NativeMenu>() else {
         return;
@@ -437,6 +456,8 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
         };
         let _ = tray.set_tooltip(Some(&format!("Doze · {status}\n{timer}")));
         let _ = tray.set_icon_with_as_template(Some(image(state)), cfg!(target_os = "macos"));
+        #[cfg(target_os = "macos")]
+        let _ = tray.set_title(menu_bar_title(snapshot));
     }
 }
 // Native template images ignore color, so countdown uses a ring and awake a filled dot.
@@ -632,6 +653,45 @@ mod tests {
         assert_eq!(super::minutes_left(1900, 100), "30m");
         assert_eq!(super::minutes_left(3700, 100), "1h 0m");
         assert_eq!(super::minutes_left(7301, 100), "2h 1m");
+    }
+    #[test]
+    fn menu_bar_title_prefers_the_warning_then_the_timer_then_awake() {
+        use crate::core::{
+            countdown::{Countdown, Source},
+            sessions::{Engine, PowerAction, Settings, Timer},
+        };
+        use crate::state::{DialogView, Snapshot};
+        let mut snapshot = Snapshot {
+            settings_path: "settings.json".into(),
+            engine: Engine::default(),
+            settings: Settings::default(),
+            actions: vec![PowerAction::Sleep],
+            audio_supported: true,
+            startup_supported: true,
+            error: None,
+            selected_action: PowerAction::Sleep,
+            view: DialogView::Settings,
+        };
+        assert_eq!(super::menu_bar_title(&snapshot), None);
+        snapshot.engine.now = 100;
+        snapshot.engine.awake_deadline = Some(100 + 2520);
+        assert_eq!(super::menu_bar_title(&snapshot).as_deref(), Some("42m"));
+        snapshot.engine.timer = Some(Timer {
+            deadline: 100 + 3900,
+            action: PowerAction::Sleep,
+        });
+        assert_eq!(super::menu_bar_title(&snapshot).as_deref(), Some("1h 5m"));
+        snapshot.engine.countdown = Some(Countdown {
+            deadline: 100 + 287,
+            action: PowerAction::Sleep,
+            source: Source::Timer,
+        });
+        assert_eq!(super::menu_bar_title(&snapshot).as_deref(), Some("4:47"));
+        snapshot.settings.menu_bar_time = false;
+        assert_eq!(super::menu_bar_title(&snapshot), None);
+        // Older settings files gain the preference switched on.
+        let old: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert!(old.menu_bar_time);
     }
     #[test]
     fn template_badges_distinguish_awake_from_countdown_without_color() {

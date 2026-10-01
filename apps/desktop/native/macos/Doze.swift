@@ -15,6 +15,7 @@ struct Preferences: Codable, Equatable {
     var allowDisplaySleep = false
     var defaultAwakeMinutes = 30
     var defaultTimerMinutes = 30
+    var menuBarTime = true
 }
 
 struct AgentClient: Codable, Identifiable {
@@ -593,6 +594,8 @@ struct SettingsView: View {
                     Text("Dark").tag("dark")
                 }
                 Text("System follows your Mac’s appearance automatically. Changes apply immediately to Doze windows.").foregroundStyle(.secondary)
+                Toggle("Show time remaining in the menu bar", isOn: $model.draft.menuBarTime)
+                Text("Shows the final warning, power timer or timed Keep Awake session beside Doze’s icon.").foregroundStyle(.secondary)
                 explanation("Made for macOS", "Native controls, sidebar and Liquid Glass follow the system appearance on recent macOS releases. Older systems use native vibrancy. macOS controls contrast and reduced transparency.", "macwindow")
             }
         case .session:

@@ -64,4 +64,6 @@ public sealed record Preferences
     public bool AllowDisplaySleep { get; set; }
     public int DefaultAwakeMinutes { get; set; } = 30;
     public int DefaultTimerMinutes { get; set; } = 30;
+    // Used by the macOS menu bar; kept so Windows saves preserve it.
+    public bool MenuBarTime { get; set; } = true;
 }

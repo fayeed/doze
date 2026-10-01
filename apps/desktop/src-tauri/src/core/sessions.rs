@@ -48,6 +48,8 @@ pub struct Settings {
     pub allow_display_sleep: bool,
     pub default_awake_minutes: u64,
     pub default_timer_minutes: u64,
+    /// macOS shows the nearest countdown, timer or awake deadline beside the menu bar icon.
+    pub menu_bar_time: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -66,6 +68,7 @@ impl Default for Settings {
             allow_display_sleep: false,
             default_awake_minutes: 30,
             default_timer_minutes: 30,
+            menu_bar_time: true,
         }
     }
 }
