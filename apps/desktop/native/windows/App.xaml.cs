@@ -19,7 +19,19 @@ public partial class App : Application
         timer?.SetTheme(value);
     }
 
-    public App() => InitializeComponent();
+    public App()
+    {
+        InitializeComponent();
+        // Report the cause instead of a bare stowed-exception crash code.
+        UnhandledException += (_, args) => Console.Error.WriteLine($"Unhandled: {args.Message} {args.Exception}");
+    }
+
+    private void OpenTimer(JsonObject message)
+    {
+        timer ??= new TimerWindow(bridge!);
+        timer.SetTheme(theme);
+        timer.Open(message);
+    }
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
@@ -82,9 +94,7 @@ public partial class App : Application
         var type = message["type"]?.GetValue<string>();
         if (type == "open" && message["view"]?.GetValue<string>() is "awakeDuration" or "awakeTime" or "timerDuration" or "timerTime")
         {
-            timer ??= new TimerWindow(bridge!);
-            timer.SetTheme(theme);
-            timer.Open(message);
+            OpenTimer(message);
             return;
         }
         timer?.Receive(message);
@@ -98,12 +108,14 @@ public partial class App : Application
         {
             if (type == "open")
             {
-                window ??= new MainWindow(bridge!, message, ChangeTheme);
+                window ??= new MainWindow(bridge!, message, ChangeTheme, view => OpenTimer(new JsonObject
+                {
+                    ["type"] = "open", ["view"] = view, ["snapshot"] = window?.Snapshot.DeepClone()
+                }));
                 window.SetTheme(theme);
             }
             countdown?.Receive(message);
-            if (message["command"]?.GetValue<string>() is not ("cancel" or "snooze" or "stay-awake"))
-                window?.Receive(message);
+            window?.Receive(message);
         }
     }
 }

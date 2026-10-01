@@ -116,17 +116,25 @@ public sealed partial class MainWindow
             AutomationProperties.SetName(named, title);
         control.VerticalAlignment = VerticalAlignment.Center;
         grid.Children.Add(control);
+        // The control's natural width is read once, while it sits in the auto-sized column.
+        // Re-measuring here, or re-placing on height changes, would make layout cycle.
+        double? natural = null;
+        bool? placedBelow = null;
         void Arrange(double width)
         {
-            control.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-            var below = width < 440 || control.DesiredSize.Width > width * 0.55;
+            natural ??= control.DesiredSize.Width;
+            var below = width < 440 || natural > width * 0.55;
+            if (below == placedBelow) return;
+            placedBelow = below;
             Grid.SetRow(control, below ? 1 : 0);
             Grid.SetColumn(control, below ? 1 : 2);
             control.HorizontalAlignment = below ? HorizontalAlignment.Left : HorizontalAlignment.Right;
             control.Margin = below ? new Thickness(0, 10, 0, 0) : new Thickness(16, 0, 0, 0);
         }
-        Arrange(double.PositiveInfinity);
-        grid.SizeChanged += (_, args) => Arrange(args.NewSize.Width);
+        Grid.SetColumn(control, 2);
+        control.HorizontalAlignment = HorizontalAlignment.Right;
+        control.Margin = new Thickness(16, 0, 0, 0);
+        grid.SizeChanged += (_, args) => { if (args.NewSize.Width != args.PreviousSize.Width) Arrange(args.NewSize.Width); };
         return grid;
     }
 

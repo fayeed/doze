@@ -26,10 +26,13 @@ public sealed partial class MainWindow : Window
     // Smallest size in effective pixels; it fits a 1080p display at 200% scaling with the taskbar.
     private const int MinimumWidth = 680, MinimumHeight = 480;
 
-    public MainWindow(EngineBridge bridge, JsonObject initial, Action<string>? changeTheme = null)
+    private readonly Action<string>? openTimer;
+
+    public MainWindow(EngineBridge bridge, JsonObject initial, Action<string>? changeTheme = null, Action<string>? openTimer = null)
     {
         this.bridge = bridge;
         this.changeTheme = changeTheme ?? SetTheme;
+        this.openTimer = openTimer;
         snapshot = initial["snapshot"]!.AsObject();
         preferences = new LiveSettings(ReadPreferences());
         InitializeComponent();
@@ -83,6 +86,8 @@ public sealed partial class MainWindow : Window
                     KeepScroll(ShowPage);
                     _ = ApplySettingsAsync();
                 }
+                // A refused control-center command leaves its switch or picker as it was.
+                else if (page == "Overview") KeepScroll(ShowPage);
                 Notify(command == "save" ? "Couldn't apply changes" : "Couldn't complete that", error.GetValue<string>(), InfoBarSeverity.Error);
                 if (agentDialog is not null) agentDialog.Content = new TextBlock { Text = error.GetValue<string>(), TextWrapping = TextWrapping.Wrap };
                 return;
@@ -206,6 +211,7 @@ public sealed partial class MainWindow : Window
             }
         }
         VerifyText();
+        VerifyControlCenter();
         var before = draft.DefaultAwakeMinutes;
         draft.DefaultAwakeMinutes = 42;
         SelectPage("General");
@@ -216,6 +222,68 @@ public sealed partial class MainWindow : Window
         draft.DefaultAwakeMinutes = before;
         ResetDraft();
         if (draft.DefaultAwakeMinutes != 30) throw new InvalidOperationException("Reset did not fill defaults.");
+    }
+
+    internal JsonObject Snapshot => snapshot;
+
+    // Sample sessions for verification and renders: nothing running, then a timed Keep Awake
+    // with a timer whose final warning is showing.
+    private static JsonObject IdleSession() => new()
+    {
+        ["awake"] = false, ["whileAudio"] = false, ["holdingAwake"] = false, ["playbackEnabled"] = false,
+        ["playbackPhase"] = "waiting", ["selectedAction"] = "sleep", ["message"] = "Doze skill installed"
+    };
+
+    private static JsonObject BusySession() => new()
+    {
+        ["awake"] = true, ["awakeRemaining"] = 2520, ["whileAudio"] = true, ["holdingAwake"] = true, ["playbackEnabled"] = true,
+        ["playbackPhase"] = "grace", ["selectedAction"] = "displayOff",
+        ["timer"] = new JsonObject { ["action"] = "displayOff", ["remaining"] = 3900 },
+        ["countdown"] = new JsonObject { ["action"] = "displayOff", ["remaining"] = 287, ["source"] = "timer" },
+        ["message"] = "Snoozed for 15 minutes"
+    };
+
+    private bool Shows(string name) => Descendants(Cards).OfType<FrameworkElement>().Any(element =>
+        Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(element) == name || (element as ContentControl)?.Content as string == name
+        || (element as TextBlock)?.Text == name);
+
+    private void VerifyControlCenter()
+    {
+        var original = snapshot["session"]?.DeepClone();
+        try
+        {
+            snapshot["session"] = IdleSession();
+            SelectPage("Overview");
+            foreach (var name in new[] { "Keep awake for 15m", "Keep awake for 2h", "Keep awake indefinitely", "Sleep in 15m", "Sleep in 2h",
+                         "More ways to keep awake", "More timer options", "Keep awake while audio plays", "Sleep after playback stops" })
+                if (!Shows(name)) throw new InvalidOperationException($"Overview is missing \"{name}\".");
+            if (Shows("Last event: Doze skill installed")) throw new InvalidOperationException("Overview shows skill messages as events.");
+            if (Cards.Children.OfType<TextBlock>().Any(header => header.Text == "Overview"))
+                throw new InvalidOperationException("Overview repeats its title.");
+
+            var previous = snapshot.DeepClone().AsObject();
+            snapshot["session"] = BusySession();
+            UpdateLivePage(previous);
+            foreach (var name in new[] { "Extend 15 minutes", "Stop keeping awake", "Stop timer", "Snooze 15 minutes", "Stay Awake",
+                         "Cancel the action", "Turn display off in", "4:47", "Last event: Snoozed for 15 minutes", "Waiting for silence and inactivity" })
+                if (!Shows(name)) throw new InvalidOperationException($"Overview is missing \"{name}\" during a session.");
+            if (Shows("Keep awake for 15m")) throw new InvalidOperationException("Overview offers presets while keeping awake.");
+
+            // A tick that only changes times updates text in place instead of rebuilding.
+            var first = Cards.Children[0];
+            previous = snapshot.DeepClone().AsObject();
+            snapshot["session"]!["countdown"]!["remaining"] = 286;
+            snapshot["session"]!["awakeRemaining"] = 2519;
+            UpdateLivePage(previous);
+            if (!ReferenceEquals(first, Cards.Children[0]) || !Shows("4:46"))
+                throw new InvalidOperationException("Overview rebuilt instead of updating its clock.");
+            if (!HasDeadline) throw new InvalidOperationException("Overview would not refresh every second.");
+        }
+        finally
+        {
+            snapshot["session"] = original;
+            SelectPage("Overview");
+        }
     }
 
     /// No engine ids, raw seconds or inconsistent action names on any page.
@@ -284,6 +352,7 @@ public sealed partial class MainWindow : Window
                             await Task.Delay(150);
                             await VisualVerification.SaveAsync(Root, Path.Combine(directory, file + "-end.png"));
                         }
+                        if (name == "Overview") await RenderSessionsAsync(directory, file);
                         if (label == "" && name == "Agents" && AgentClient("Codex") is JsonObject client)
                             await RenderAgentDialogsAsync(directory, theme, client);
                     }
@@ -291,6 +360,27 @@ public sealed partial class MainWindow : Window
             }
         }
         finally { Root.Background = null; AppWindow.Hide(); }
+    }
+
+    private async Task RenderSessionsAsync(string directory, string file)
+    {
+        var original = snapshot["session"]?.DeepClone();
+        foreach (var (variant, session) in new[] { ("idle", IdleSession()), ("busy", BusySession()) })
+        {
+            snapshot["session"] = session;
+            ShowPage();
+            await Task.Delay(300);
+            AssertNothingClipped($"{file} {variant}");
+            await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"{file}-{variant}.png"));
+            if (PageScroll.ScrollableHeight > 0)
+            {
+                PageScroll.ChangeView(null, PageScroll.ScrollableHeight, null, true);
+                await Task.Delay(150);
+                await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"{file}-{variant}-end.png"));
+            }
+        }
+        snapshot["session"] = original;
+        ShowPage();
     }
 
     private async Task RenderAgentDialogsAsync(string directory, ElementTheme theme, JsonObject client)
