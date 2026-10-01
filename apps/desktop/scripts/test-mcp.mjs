@@ -47,17 +47,21 @@ const clients = [];
 const guard = setTimeout(() => {
   host.kill();
   process.exitCode = 1;
-}, 30000);
+}, 60000);
 const command = async (name) => {
   host.stdin.write(`${name}\n`);
   return JSON.parse((await output.next()).value);
 };
-const connect = async (name, key = `${name}-${"x".repeat(32)}`) => {
+const connect = async (
+  name,
+  key = `${name}-${"x".repeat(32)}`,
+  extraEnv = {},
+) => {
   const client = new Client({ name, version: "1.0.0" });
   const transport = new StdioClientTransport({
     command: path.join(binaries, `doze${suffix}`),
     args: ["--mcp", "--endpoint", endpoint],
-    env: { ...process.env, DOZE_MCP_KEY: key },
+    env: { ...process.env, DOZE_MCP_KEY: key, ...extraEnv },
     stderr: "inherit",
   });
   await client.connect(transport);
@@ -72,8 +76,62 @@ const call = async (client, name, args = {}) => {
   assert.notEqual(result.isError, true, JSON.stringify(result));
   return result.structuredContent.result;
 };
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// `doze run` from a terminal: the same binary, talking to the engine as a command-line job.
+const job = (args) =>
+  new Promise((resolve) => {
+    const child = spawn(
+      path.join(binaries, `doze${suffix}`),
+      ["run", "--endpoint", endpoint, ...args],
+      { stdio: ["ignore", "ignore", "pipe"], windowsHide: true },
+    );
+    let stderr = "";
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("exit", (code) => resolve({ code, stderr }));
+  });
 try {
   assert.equal((await output.next()).value, "ready");
+  const shell =
+    process.platform === "win32" ? ["cmd", "/c"] : ["/bin/sh", "-c"];
+  const succeeded = await job(["--then", "sleep", "--", ...shell, "exit 0"]);
+  assert.equal(succeeded.code, 0, succeeded.stderr);
+  assert.match(succeeded.stderr, /sleep follows Doze's final warning/);
+  assert.deepEqual(await command("state"), {
+    awake: true,
+    countdown: true,
+    executed: 0,
+  });
+  await command("cancel");
+  const failed = await job(["--then", "sleep", "--", ...shell, "exit 3"]);
+  assert.equal(failed.code, 3, failed.stderr);
+  assert.match(failed.stderr, /released without sleep/);
+  assert.deepEqual(await command("state"), {
+    awake: false,
+    countdown: false,
+    executed: 0,
+  });
+  // The bridge keeps a connected agent's session alive through a long step.
+  const patient = await connect("claude", undefined, {
+    DOZE_KEEPALIVE_INTERVAL_SECONDS: "1",
+  });
+  const long = await call(patient, "start_session", { reason: "Long build" });
+  await pause(3500);
+  const kept = await call(patient, "get_session", {
+    session_id: long.session_id,
+  });
+  assert(kept.last_heartbeat > long.last_heartbeat, "keep-alive renewed");
+  assert.equal(kept.status, "active");
+  await patient.close();
+  const observer = await connect("claude");
+  const before = await call(observer, "get_session", {
+    session_id: long.session_id,
+  });
+  await pause(2500);
+  const after = await call(observer, "get_session", {
+    session_id: long.session_id,
+  });
+  assert.equal(after.last_heartbeat, before.last_heartbeat, "renewal stops");
+  await call(observer, "cancel_session", { session_id: long.session_id });
   const codex = await connect("codex");
   const claude = await connect("claude");
   const listed = await codex.listTools();
@@ -89,7 +147,8 @@ try {
   });
   assert.equal(a.status, "active");
   assert.equal(a.test_awake, true);
-  assert.equal(a.test_ui_sessions, 1);
+  // Two command-line jobs and the keep-alive session above remain in the history.
+  assert.equal(a.test_ui_sessions, 4);
   const renewed = await call(codex, "heartbeat", { session_id: a.session_id });
   assert(renewed.lease_expires_at > a.lease_expires_at);
   const b = await call(claude, "start_session", {
@@ -204,7 +263,7 @@ try {
   assert(history.some((item) => item.session_id === anchor.session_id));
   await call(reconnected, "cancel_session", { session_id: anchor.session_id });
   console.log(
-    "MCP SDK verified: real stdio handshake, tools, mock wake acquisition, UI snapshot, heartbeat, finish/countdown, cancellation, multiple clients, conflicting actions, unauthorized actions, ownership, disconnect/expiry and reconnect. No native power actions.",
+    "MCP SDK verified: command-line jobs (success, failure), bridge keep-alive while connected, real stdio handshake, tools, mock wake acquisition, UI snapshot, heartbeat, finish/countdown, cancellation, multiple clients, conflicting actions, unauthorized actions, ownership, disconnect/expiry and reconnect. No native power actions.",
   );
 } finally {
   clearTimeout(guard);

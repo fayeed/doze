@@ -301,7 +301,17 @@ pub(crate) fn status_text(snapshot: &Snapshot) -> String {
     {
         "Agent connection lost · keeping awake".into()
     } else if engine.agents.holds_awake() {
-        "Keeping awake · agents working".into()
+        let only_jobs = engine
+            .agents
+            .items
+            .iter()
+            .filter(|s| s.status.holds_awake())
+            .all(|s| s.client_id == crate::mcp::sessions::LOCAL_CLIENT_ID);
+        if only_jobs {
+            "Keeping awake · command running".into()
+        } else {
+            "Keeping awake · agents working".into()
+        }
     } else if let Some(deadline) = engine.awake_deadline {
         format!(
             "Keeping awake · {} left",

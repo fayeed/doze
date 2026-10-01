@@ -5,7 +5,7 @@ use crate::{
     },
     mcp::{
         auth::TrustedClient,
-        sessions::{Session, Status},
+        sessions::{Session, Status, KEEPALIVE_LIMIT_SECONDS, LOCAL_CLIENT_ID},
     },
 };
 use serde::{Deserialize, Serialize};
@@ -48,13 +48,46 @@ fn parse_action(
 fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, String> {
     serde_json::from_value(value).map_err(|e| format!("Invalid arguments: {e}"))
 }
+/// The built-in client for jobs the user starts from a terminal. Its calls arrive only over
+/// the private bridge, which already requires the per-launch token from the user's 0600
+/// endpoint file, and they are authorized because the user ran the command themselves.
+fn local_client(supported: &[PowerAction]) -> TrustedClient {
+    TrustedClient {
+        id: LOCAL_CLIENT_ID.into(),
+        name: "Command line".into(),
+        secret: String::new(),
+        keep_awake: true,
+        actions: supported.to_vec(),
+    }
+}
+
 pub fn call(
     engine: &mut Engine,
     settings: &Settings,
     supported: &[PowerAction],
-    call: Call,
+    mut call: Call,
 ) -> Result<Value, String> {
-    let client = settings.agents.authenticate(&call.key)?;
+    let local;
+    let client = match call.name.strip_prefix("job.") {
+        Some(rest) => {
+            if ![
+                "start_session",
+                "heartbeat",
+                "finish_session",
+                "fail_session",
+                "cancel_session",
+                "get_session",
+            ]
+            .contains(&rest)
+            {
+                return Err("Unknown job command.".into());
+            }
+            call.name = format!("doze.{rest}");
+            local = local_client(supported);
+            &local
+        }
+        None => settings.agents.authenticate(&call.key)?,
+    };
     if call.name == "doze.start_session" {
         let start: Start = decode(call.arguments)?;
         if start.reason.trim().is_empty()
@@ -114,6 +147,7 @@ pub fn call(
             },
             timeout_at: start.optional_timeout.map(|t| engine.now.saturating_add(t)),
             lost_at: None,
+            explicit_at: engine.now,
         };
         if approved {
             join_authorized_batch(engine, &session.session_id);
@@ -137,6 +171,7 @@ pub fn call(
     }
     if ![
         "doze.heartbeat",
+        "doze.bridge_keepalive",
         "doze.finish_session",
         "doze.fail_session",
         "doze.cancel_session",
@@ -161,6 +196,32 @@ pub fn call(
             }
             if session.timeout_at.is_some_and(|t| engine.now >= t) {
                 return Err("Session timeout reached. Resolve in Doze.".into());
+            }
+            session.status = Status::Active;
+            session.last_heartbeat = engine.now;
+            session.explicit_at = engine.now;
+            session.lease_expires_at = engine
+                .now
+                .saturating_add(settings.agents.lease_seconds)
+                .min(session.timeout_at.unwrap_or(u64::MAX));
+        }
+        // Sent only by the MCP bridge process while its agent app stays connected; it is not
+        // an advertised tool. It renews the lease but never finishes, and stops after the
+        // keep-alive limit so a forgotten finish still ends in connection-lost.
+        "doze.bridge_keepalive" => {
+            if session.status == Status::AwaitingAuthorization {
+                return Ok(json!(session));
+            }
+            if !settings.agents.keep_alive_while_connected {
+                return Err("Keep-alive while connected is turned off in Doze.".into());
+            }
+            if !session.status.holds_awake() {
+                return Err("Session is not active.".into());
+            }
+            if session.timeout_at.is_some_and(|t| engine.now >= t)
+                || engine.now.saturating_sub(session.explicit_at) >= KEEPALIVE_LIMIT_SECONDS
+            {
+                return Err("Automatic renewal limit reached; the agent must heartbeat.".into());
             }
             session.status = Status::Active;
             session.last_heartbeat = engine.now;
@@ -244,6 +305,7 @@ pub fn authorize(
     session.status = Status::Active;
     session.authorized_action = session.completion_action;
     session.last_heartbeat = engine.now;
+    session.explicit_at = engine.now;
     session.lease_expires_at = engine
         .now
         .saturating_add(settings.agents.lease_seconds)

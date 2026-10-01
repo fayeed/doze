@@ -614,3 +614,108 @@ fn denied_request_history_is_bounded_without_disturbing_authorized_completion() 
     tick(&mut engine, &settings, 1);
     assert!(engine.countdown.is_some());
 }
+fn job(e: &mut Engine, s: &Settings, name: &str, args: Value) -> Result<Value, String> {
+    tools::call(
+        e,
+        s,
+        &[PowerAction::Sleep, PowerAction::Lock],
+        Call {
+            key: String::new(),
+            name: format!("job.{name}"),
+            arguments: args,
+        },
+    )
+}
+#[test]
+fn command_line_jobs_need_no_mcp_or_approval_and_sleep_after_success() {
+    let mut s = Settings::default();
+    assert!(!s.agents.enabled);
+    let mut e = Engine::default();
+    let started = job(
+        &mut e,
+        &s,
+        "start_session",
+        json!({"reason":"Running ffmpeg","completion_action":"sleep"}),
+    )
+    .unwrap();
+    assert_eq!(started["status"], "active");
+    assert_eq!(started["client_name"], "Command line");
+    let id = started["session_id"].as_str().unwrap().to_string();
+    assert!(e.should_hold_awake());
+    e.now = 100;
+    job(&mut e, &s, "heartbeat", json!({"session_id":id})).unwrap();
+    job(&mut e, &s, "finish_session", json!({"session_id":id})).unwrap();
+    assert!(tick(&mut e, &s, 101).is_none());
+    assert_eq!(e.countdown.as_ref().map(|c| c.source), Some(Source::Agents));
+    // A failed job releases without any action.
+    s.agents.enabled = false;
+    let mut e = Engine::default();
+    let id = job(
+        &mut e,
+        &s,
+        "start_session",
+        json!({"reason":"Build","completion_action":"sleep"}),
+    )
+    .unwrap()["session_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    job(&mut e, &s, "fail_session", json!({"session_id":id})).unwrap();
+    assert!(tick(&mut e, &s, 1).is_none());
+    assert!(e.countdown.is_none() && !e.should_hold_awake());
+    // Jobs cannot use agent-only or unknown commands, or touch agent sessions.
+    assert!(job(&mut e, &s, "list_sessions", json!({})).is_err());
+    assert!(job(&mut e, &s, "bridge_keepalive", json!({"session_id":id})).is_err());
+    let s = settings();
+    let agent = start(&mut e, &s, "codex", "sleep");
+    assert!(job(&mut e, &s, "cancel_session", json!({"session_id":agent})).is_err());
+}
+#[test]
+fn bridge_keepalive_renews_without_finishing_and_respects_limits() {
+    let mut s = settings();
+    let mut e = Engine::default();
+    let id = start(&mut e, &s, "codex", "sleep");
+    let keepalive = |e: &mut Engine, s: &Settings| {
+        call(e, s, "codex", "bridge_keepalive", json!({"session_id": id}))
+    };
+    // A long step: no agent heartbeat for hours, but the connected bridge keeps the lease.
+    for now in (20..7200).step_by(20) {
+        e.now = now;
+        keepalive(&mut e, &s).unwrap();
+        assert!(tick(&mut e, &s, now).is_none());
+    }
+    let session = keepalive(&mut e, &s).unwrap();
+    assert_eq!(session["status"], "active");
+    assert!(e.countdown.is_none(), "keep-alive never finishes a session");
+    // Past the limit without the agent's own heartbeat, renewal stops.
+    e.now = super::sessions::KEEPALIVE_LIMIT_SECONDS;
+    assert!(keepalive(&mut e, &s).is_err());
+    call(&mut e, &s, "codex", "heartbeat", json!({"session_id": id})).unwrap();
+    assert!(keepalive(&mut e, &s).is_ok());
+    // The setting turns it off; pending sessions are left waiting for approval.
+    s.agents.keep_alive_while_connected = false;
+    assert!(keepalive(&mut e, &s).is_err());
+    s.agents.clients[0].keep_awake = false;
+    let pending = start(&mut e, &s, "codex", "sleep");
+    let waiting = call(
+        &mut e,
+        &s,
+        "codex",
+        "bridge_keepalive",
+        json!({"session_id": pending}),
+    );
+    assert_eq!(waiting.unwrap()["status"], "awaiting_authorization");
+}
+#[test]
+fn mcp_clients_cannot_reach_jobs_or_keepalive() {
+    let mut initialized = true;
+    let mut invoke = |_, _| Ok(json!({}));
+    for name in ["doze.bridge_keepalive", "job.start_session"] {
+        let request = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":{}}});
+        assert_eq!(
+            super::server::dispatch(&request, &mut initialized, true, &mut invoke)["error"]
+                ["message"],
+            "Unknown tool"
+        );
+    }
+}

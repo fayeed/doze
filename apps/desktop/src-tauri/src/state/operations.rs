@@ -176,8 +176,11 @@ pub(super) fn apply(
             settings.agents.enabled = !settings.agents.enabled;
             save(snapshot, path, settings)?;
             if !snapshot.settings.agents.enabled {
+                // Command-line jobs are the user's own and do not depend on MCP.
                 for session in &mut snapshot.engine.agents.items {
-                    if !session.status.terminal() {
+                    if !session.status.terminal()
+                        && session.client_id != crate::mcp::sessions::LOCAL_CLIENT_ID
+                    {
                         session.status = crate::mcp::sessions::Status::Cancelled;
                     }
                 }
@@ -210,6 +213,12 @@ pub(super) fn apply(
             {
                 snapshot.engine.cancel_countdown();
             }
+        }
+        Operation::AgentKeepAlive => {
+            let mut settings = snapshot.settings.clone();
+            settings.agents.keep_alive_while_connected =
+                !settings.agents.keep_alive_while_connected;
+            save(snapshot, path, settings)?;
         }
         Operation::AgentLease { seconds } => {
             let mut settings = snapshot.settings.clone();

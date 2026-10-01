@@ -23,6 +23,7 @@ struct AgentClient: Codable, Identifiable {
 }
 struct AgentSettings: Codable {
     var enabled: Bool; var leaseSeconds: Int; var defaultCompletion: String?; var clients: [AgentClient]
+    var keepAliveWhileConnected: Bool?
 }
 struct AgentSession: Codable, Identifiable {
     var session_id: String; var client_name: String; var reason: String; var status: String
@@ -98,6 +99,7 @@ struct EngineSnapshot: Codable {
     var agentNow: Int?
     var agentSkills: [AgentSkill]?
     var agentSkillMessage: String?
+    var executable: String?
 }
 
 enum Page: String, CaseIterable, Identifiable {
@@ -120,8 +122,8 @@ enum Page: String, CaseIterable, Identifiable {
         case .session: return "keep awake display sleep screen default duration minutes power timer action"
         case .playback: return "audio music video silence inactivity idle after playback"
         case .notifications: return "final warning countdown duration seconds notification preview snooze"
-        case .agents: return "mcp codex claude code agent lease heartbeat permissions skill connection"
-        case .advanced: return "logging diagnostics log reset defaults data finder preferences"
+        case .agents: return "mcp codex claude code agent lease heartbeat permissions skill connection keep alive connected"
+        case .advanced: return "logging diagnostics log reset defaults data finder preferences command line terminal cli run watch job"
         case .help: return "menu guide help explain"
         case .about: return "version privacy about acknowledgements"
         }
@@ -655,6 +657,20 @@ struct SettingsView: View {
                 Text(model.snapshot?.settingsPath ?? "Loading…").font(.callout).textSelection(.enabled)
                 Button("Show preferences in Finder", action: model.openData)
             }
+            Section("Command line") {
+                let command = commandLinePath
+                Text("Keep this Mac awake while a job runs, then optionally sleep. Doze must be running; a failed job or Ctrl-C releases without any action.")
+                    .foregroundStyle(.secondary)
+                Text("\(command) run --then sleep -- ffmpeg -i in.mov out.mp4\n\(command) watch --pid 1234 --then sleep")
+                    .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                HStack {
+                    Button("Copy example") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString("\(command) run --then sleep -- ", forType: .string)
+                    }
+                    Spacer()
+                }
+            }
             Section("Session safety") { Text("Rust validates settings and owns all power actions. Closing Settings keeps Doze running. Transient sessions are never restored from disk.") }
             Section("Reset preferences") {
                 Text("Restore default preferences immediately. Existing timers keep their deadlines.").foregroundStyle(.secondary)
@@ -668,6 +684,7 @@ struct SettingsView: View {
                 explanation("Keep awake while audio plays", "Holds your Mac awake while an output device is playing, through the silence grace period. Muted or zero-volume output counts as silence.", "speaker.wave.2")
                 explanation("After Playback", "Once playback has been seen, Doze waits for both silence and inactivity, then shows the final warning. Resumed playback or using your Mac restarts the wait. It is one-shot: once its action runs, or you choose Cancel or Stay Awake on its warning, it turns itself off until you turn it on again.", "play.slash")
                 explanation("Countdown", "Every power action shows a floating final warning. Cancel removes the action, Snooze waits 15 more minutes, and Stay Awake keeps your Mac awake instead.", "hourglass")
+                explanation("Command line", "Run doze run --then sleep -- your-command in Terminal to stay awake until a job finishes, or doze watch --pid to follow one that is already running. See Advanced for the exact path.", "terminal")
                 explanation("Agents", "Coding agents connected through MCP can keep your Mac awake while they work. Each new request needs your approval in Agents unless you granted it there.", "person.2")
                 explanation("Quick Settings", "These checkmarks represent saved defaults. Duration defaults apply to new sessions. Other changes, such as display sleep, take effect immediately.", "slider.horizontal.3")
                 explanation("Disabled commands", "No session to stop or extend, no timer to stop, and no countdown to cancel or snooze are informational states. Unavailable platform actions remain disabled.", "info.circle")
@@ -820,6 +837,13 @@ struct SettingsView: View {
                 Text("Return to normal").tag("normal")
                 ForEach(model.snapshot?.actions ?? [], id: \.self) { Text(actionLabel($0)).tag($0) }
             }
+            Toggle(isOn: Binding(get: { model.agentSettings?.keepAliveWhileConnected ?? true }, set: { _ in model.send("agent-keepalive") })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Keep sessions alive while the agent app is connected")
+                    Text("Renews a session through long steps without agent heartbeats, for up to 24 hours. It never finishes a session.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
             Text("A lost connection keeps the computer awake for up to 30 minutes, then releases without a completion action. Automatic completion requires all overlapping agents to finish with the same authorized action, followed by at least five minutes to cancel.").foregroundStyle(.secondary)
         }
         Section("Agent connections") {
@@ -877,6 +901,12 @@ struct SettingsView: View {
     }
 
     private func agentActionName(_ action: String) -> String { actionLabel(action) }
+
+    /// The quoted path to Doze's binary, which also handles `doze run` and `doze watch`.
+    private var commandLinePath: String {
+        let path = model.snapshot?.executable ?? "/Applications/Doze.app/Contents/MacOS/doze"
+        return path.contains(" ") ? "\"\(path)\"" : path
+    }
 
     private func leaseLabel(_ seconds: Int) -> String {
         if seconds == 60 { return "1 minute" }

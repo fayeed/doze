@@ -4,15 +4,16 @@ use crate::state::Request;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
     net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc::{self, Sender},
-        Arc,
+        Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 const LIMIT: u64 = 64 * 1024;
 const PROTOCOL: &str = "2025-11-25";
@@ -127,7 +128,7 @@ fn serve(mut stream: TcpStream, token: &str, sender: &Sender<Request>) -> Result
         .map_err(|_| "Doze did not respond.")?;
     write_line(&mut stream, &json!(result))
 }
-fn forward(path: &Path, call: super::tools::Call) -> Result<Value, String> {
+pub(crate) fn forward(path: &Path, call: super::tools::Call) -> Result<Value, String> {
     let endpoint: Endpoint = serde_json::from_slice(
         &std::fs::read(path).map_err(|_| "Open the Doze desktop app before connecting MCP.")?,
     )
@@ -170,6 +171,8 @@ pub fn bridge() -> Result<(), String> {
     let mut output = std::io::stdout().lock();
     let mut initialized = false;
     let mut ready = false;
+    let sessions = Sessions::default();
+    keep_alive(path.clone(), key.clone(), sessions.clone());
     while let Ok(line) = read_line(&mut input) {
         let value: Value = match serde_json::from_str(&line) {
             Ok(value) => value,
@@ -193,19 +196,114 @@ pub fn bridge() -> Result<(), String> {
             }
         }
         let response = dispatch(&value, &mut initialized, ready, |name, arguments| {
-            forward(
+            let result = forward(
                 &path,
                 super::tools::Call {
                     key: key.clone(),
                     name,
                     arguments,
                 },
-            )
+            );
+            if let Ok(session) = &result {
+                sessions.observe(session);
+            }
+            result
         });
         write_line(&mut output, &response)?;
     }
-    // EOF is deliberately NOT finish_session. The core lease eventually becomes uncertain.
+    // EOF is deliberately NOT finish_session. Keep-alive stops with this process, so the
+    // core lease eventually becomes uncertain.
     Ok(())
+}
+
+/// Sessions this bridge's agent created or used, with when each is next renewed.
+#[derive(Clone, Default)]
+struct Sessions(Arc<Mutex<HashMap<String, (Duration, Instant)>>>);
+impl Sessions {
+    /// Track sessions that are still open, and forget ended ones.
+    fn observe(&self, session: &Value) {
+        let Some(id) = session["session_id"].as_str() else {
+            return;
+        };
+        let Ok(mut sessions) = self.0.lock() else {
+            return;
+        };
+        if matches!(
+            session["status"].as_str(),
+            Some("awaiting_authorization" | "active" | "connection_lost")
+        ) {
+            // Renew three times per lease, using the lease Doze just granted.
+            let lease = session["lease_expires_at"]
+                .as_u64()
+                .zip(session["last_heartbeat"].as_u64())
+                .map_or(300, |(expires, renewed)| expires.saturating_sub(renewed));
+            let interval = std::env::var("DOZE_KEEPALIVE_INTERVAL_SECONDS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or((lease / 3).clamp(10, 600));
+            let interval = Duration::from_secs(interval);
+            sessions.insert(id.into(), (interval, Instant::now() + interval));
+        } else {
+            sessions.remove(id);
+        }
+    }
+    fn due(&self) -> Vec<String> {
+        let now = Instant::now();
+        self.0.lock().map_or_else(
+            |_| Vec::new(),
+            |sessions| {
+                sessions
+                    .iter()
+                    .filter(|(_, (_, due))| *due <= now)
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            },
+        )
+    }
+    fn forget(&self, id: &str) {
+        if let Ok(mut sessions) = self.0.lock() {
+            sessions.remove(id);
+        }
+    }
+    fn postpone(&self, id: &str) {
+        if let Ok(mut sessions) = self.0.lock() {
+            if let Some((interval, due)) = sessions.get_mut(id) {
+                *due = Instant::now() + *interval;
+            }
+        }
+    }
+}
+
+/// Renews this agent's sessions while its app keeps the stdio connection open, so a long
+/// step without model turns keeps the lease. It never finishes a session; Doze enforces the
+/// keep-alive setting and limit.
+fn keep_alive(path: PathBuf, key: String, sessions: Sessions) {
+    let _ = std::thread::Builder::new()
+        .name("doze-mcp-keepalive".into())
+        .spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(1));
+            for id in sessions.due() {
+                let result = forward(
+                    &path,
+                    super::tools::Call {
+                        key: key.clone(),
+                        name: "doze.bridge_keepalive".into(),
+                        arguments: json!({ "session_id": id }),
+                    },
+                );
+                match result {
+                    Ok(session) => sessions.observe(&session),
+                    // Doze may be restarting; retry on the next interval.
+                    Err(error)
+                        if error.contains("unavailable") || error.contains("Open the Doze") =>
+                    {
+                        sessions.postpone(&id)
+                    }
+                    // Ended, refused by settings, or past the keep-alive limit.
+                    Err(_) => sessions.forget(&id),
+                }
+            }
+        });
 }
 fn rpc_error(id: Value, code: i64, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})

@@ -41,6 +41,7 @@ impl UiRequest {
             "preview" => Operation::PreviewCountdown,
             "refresh" => Operation::Refresh,
             "agent-enable" => Operation::AgentEnabled,
+            "agent-keepalive" => Operation::AgentKeepAlive,
             "agent-connect" => Operation::ConnectAgent {
                 name: self.name.ok_or("Client name missing.")?,
             },
@@ -196,6 +197,8 @@ fn snapshot_json(snapshot: &Snapshot) -> Value {
         "status": crate::tray::status_text(snapshot),
         "timerStatus": timer,
         "version": env!("CARGO_PKG_VERSION"),
+        // Shown in Settings so `doze run` can be copied with the right path.
+        "executable": std::env::current_exe().ok(),
     })
 }
 

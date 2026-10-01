@@ -1,4 +1,5 @@
 use tauri::Manager;
+mod cli;
 mod core;
 pub mod mcp;
 mod menu_icons;
@@ -9,6 +10,10 @@ mod tray;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    if cli::requested(&args) {
+        std::process::exit(cli::main(&args));
+    }
     if std::env::args().any(|arg| arg == "--mcp") {
         if let Err(error) = mcp::server::bridge() {
             eprintln!("Doze MCP: {error}");

@@ -68,6 +68,7 @@ pub enum Operation {
         action: Option<PowerAction>,
     },
     AgentEnabled,
+    AgentKeepAlive,
     AgentLease {
         seconds: u64,
     },

@@ -8,6 +8,9 @@ pub struct AgentSettings {
     pub lease_seconds: u64,
     pub default_completion: Option<PowerAction>,
     pub clients: Vec<TrustedClient>,
+    /// The MCP bridge renews its sessions while the agent app stays connected, so one long
+    /// step without model turns does not lose the lease.
+    pub keep_alive_while_connected: bool,
 }
 impl Default for AgentSettings {
     fn default() -> Self {
@@ -16,6 +19,7 @@ impl Default for AgentSettings {
             lease_seconds: 300,
             default_completion: None,
             clients: vec![],
+            keep_alive_while_connected: true,
         }
     }
 }

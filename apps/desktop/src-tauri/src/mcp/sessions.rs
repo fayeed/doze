@@ -39,11 +39,19 @@ pub struct Session {
     pub timeout_at: Option<u64>,
     #[serde(skip)]
     pub lost_at: Option<u64>,
+    /// Last renewal from the agent or job itself, as opposed to the bridge keep-alive.
+    #[serde(skip)]
+    pub explicit_at: u64,
 }
 /// A lost connection keeps holding the wake request for this long without a heartbeat.
 /// The session is then released without its completion action, so a crashed agent can
 /// never keep the computer awake or defer the user's own timers indefinitely.
 pub const LOST_GRACE_SECONDS: u64 = 1800;
+/// While its agent app stays connected, the MCP bridge renews sessions for at most this long
+/// after the agent's last own heartbeat. A forgotten finish cannot hold the computer forever.
+pub const KEEPALIVE_LIMIT_SECONDS: u64 = 24 * 3600;
+/// Command-line jobs started by the user (`doze run`, `doze watch`) use this built-in client.
+pub const LOCAL_CLIENT_ID: &str = "command-line";
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Sessions {
     pub items: Vec<Session>,
