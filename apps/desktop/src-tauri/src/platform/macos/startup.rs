@@ -27,6 +27,10 @@ fn property_list(executable: &Path) -> String {
 <dict>
     <key>Label</key>
     <string>{LABEL}</string>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>{LABEL}</string>
+    </array>
     <key>ProgramArguments</key>
     <array>
         <string>{}</string>
@@ -87,6 +91,8 @@ mod tests {
         assert!(written
             .contains("<string>/Applications/Doze &amp; Co.app/Contents/MacOS/doze</string>"));
         assert!(written.contains("<string>--startup</string>"));
+        // Login Items and background notifications name the app rather than its binary.
+        assert!(written.contains("<key>AssociatedBundleIdentifiers</key>"));
         set_at(&home, executable, false).unwrap();
         assert!(!agent_path(&home).exists());
         // Disabling twice is not an error.
