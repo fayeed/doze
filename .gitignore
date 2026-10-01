@@ -14,6 +14,7 @@ apps/desktop/src-tauri/gen/
 apps/desktop/native/windows/bin/
 apps/desktop/native/windows/obj/
 apps/desktop/native/windows/publish/
+apps/desktop/native/cli/target/
 apps/desktop/native/macos/publish/
 target-qa/
 apps/desktop/native/macos/renders/

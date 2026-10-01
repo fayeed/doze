@@ -1,0 +1,15 @@
+[package]
+name = "doze-cli"
+version = "0.1.0"
+description = "Console front end for doze run and doze watch on Windows."
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

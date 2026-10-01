@@ -5,7 +5,8 @@
       "webviewInstallMode": { "type": "skip" }
     },
     "resources": {
-      "../native/windows/publish/": "windows-ui/"
+      "../native/windows/publish/": "windows-ui/",
+      "../native/cli/target/release/doze-cli.exe": "doze-cli.exe"
     }
   }
 }

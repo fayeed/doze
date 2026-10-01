@@ -54,6 +54,16 @@ if (process.platform === "darwin") {
 }
 if (process.platform !== "win32") process.exit(0);
 
+// doze.exe is a GUI program, so shells neither wait for it nor keep its exit status.
+// doze-cli.exe is the console front end for `doze run` and `doze watch`, installed beside it.
+const cli = spawnSync(
+  "cargo",
+  ["build", "--release", "--locked", "--manifest-path", "native/cli/Cargo.toml"],
+  { cwd: desktop, stdio: "inherit" },
+);
+if (cli.error) console.error(cli.error.message);
+if (cli.status !== 0) process.exit(cli.status ?? 1);
+
 const localSdk = path.resolve(desktop, "../../.tools/dotnet/dotnet.exe");
 const dotnet = existsSync(localSdk) ? localSdk : "dotnet";
 const result = spawnSync(
