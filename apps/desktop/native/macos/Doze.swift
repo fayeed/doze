@@ -578,8 +578,9 @@ struct SettingsView: View {
                     Label(page.rawValue, systemImage: page.symbol).tag(page)
                 }
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 220)
             .searchable(text: $model.search, placement: .sidebar, prompt: "Find a setting")
+            // Outermost on the column, or the split view ignores it and truncates page names.
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 300)
         } detail: {
             VStack(spacing: 0) {
                 Form {
