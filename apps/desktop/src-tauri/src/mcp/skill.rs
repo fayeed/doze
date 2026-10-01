@@ -45,8 +45,13 @@ fn destination(home: &Path, client: &str) -> Result<PathBuf, String> {
     Ok(home.join(parent).join("skills/doze"))
 }
 
-fn check_directories(path: &Path) -> io::Result<()> {
-    for ancestor in path.ancestors() {
+// Only components below the trusted root (home or Doze's data directory) are checked. System
+// locations above it may be links, such as macOS `/var` → `/private/var`.
+fn check_directories(root: &Path, path: &Path) -> io::Result<()> {
+    if !path.starts_with(root) {
+        return Err(io::Error::other("Skill path is outside its trusted root."));
+    }
+    for ancestor in path.ancestors().take_while(|ancestor| *ancestor != root) {
         match fs::symlink_metadata(ancestor) {
             Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
                 return Err(io::Error::other(
@@ -61,8 +66,8 @@ fn check_directories(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn status(path: &Path) -> &'static str {
-    if check_directories(path).is_err() {
+fn status(root: &Path, path: &Path) -> &'static str {
+    if check_directories(root, path).is_err() {
         return "blocked";
     }
     if !path.exists() {
@@ -82,8 +87,10 @@ fn status(path: &Path) -> &'static str {
 
 pub fn states() -> Value {
     json!(["Codex", "Claude Code"].map(|name| {
-        match home().and_then(|home| destination(&home, name)) {
-            Ok(path) => json!({"name": name, "path": path, "status": status(&path)}),
+        match home().and_then(|home| Ok((destination(&home, name)?, home))) {
+            Ok((path, home)) => {
+                json!({"name": name, "path": path, "status": status(&home, &path)})
+            }
             Err(error) => json!({"name": name, "status": "blocked", "error": error}),
         }
     }))
@@ -142,10 +149,10 @@ fn write_bundle(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn install_at(path: &Path, update: bool) -> Result<Option<PathBuf>, String> {
+fn install_at(root: &Path, path: &Path, update: bool) -> Result<Option<PathBuf>, String> {
     let install = || -> io::Result<Option<PathBuf>> {
-        check_directories(path)?;
-        if status(path) == "installed" {
+        check_directories(root, path)?;
+        if status(root, path) == "installed" {
             return Ok(None);
         }
         if path.exists() && !update {
@@ -170,7 +177,7 @@ fn install_at(path: &Path, update: bool) -> Result<Option<PathBuf>, String> {
             return Err(error);
         }
         // Recheck the fixed destination before swapping. Retain the original as a user-visible backup.
-        check_directories(path)?;
+        check_directories(root, path)?;
         let backup = if path.exists() {
             if !update {
                 let _ = fs::remove_dir_all(&staging);
@@ -183,7 +190,7 @@ fn install_at(path: &Path, update: bool) -> Result<Option<PathBuf>, String> {
                 .parent()
                 .ok_or_else(|| io::Error::other("Missing backup parent"))?
                 .join("doze-skill-backups");
-            check_directories(&backup_parent)?;
+            check_directories(root, &backup_parent)?;
             fs::create_dir_all(&backup_parent)?;
             let backup = backup_parent.join(uuid::Uuid::new_v4().to_string());
             fs::rename(path, &backup)?;
@@ -204,8 +211,9 @@ fn install_at(path: &Path, update: bool) -> Result<Option<PathBuf>, String> {
 }
 
 pub fn install(client: &str, update: bool) -> Result<String, String> {
-    let path = destination(&home()?, client)?;
-    let backup = install_at(&path, update)?;
+    let home = home()?;
+    let path = destination(&home, client)?;
+    let backup = install_at(&home, &path, update)?;
     Ok(match backup {
         Some(backup) => format!(
             "Doze skill updated at {}. Original saved at {}",
@@ -220,11 +228,11 @@ pub fn install(client: &str, update: bool) -> Result<String, String> {
 }
 
 pub fn open_folder(settings_path: &Path) -> Result<(), String> {
-    let folder = settings_path
+    let root = settings_path
         .parent()
-        .ok_or("Doze data directory unavailable.")?
-        .join("bundled-skills/doze");
-    install_at(&folder, true)?;
+        .ok_or("Doze data directory unavailable.")?;
+    let folder = root.join("bundled-skills/doze");
+    install_at(root, &folder, true)?;
     #[cfg(windows)]
     let mut command = {
         let mut command = Command::new("explorer.exe");
@@ -252,8 +260,8 @@ mod tests {
     fn installs_complete_bundle_offline_and_detects_it() {
         let root = fixture();
         let path = destination(&root, "Codex").unwrap();
-        install_at(&path, false).unwrap();
-        assert_eq!(status(&path), "installed");
+        install_at(&root, &path, false).unwrap();
+        assert_eq!(status(&root, &path), "installed");
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -262,7 +270,7 @@ mod tests {
         let path = root.join("skills/doze");
         fs::create_dir_all(&path).unwrap();
         fs::write(path.join("SKILL.md"), "local edit").unwrap();
-        assert!(install_at(&path, false).is_err());
+        assert!(install_at(&root, &path, false).is_err());
         assert_eq!(
             fs::read_to_string(path.join("SKILL.md")).unwrap(),
             "local edit"
@@ -276,13 +284,13 @@ mod tests {
         fs::create_dir_all(&path).unwrap();
         fs::write(path.join("SKILL.md"), "local edit").unwrap();
         fs::write(path.join("notes.txt"), "notes").unwrap();
-        let backup = install_at(&path, true).unwrap().unwrap();
+        let backup = install_at(&root, &path, true).unwrap().unwrap();
         assert_eq!(
             fs::read_to_string(backup.join("SKILL.md")).unwrap(),
             "local edit"
         );
         assert_eq!(fs::read_to_string(path.join("notes.txt")).unwrap(), "notes");
-        assert_eq!(status(&path), "installed");
+        assert_eq!(status(&root, &path), "installed");
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -292,11 +300,23 @@ mod tests {
         fs::create_dir_all(&path).unwrap();
         fs::write(path.join("SKILL.md"), "original").unwrap();
         fs::write(path.join("agents"), "not a directory").unwrap();
-        assert!(install_at(&path, true).is_err());
+        assert!(install_at(&root, &path, true).is_err());
         assert_eq!(
             fs::read_to_string(path.join("SKILL.md")).unwrap(),
             "original"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn links_below_the_trusted_root_are_refused() {
+        let root = fixture();
+        fs::create_dir_all(root.join("real")).unwrap();
+        std::os::unix::fs::symlink(root.join("real"), root.join(".claude")).unwrap();
+        let path = destination(&root, "Claude Code").unwrap();
+        assert_eq!(status(&root, &path), "blocked");
+        assert!(install_at(&root, &path, false).is_err());
+        assert!(!root.join("real/skills").exists());
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
