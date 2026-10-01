@@ -37,15 +37,35 @@ visual review used `native:render` and headless Chrome for the website.
 | Agents | Claude Code profile setup showed the macOS command, endpoint and key; a real stdio session waited for approval with no assertion, Allow Once made it active and held the assertion, heartbeat renewed the lease, finish released it and the runner exited cleanly |
 | Bundle | `Doze.app` and DMG built; universal companion in Resources, `LSUIElement` and Apple Events usage in Info.plist; the bundled app used its bundled companion and reopened to Settings |
 
+## Follow-up hardware run (same day, with the user present)
+
+Screen Recording was granted to VS Code, so the real screen, menu and windows were captured.
+The installed `Doze.app` bundle was used throughout.
+
+| Area | Evidence |
+| --- | --- |
+| Audible playback | Output unmuted at 6%: the Core Audio probe reported meaningful audio during speech and none after. Keep awake while audio plays held `Doze keep awake` from about 2s into speech until the 10s silence grace ended. Mute and volume were restored |
+| After Playback → Display Off | Countdown appeared 18s after playback began (speech plus 10s silence, user idle); `pmset -g log` recorded "Display is turned off" at the end of the 15s warning; After Playback re-armed |
+| Lock | Lock timer locked the screen on schedule (`CGSSessionScreenIsLocked`), released Doze's assertion; the user unlocked 5s later |
+| Sleep | Three Doze-triggered sleeps logged `PMRD: sleep reason Software Sleep` immediately after Doze released its assertion, entered dark wake, and were woken 2–4s later by trackpad activity tickles inside powerd's ~5s dark-wake linger. Apple's `pmset sleepnow` produced the identical kernel sequence and completed deep sleep when left alone. Overview's last event read "System suspended or resumed · sessions cleared", proving the IOKit observer |
+| Launch at login | `launchctl bootstrap` of the LaunchAgent started Doze with `--startup` in the menu bar without Settings; Background Task Management lists it as "Doze" after the attribution fix |
+| Notifications | macOS asked to allow "Doze" notifications; once allowed, a real countdown showed "Doze · Power countdown — Turn display off in 0m 15s. Open Doze in the menu bar…" |
+| Menu bar | Real menu: status rows, submenu arrows, ⌘, and ⌘Q; "0:13" beside the icon during a countdown |
+| Windows | Settings sidebar and toolbar glass, the countdown's glass button group, and the timer window captured from the screen in dark mode |
+
+Found and fixed in this run: "Help  About" lost its ampersand (macOS strips single `&`
+mnemonics too); the Settings sidebar opened at 144pt and truncated page names; the custom
+timer window's transparent frame left its buttons floating; and the login item was named
+"doze" in background-activity notices. Overview now also shows the last engine event.
+
+Menu item icons do not appear in Doze's menu, and a plain AppKit status menu with a named
+system image and an SF Symbol shows none either, so this is macOS 27 behaviour.
+
 ## Still requiring verification on a Mac
 
-- Real Sleep, Shut down (including the Automation consent prompt), Lock and Display Off
-  execution. Only availability was checked; timers used Turn display off and were
-  cancelled before running.
-- Audible playback with unmuted output and Bluetooth/AirPlay devices; this Mac stayed muted.
-- Notifications from the installed bundle, and an actual login with launch at login on.
-- The menu bar menu's own rendering and keyboard navigation, and the Liquid Glass and
-  sidebar appearance, which offscreen rendering cannot draw.
+- Shut down, which is run last because it ends the session.
+- Bluetooth/AirPlay output switching, keyboard navigation of the menu bar menu, and the
+  light appearance on screen.
 
 # Windows QA — 1 October 2026
 
