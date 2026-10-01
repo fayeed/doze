@@ -100,7 +100,7 @@ Build macOS on a Mac with Xcode and a macOS 26 or newer SDK selected through `xc
 | Settings / About / timers / countdown | SwiftUI and AppKit companion over private pipes; Rust owns validation and persistence |
 | Keep Awake | `IOPMAssertionCreateWithName`: `PreventUserIdleDisplaySleep`, or `PreventUserIdleSystemSleep` when the display may sleep |
 | Sleep | `IOPMSleepSystem` |
-| Shut down | Standard `aevt/shut` request to loginwindow; apps with unsaved documents can stop it. Requires Automation consent on first use |
+| Shut down | Standard `aevt/shut` request to loginwindow; apps with unsaved documents can stop it. Verified on macOS 27 without an Automation prompt |
 | Lock | Login framework `SACLockScreenImmediate`, resolved at runtime; Lock is offered only when present |
 | Display off | `pmset displaysleepnow` |
 | Hibernate | Not offered: macOS does not let apps request hibernation |
