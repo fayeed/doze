@@ -101,6 +101,7 @@ struct EngineSnapshot: Codable {
     var agentSkillMessage: String?
     var executable: String?
     var iconPath: String?
+    var clypyIconPath: String?
 }
 
 enum Page: String, CaseIterable, Identifiable {
@@ -786,7 +787,12 @@ struct SettingsView: View {
             }
             Section {
                 HStack(alignment: .top, spacing: 12) {
-                    SettingsIcon(symbol: "doc.on.clipboard.fill", color: .blue, size: 26)
+                    if let path = model.snapshot?.clypyIconPath, let icon = NSImage(contentsOfFile: path) {
+                        Image(nsImage: icon).resizable().interpolation(.high).frame(width: 26, height: 26)
+                            .accessibilityHidden(true)
+                    } else {
+                        SettingsIcon(symbol: "paperclip", color: .blue, size: 26)
+                    }
                     described("Clypy", "A clipboard manager for Mac, Windows, Linux and phones, also by Fayeed Pawaskar.")
                     Spacer()
                     Link("Visit", destination: URL(string: "https://clypy.app")!)

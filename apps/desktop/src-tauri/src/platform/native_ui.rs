@@ -200,7 +200,21 @@ fn snapshot_json(snapshot: &Snapshot) -> Value {
         // Shown in Settings so `doze run` can be copied with the right path.
         "executable": std::env::current_exe().ok(),
         "iconPath": icon_path(),
+        "clypyIconPath": resource_path("macos-ui/clypy.png", "icons/clypy.png"),
     })
+}
+
+/// A bundled resource, or the checkout's copy during development.
+fn resource_path(bundled: &str, development: &str) -> Option<std::path::PathBuf> {
+    let installed = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .join("../Resources")
+        .join(bundled);
+    let checkout = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(development);
+    [installed, checkout]
+        .into_iter()
+        .find(|path| path.is_file())
 }
 
 /// Doze's app icon for the native Settings sidebar and About page: the bundle's icon when
