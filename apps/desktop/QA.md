@@ -210,14 +210,27 @@ elevated. Another app held the display throughout, so the baseline state was `0x
 | Command line, cmd.exe | In a real console window, `doze-cli run --then nothing -- cmd /c "timeout /t 5"` counted down 5…0, exit 0; a job exiting 7 returned 7 (checked with delayed `!errorlevel!`) |
 | Ctrl-C | A real `GenerateConsoleCtrlEvent` in the job's console: ping printed "Control-C", Doze reported "exited with status -1073741510; Doze will not sleep" and released, and doze-cli returned that status |
 
+## Follow-up run (same evening)
+
+| Area | Evidence |
+| --- | --- |
+| After Playback one-shot | Temporarily Turn display off, 10 s silence, 30 s idle, 1-minute warning. Armed: "Waiting for playback to start"; 8 s of `Alarm01.wav` → "Playing · waiting for it to stop"; 6 s after it stopped → "Waiting for silence and inactivity"; at 33 s idle the warning appeared ("Turn display off in 0:57 · After playback stopped"). Cancel turned the switch off, with the last event "Power action cancelled · After Playback turned off". The preferences were then restored byte for byte |
+| Keyboard | Real keystrokes (sent only while a Doze window was in front). Tab reaches every control on every page in reading order; Space on "Keep awake for 15m" started a session and Enter on "Stop keeping awake" ended it; Menu guide scrolls to its end with End. In the timer window, opened by keyboard (Enter on More, Enter on Custom duration…), focus starts in Duration, Tab cycles presets, Start Timer, Cancel and Action, and Esc closes it |
+| Installer | `pnpm build:desktop` produced `Doze_0.1.0_x64-setup.exe` (59.37 MiB). A silent per-user install (`/S`, exit 0) put `doze.exe`, `doze-cli.exe` and `windows-ui\` (with `Assets\Doze.png` and `Assets\Clypy.png`) in `%LOCALAPPDATA%\Doze`. The installed `doze-cli.exe` passed the PowerShell and cmd.exe checks above (watch, `timeout /t 5`, status 7); Advanced showed the installed path, and the copied `Set-Alias doze …` ran a job |
+
+Found and fixed in this run: expander cards shared the accessible name of the switch in their
+header ("Allow agents to connect" twice) and several session buttons shared names; after a
+keyboard action rebuilt Overview, focus jumped to the search box; and Menu guide could not be
+scrolled with the keyboard. Expanders are now "More options for …", session buttons name their
+client, rebuilds restore focus to the same control or its section, text-only pages are a tab
+stop, and verification fails on duplicate names.
+
 ## Still requiring verification
 
-- After Playback turning itself off after Cancel on a real playback warning. The user was
-  using the computer during this run, so the idle requirement could not be met without
-  disturbing them; the one-shot behaviour is covered by the engine's tests.
+- Narrator's speech. The names, roles and states it reads were checked through UI
+  Automation, but nobody listened to Narrator itself.
+- Physical 150%/200% displays. Changing the scale would have rescaled the user's whole
+  screen; layouts were verified at the equivalent effective window sizes instead.
 - An interactive cmd.exe prompt does not wait for GUI programs; `cmd /c` scripts do. Plain
   `doze.exe run` therefore still returns early at an interactive prompt, which is why
   Advanced and the README point to `doze-cli.exe`.
-- The NSIS installer was not rebuilt in this run, so `doze-cli.exe` in the installed folder
-  is configured (`tauri.windows.conf.json`) but not yet observed after installation.
-- Physical 150%/200% displays, keyboard-only navigation of every page, and Narrator.
