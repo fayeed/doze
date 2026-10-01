@@ -32,7 +32,7 @@ pub trait NotificationManager {
     fn countdown(&self, action: PowerAction, seconds: u64) -> Result<(), String>;
 }
 pub fn audio_supported() -> bool {
-    cfg!(windows)
+    true
 }
 pub fn startup_supported() -> bool {
     true
