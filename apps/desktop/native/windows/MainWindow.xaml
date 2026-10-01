@@ -56,7 +56,8 @@
                     <TextBlock x:Name="PageTitle" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap"
                                AutomationProperties.HeadingLevel="Level1" />
                 </Grid>
-                <ScrollViewer x:Name="PageScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer x:Name="PageScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              AutomationProperties.Name="Page content">
                     <Grid Padding="40,0,40,36">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MaxWidth="1000" />

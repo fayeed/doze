@@ -225,13 +225,14 @@ public sealed partial class MainWindow
         {
             var id = session["session_id"]!.GetValue<string>();
             var status = session["status"]!.GetValue<string>();
+            var client = session["client_name"]?.GetValue<string>() ?? "Agent";
             var controls = Buttons();
             if (status == "awaiting_authorization")
-                foreach (var (decision, label) in new[] { ("once", "Allow Once"), ("deny", "Deny") })
-                    controls.Children.Add(ActionButton(label, () => bridge.SendAgentAsync("agent-authorize", id: id, decision: decision), accent: decision == "once"));
+                foreach (var (decision, label, spoken) in new[] { ("once", "Allow Once", $"Allow {client} once"), ("deny", "Deny", $"Deny {client}") })
+                    controls.Children.Add(ActionButton(label, () => bridge.SendAgentAsync("agent-authorize", id: id, decision: decision), spoken, accent: decision == "once"));
             else
             {
-                controls.Children.Add(ActionButton("Cancel session", () => bridge.SendAgentAsync("agent-cancel", id: id)));
+                controls.Children.Add(ActionButton("Cancel session", () => bridge.SendAgentAsync("agent-cancel", id: id), $"Cancel {client} session"));
                 if (status == "connection_lost")
                 {
                     var menu = new MenuFlyout();
@@ -240,7 +241,9 @@ public sealed partial class MainWindow
                     var end = new MenuFlyoutItem { Text = "End and apply completion action" };
                     end.Click += async (_, _) => await bridge.SendAgentAsync("agent-finish", id: id);
                     menu.Items.Add(wait); menu.Items.Add(end);
-                    controls.Children.Add(new DropDownButton { Content = "Resolve", Flyout = menu });
+                    var resolve = new DropDownButton { Content = "Resolve", Flyout = menu };
+                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(resolve, $"Resolve {client} session");
+                    controls.Children.Add(resolve);
                 }
             }
             var details = $"{session["reason"]?.GetValue<string>()}\n{Labels.AgentStatus(status)} · When finished: {Labels.Action(session["completion_action"]?.GetValue<string>())}";
@@ -249,7 +252,6 @@ public sealed partial class MainWindow
                 var idle = Math.Max(0, (snapshot["agentNow"]?.GetValue<long>() ?? 0) - (session["last_heartbeat"]?.GetValue<long>() ?? 0)) / 60;
                 details += $" · Last activity {idle}m ago";
             }
-            var client = session["client_name"]?.GetValue<string>() ?? "Agent";
             Card(client, details, client == "Command line" ? "" : "", controls);
         }
     }

@@ -71,7 +71,8 @@ public sealed partial class MainWindow
             Style = Style("SettingsExpanderStyle"), Header = header, Content = rows,
             IsExpanded = expanded.GetValueOrDefault(title, open)
         };
-        AutomationProperties.SetName(expander, title);
+        // Distinct from the header's own control, which already carries the title.
+        AutomationProperties.SetName(expander, control is null ? title : "More options for " + title);
         expander.Expanding += (_, _) => expanded[title] = true;
         expander.Collapsed += (_, _) => expanded[title] = false;
         group.Children.Add(expander);

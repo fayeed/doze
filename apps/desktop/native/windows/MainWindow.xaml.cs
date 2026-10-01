@@ -135,9 +135,34 @@ public sealed partial class MainWindow : Window
     private void KeepScroll(Action rebuild)
     {
         var offset = PageScroll.VerticalOffset;
+        var focus = FocusedInPage();
         rebuild();
         PageScroll.UpdateLayout();
         PageScroll.ChangeView(null, offset, null, true);
+        if (focus is var (name, section)) RestoreFocus(name, section);
+    }
+
+    /// The focused control's name and section, when focus is on the page itself.
+    private (string? Name, int Section)? FocusedInPage()
+    {
+        if (Root.XamlRoot is null || Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(Root.XamlRoot) is not FrameworkElement focused) return null;
+        for (DependencyObject? node = focused; node is not null; node = VisualTreeHelper.GetParent(node))
+            if (node is UIElement child && VisualTreeHelper.GetParent(node) == Cards)
+                return (ControlName(focused), Cards.Children.IndexOf(child));
+        return null;
+    }
+
+    private static string? ControlName(DependencyObject element) =>
+        Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(element) is { Length: > 0 } name ? name : (element as ContentControl)?.Content as string;
+
+    /// After a rebuild, keyboard focus returns to the same control, or to the first control in
+    /// the same section when that one is gone (Stop becomes the presets), never to the top.
+    private void RestoreFocus(string? name, int section)
+    {
+        static bool Focusable(Control control) => control.IsEnabled && control.IsTabStop && control.Visibility == Visibility.Visible;
+        var target = Descendants(Cards).OfType<Control>().FirstOrDefault(control => Focusable(control) && name is not null && ControlName(control) == name)
+            ?? (section >= 0 && section < Cards.Children.Count ? Descendants(Cards.Children[section]).OfType<Control>().FirstOrDefault(Focusable) : null);
+        target?.Focus(FocusState.Keyboard);
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -197,6 +222,10 @@ public sealed partial class MainWindow : Window
                     throw new InvalidOperationException($"{name} repeats its title as a section header.");
                 if (!ReferenceEquals(SystemBackdrop, windowBackdrop))
                     throw new InvalidOperationException($"Navigation replaced the window backdrop on {name}.");
+                var names = Descendants(Cards).OfType<Control>().Where(c => c is Button or ComboBox or ToggleSwitch or Expander)
+                    .Select(ControlName).Where(n => !string.IsNullOrEmpty(n)).ToList();
+                if (names.GroupBy(n => n).FirstOrDefault(g => g.Count() > 1) is { } duplicate)
+                    throw new InvalidOperationException($"{name} has two controls named \"{duplicate.Key}\".");
                 if (Descendants(Cards).OfType<NumberBox>().Any())
                     throw new InvalidOperationException($"{name} still uses a number field for a duration.");
                 if (name == "Agents" && AgentClient("Codex") is JsonObject client)
@@ -487,6 +516,8 @@ public sealed partial class MainWindow : Window
             case "Menu guide": MenuGuide(); break;
             case "About Doze": About(); break;
         }
+        // Pages whose text continues below their last control scroll with the keyboard.
+        PageScroll.IsTabStop = page is "Menu guide" or "About Doze";
         PageScroll.ChangeView(null, 0, null, true);
     }
 
