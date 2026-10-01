@@ -159,6 +159,8 @@ fn session_json(snapshot: &Snapshot) -> Value {
             "source": countdown.source,
         })),
         "error": snapshot.error,
+        // The latest engine event, such as a cancelled action or sessions cleared by sleep.
+        "message": engine.message,
     })
 }
 

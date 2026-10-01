@@ -50,6 +50,7 @@ struct SessionState: Codable {
     var timer: SessionTimer?
     var countdown: SessionCountdown?
     var error: String?
+    var message: String?
 }
 
 /// Labels match the Rust engine and the menu bar.
@@ -717,6 +718,11 @@ struct SettingsView: View {
                     Text(model.snapshot?.status ?? "Normal sleep allowed").font(.title3.weight(.semibold))
                         .textSelection(.enabled)
                     Text(model.snapshot?.timerStatus ?? "No power action scheduled").foregroundStyle(.secondary)
+                    if let message = session.message, !message.hasPrefix("Doze skill") {
+                        Label(message, systemImage: "clock.arrow.circlepath")
+                            .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                            .accessibilityLabel("Last event: " + message)
+                    }
                 }
             }.padding(.vertical, 6)
         }
