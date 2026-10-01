@@ -49,7 +49,18 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!())
+        .map(|app| {
+            app.run(|_app, _event| {
+                // Opening Doze again from Finder, Spotlight or Launchpad reactivates the running
+                // menu bar app instead of launching a second instance. Show Settings, as a second
+                // launch does on Windows.
+                #[cfg(target_os = "macos")]
+                if let tauri::RunEvent::Reopen { .. } = _event {
+                    tray::show(_app);
+                }
+            })
+        });
     if let Err(error) = result {
         eprintln!("Could not run Doze: {error}");
     }
