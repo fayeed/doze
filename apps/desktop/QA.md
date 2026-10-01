@@ -52,6 +52,8 @@ The installed `Doze.app` bundle was used throughout.
 | Notifications | macOS asked to allow "Doze" notifications; once allowed, a real countdown showed "Doze · Power countdown — Turn display off in 0m 15s. Open Doze in the menu bar…" |
 | Menu bar | Real menu: status rows, submenu arrows, ⌘, and ⌘Q; "0:13" beside the icon during a countdown |
 | Windows | Settings sidebar and toolbar glass, the countdown's glass button group, and the timer window captured from the screen in dark mode |
+| Shut down | A Shut down timer's request reached loginwindow ("Received a kAEShutDown", logout with no extra UI) at 19:33:09; the Mac shut down and booted at 19:33:59. No Automation consent prompt was needed for this event |
+| Real login launch | Launch at login was on during that restart: after boot, launchd started Doze from the LaunchAgent with `--startup`, in the menu bar without Settings |
 
 Found and fixed in this run: "Help  About" lost its ampersand (macOS strips single `&`
 mnemonics too); the Settings sidebar opened at 144pt and truncated page names; the custom
@@ -61,8 +63,6 @@ timer window's transparent frame left its buttons floating; and the login item w
 Menu item icons do not appear in Doze's menu, and a plain AppKit status menu with a named
 system image and an SF Symbol shows none either, so this is macOS 27 behaviour.
 
-| Shut down | A Shut down timer's request reached loginwindow ("Received a kAEShutDown", logout with no extra UI) at 19:33:09; the Mac shut down and booted at 19:33:59. No Automation consent prompt was needed for this event |
-| Real login launch | Launch at login was on during that restart: after boot, launchd started Doze from the LaunchAgent with `--startup`, in the menu bar without Settings |
 
 The setting had been re-enabled at 19:26:36 by a click on its switch. Replaying every
 scripted step from that time, and rapid toggle bursts (50 ms to 1 s apart), never changed it
