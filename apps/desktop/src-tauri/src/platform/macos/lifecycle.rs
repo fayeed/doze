@@ -87,12 +87,8 @@ impl Registration {
                 }));
                 let mut port = std::ptr::null_mut();
                 let mut notifier = 0;
-                let root = IORegisterForSystemPower(
-                    context.cast(),
-                    &mut port,
-                    changed,
-                    &mut notifier,
-                );
+                let root =
+                    IORegisterForSystemPower(context.cast(), &mut port, changed, &mut notifier);
                 if root == 0 {
                     drop(Box::from_raw(context));
                     let _ = ready.send(Err("IORegisterForSystemPower failed.".to_string()));

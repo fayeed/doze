@@ -35,7 +35,7 @@ pub fn audio_supported() -> bool {
     cfg!(windows)
 }
 pub fn startup_supported() -> bool {
-    cfg!(windows)
+    true
 }
 
 #[cfg(target_os = "macos")]
