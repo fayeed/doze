@@ -15,4 +15,6 @@ apps/desktop/native/windows/bin/
 apps/desktop/native/windows/obj/
 apps/desktop/native/windows/publish/
 apps/desktop/native/macos/publish/
-target-qa/apps/desktop/native/macos/renders/
+target-qa/
+apps/desktop/native/macos/renders/
+apps/desktop/src-tauri/target-win/
