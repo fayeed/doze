@@ -230,6 +230,23 @@ pnpm build
 
 On Windows, if a running debug app locks `doze.exe`, set `$env:DOZE_MCP_TEST_RELEASE="1"` in PowerShell before running `mcp:test`. The test then builds and uses the release binaries without closing the desktop app.
 
+### Keep-alive while connected
+
+The `doze --mcp` process that the client launches renews the sessions its agent created or used while the client keeps that stdio connection open, so one long step without model turns (a build, a conversion) does not lose the lease. It renews three times per lease and never finishes a session. Renewal stops when the client exits or crashes, after which the normal lease expiry and 30-minute connection-lost grace apply, and Doze refuses it 24 hours after the agent's own last heartbeat so a forgotten finish cannot hold the computer indefinitely. Turn it off with **Agents › Keep sessions alive while the agent app is connected**. An open pipe is evidence that the client is alive, not that work succeeded, so completion still requires an explicit `finish_session`.
+
+## Command-line jobs
+
+`doze run` keeps the computer awake while a command runs and can sleep afterwards. `doze watch` follows a process that is already running:
+
+```sh
+doze run --then sleep -- ffmpeg -i in.mov out.mp4
+doze watch --pid 1234 --then sleep
+```
+
+`--then` takes `nothing` (default), `sleep`, `display-off`, `lock`, `shutdown` or `hibernate`, limited to the actions the computer supports. Use the desktop binary as `doze`: on macOS `/Applications/Doze.app/Contents/MacOS/doze` (Settings › Advanced shows the exact path); on Windows `doze.exe` in the install folder. Doze must be running; MCP does not need to be enabled.
+
+A job is a session from the built-in **Command line** client, listed with agent sessions in Agents and the tray. It needs no approval because the user started it, and its calls travel only over the private bridge, whose per-launch token is in the user's `0600` endpoint file. The command's exit status decides the outcome: `0` finishes the job, so the action follows the usual final warning (at least five minutes, with Cancel, Snooze and Stay Awake); any other status, a signal or Ctrl-C reports failure and releases the computer without acting. `doze run` exits with the command's status. `doze watch` cannot read another process's exit status, so its exit counts as success. If `doze` itself is killed, the lease expires and the 30-minute connection-lost grace applies. Jobs overlap with agent sessions in the same batch, so a job with `--then nothing` vetoes an agent's automatic action and vice versa. On Windows, the desktop binary is a GUI program; it attaches to the calling console for output, but `cmd.exe` returns to the prompt immediately, so prefer PowerShell's `Start-Process -Wait -NoNewWindow`. The Windows command line has not been tested on hardware.
+
 ### Heartbeats without model turns
 
 The lease remains the failure detector; removing renewal would leave Doze blind between start and finish. `scripts/runtime-lease.mjs` provides the opt-in `watchDozeRun` adapter for runtimes using an MCP client. It polls a supplied **fresh authoritative** job-status callback, renews while that job is explicitly running, and finishes only when the callback reports `succeeded`. These MCP/status calls do not invoke the language model. A definitive `failed` job state calls `doze.fail_session`, releasing that lease without executing its requested action. Disconnected status, user-input waits, unknown state, a hung status callback, or abort stop renewal without reporting success. Doze then enters connection-lost state when the remaining lease expires. A cached running flag, an open MCP pipe, or a background helper that lives indefinitely is insufficient evidence.

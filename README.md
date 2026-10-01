@@ -55,4 +55,6 @@ See [the desktop README](apps/desktop/README.md) for native API choices, verific
 
 Doze supports local MCP clients through its existing session engine. Open **Agents** in Doze to enable MCP, connect Codex/Claude Code, and grant per-agent wake and completion permissions. Agents renew leases and explicitly report completion; lost connections keep the computer awake for up to 30 minutes, then release without a completion action. See the [desktop MCP connection guide](apps/desktop/README.md#agents-and-mcp) for configuration, lifecycle, security and safe integration tests.
 
+For jobs without an agent, `doze run --then sleep -- COMMAND` keeps the computer awake until the command succeeds and then sleeps after the final warning; `doze watch --pid PID` follows a process that is already running. See [command-line jobs](apps/desktop/README.md#command-line-jobs).
+
 The portable [Doze skill](skills/doze/SKILL.md) teaches agents authorization, heartbeat renewal, success, failure, cancellation, and overlapping sessions. See [skill installation](apps/desktop/README.md#install-the-companion-skill) for Codex and Claude Code. The skill and MCP connection are installed separately; runtime heartbeat and cancellation hooks require a provider integration.
