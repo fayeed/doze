@@ -330,6 +330,8 @@ pub(crate) fn status_text(snapshot: &Snapshot) -> String {
 
 /// Short text beside the menu bar icon: the final warning in seconds, otherwise the power
 /// timer, otherwise a timed keep-awake session.
+// Windows tray icons have no title; the tooltip already carries the same information.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn menu_bar_title(snapshot: &Snapshot) -> Option<String> {
     let engine = &snapshot.engine;
     if !snapshot.settings.menu_bar_time {
