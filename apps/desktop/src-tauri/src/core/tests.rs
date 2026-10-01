@@ -77,6 +77,30 @@ fn audio_keep_awake_releases_after_grace_without_rearming_on_silence() {
     assert!(!engine.should_hold_awake());
 }
 #[test]
+fn audio_keep_awake_releases_after_a_chime_while_playback_is_unarmed() {
+    let mut engine = Engine {
+        while_audio: true,
+        ..Engine::default()
+    };
+    engine.enable_playback(true);
+    audio(&mut engine, 0, true);
+    audio(&mut engine, 1, false);
+    audio(&mut engine, 61, false);
+    assert!(!engine.should_hold_awake());
+    assert!(engine.countdown.is_none());
+}
+#[test]
+fn audio_keep_awake_preserves_armed_playback_grace() {
+    let mut engine = armed();
+    engine.while_audio = true;
+    audio(&mut engine, 3, false);
+    audio(&mut engine, 63, false);
+    assert_eq!(
+        engine.countdown.as_ref().map(|c| c.source),
+        Some(Source::Playback)
+    );
+}
+#[test]
 fn resumed_audio_cancels_at_deadline() {
     let mut e = armed();
     audio(&mut e, 3, false);

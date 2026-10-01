@@ -9,6 +9,43 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+/// One-off failures stay visible this long, then the status shows the session state again.
+const RECENT_ERROR_SECONDS: u64 = 300;
+
+/// The error shown in the tray and Settings, grouped by how long each kind stays true.
+/// Startup conditions persist, observation failures last while they recur, a settings
+/// load failure lasts until settings are saved, and one-off failures expire.
+#[derive(Default)]
+struct Errors {
+    startup: Option<String>,
+    settings: Option<String>,
+    observation: Option<String>,
+    recent: Option<(String, u64)>,
+}
+impl Errors {
+    fn report(&mut self, error: String, now: u64) {
+        self.recent = Some((error, now.saturating_add(RECENT_ERROR_SECONDS)));
+    }
+    fn current(&mut self, now: u64) -> Option<String> {
+        if self.recent.as_ref().is_some_and(|(_, until)| now >= *until) {
+            self.recent = None;
+        }
+        self.recent
+            .as_ref()
+            .map(|(error, _)| error)
+            .or(self.observation.as_ref())
+            .or(self.startup.as_ref())
+            .or(self.settings.as_ref())
+            .cloned()
+    }
+    /// The worker wakes when a recent error expires so the tray stops showing it.
+    fn expires_in(&self, now: u64) -> Option<Duration> {
+        self.recent
+            .as_ref()
+            .map(|(_, until)| Duration::from_secs(until.saturating_sub(now).max(1)))
+    }
+}
+
 pub(super) fn worker(
     app: tauri::AppHandle,
     path: PathBuf,
@@ -19,13 +56,19 @@ pub(super) fn worker(
     let mut power = platform::NativePower::new();
     let idle = platform::NativeIdle;
     let notifications = platform::NativeNotifications(app.clone());
+    let mut errors = Errors {
+        settings: snapshot.error.take(),
+        ..Errors::default()
+    };
     let warning = platform::countdown::Warning::new(sender.clone());
     if let Err(error) = &warning {
-        snapshot.error = Some(format!("Countdown window unavailable: {error}"));
+        errors.startup = Some(format!("Countdown window unavailable: {error}"));
     }
     let lifecycle = platform::lifecycle::Registration::new(sender.clone());
     if let Err(error) = &lifecycle {
-        snapshot.error = Some(format!("Suspend notifications unavailable: {error}"));
+        errors
+            .startup
+            .get_or_insert(format!("Suspend notifications unavailable: {error}"));
     }
     snapshot.actions = power.supported_actions();
     if let Some(first) = snapshot.actions.first().copied() {
@@ -67,6 +110,9 @@ pub(super) fn worker(
         } else {
             Duration::from_secs(3600)
         };
+        let wait = errors
+            .expires_in(now)
+            .map_or(wait, |expiry| wait.min(expiry));
         let request = match receiver.recv_timeout(wait) {
             Ok(r) => Some(r),
             Err(mpsc::RecvTimeoutError::Timeout) => None,
@@ -115,7 +161,7 @@ pub(super) fn worker(
                 Request::WarningFailed(error) => {
                     if snapshot.engine.countdown.is_some() {
                         snapshot.engine.cancel_countdown();
-                        snapshot.error = Some(format!("Countdown cancelled: {error}"));
+                        errors.report(format!("Countdown cancelled: {error}"), snapshot.engine.now);
                     }
                 }
                 Request::Lifecycle => {
@@ -134,9 +180,13 @@ pub(super) fn worker(
                         Operation::OpenDialog { .. } | Operation::ConnectAgent { .. }
                     );
                     preview_countdown = matches!(op, Operation::PreviewCountdown);
+                    let previous_settings = snapshot.settings.clone();
                     let result = apply(op, &mut snapshot, &path);
-                    if let Err(error) = &result {
-                        snapshot.error = Some(error.clone());
+                    match &result {
+                        Err(error) => errors.report(error.clone(), snapshot.engine.now),
+                        // A successful save replaces a settings file that failed to load.
+                        Ok(()) if snapshot.settings != previous_settings => errors.settings = None,
+                        Ok(()) => {}
                     }
                     reply = Some((tx, result));
                 }
@@ -158,18 +208,16 @@ pub(super) fn worker(
                 match platform::NativeAudio::new() {
                     Ok(monitor) => audio = Some(monitor),
                     Err(e) => {
-                        snapshot.error = Some(format!("Audio unavailable: {e}"));
+                        errors.observation = Some(format!("Audio unavailable: {e}"));
                         retry_audio_at = now + 30;
                     }
                 }
             }
+            let mut failure = None;
             if let Some(monitor) = audio.as_mut() {
                 match monitor.sample() {
-                    Ok(value) => {
-                        observation = Some(value);
-                        snapshot.error = None;
-                    }
-                    Err(e) => snapshot.error = Some(e),
+                    Ok(value) => observation = Some(value),
+                    Err(e) => failure = Some(e),
                 }
             }
             match idle.observe() {
@@ -177,10 +225,15 @@ pub(super) fn worker(
                     idle_seconds = Some(value.seconds);
                     activity_marker = value.activity_marker;
                 }
-                Err(e) => snapshot.error = Some(e),
+                Err(e) => failure = failure.or(Some(e)),
+            }
+            // While the monitor waits to retry, its creation failure remains current.
+            if audio.is_some() || failure.is_some() {
+                errors.observation = failure;
             }
         } else {
             audio = None;
+            errors.observation = None;
         }
         let input_changed = match previous_activity_marker.zip(activity_marker) {
             Some((old, new)) => old != new,
@@ -207,7 +260,7 @@ pub(super) fn worker(
         if let Err(error) = &warning {
             if snapshot.engine.countdown.is_some() {
                 snapshot.engine.cancel_countdown();
-                snapshot.error = Some(format!("Countdown cancelled: {error}"));
+                errors.report(format!("Countdown cancelled: {error}"), snapshot.engine.now);
             }
         }
         if let Err(e) = power.set_awake(
@@ -218,7 +271,7 @@ pub(super) fn worker(
             if let Some((_, result)) = mcp_reply.as_mut() {
                 *result = Err(format!("Wake assertion failed: {e}"));
             }
-            snapshot.error = Some(e);
+            errors.report(e, snapshot.engine.now);
             snapshot
                 .engine
                 .reset_transient("Power request failed · sessions cleared");
@@ -228,7 +281,10 @@ pub(super) fn worker(
                 if let Err(e) = notifications
                     .countdown(c.action, c.deadline.saturating_sub(snapshot.engine.now))
                 {
-                    snapshot.error = Some(format!("Notification unavailable: {e}"));
+                    errors.report(
+                        format!("Notification unavailable: {e}"),
+                        snapshot.engine.now,
+                    );
                 }
             }
         }
@@ -245,10 +301,11 @@ pub(super) fn worker(
         }
         if let Some(action) = action {
             if let Err(e) = power.execute(action) {
-                snapshot.error = Some(e);
+                errors.report(e, snapshot.engine.now);
                 snapshot.engine.message = Some("Power action failed".into());
             }
         }
+        snapshot.error = errors.current(snapshot.engine.now);
         let tray_app = app.clone();
         let tray_snapshot = snapshot.clone();
         let _ = app.run_on_main_thread(move || crate::tray::update(&tray_app, &tray_snapshot));
@@ -285,5 +342,51 @@ pub(super) fn worker(
         if let Some((tx, result)) = reply {
             let _ = tx.send(result.map(|_| snapshot.clone()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recent_errors_expire_and_restore_the_underlying_condition() {
+        let mut errors = Errors {
+            startup: Some("Countdown window unavailable".into()),
+            ..Errors::default()
+        };
+        errors.report("Session already ended.".into(), 10);
+        assert_eq!(
+            errors.current(10).as_deref(),
+            Some("Session already ended.")
+        );
+        assert_eq!(errors.expires_in(10), Some(Duration::from_secs(300)));
+        assert_eq!(
+            errors.current(309).as_deref(),
+            Some("Session already ended.")
+        );
+        assert_eq!(
+            errors.current(310).as_deref(),
+            Some("Countdown window unavailable")
+        );
+        assert_eq!(errors.expires_in(310), None);
+    }
+
+    #[test]
+    fn clearing_an_observation_failure_keeps_other_errors() {
+        let mut errors = Errors {
+            settings: Some("Could not read settings".into()),
+            ..Errors::default()
+        };
+        errors.observation = Some("No active audio output device.".into());
+        errors.report("Power action failed".into(), 0);
+        errors.observation = None;
+        assert_eq!(errors.current(1).as_deref(), Some("Power action failed"));
+        assert_eq!(
+            errors.current(300).as_deref(),
+            Some("Could not read settings")
+        );
+        errors.settings = None;
+        assert_eq!(errors.current(301), None);
     }
 }

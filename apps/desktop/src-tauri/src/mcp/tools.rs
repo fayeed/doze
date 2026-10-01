@@ -113,6 +113,7 @@ pub fn call(
                 Status::AwaitingAuthorization
             },
             timeout_at: start.optional_timeout.map(|t| engine.now.saturating_add(t)),
+            lost_at: None,
         };
         if approved {
             join_authorized_batch(engine, &session.session_id);

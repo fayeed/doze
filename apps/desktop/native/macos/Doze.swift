@@ -560,7 +560,7 @@ struct SettingsView: View {
                 Text("Return to normal").tag("normal")
                 ForEach(model.snapshot?.actions ?? [], id: \.self) { Text($0.capitalized).tag($0) }
             }
-            Text("A lost connection keeps the computer awake until resolved. Automatic completion requires all overlapping agents to finish with the same authorized action, followed by at least five minutes to cancel.").foregroundStyle(.secondary)
+            Text("A lost connection keeps the computer awake for up to 30 minutes, then releases without a completion action. Automatic completion requires all overlapping agents to finish with the same authorized action, followed by at least five minutes to cancel.").foregroundStyle(.secondary)
         }
         Section("Agent connections") {
             ForEach(["Codex", "Claude Code", "Generic MCP client"], id: \.self) { name in

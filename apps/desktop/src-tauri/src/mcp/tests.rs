@@ -121,11 +121,46 @@ fn heartbeat_renews_and_recovers_lost_lease() {
 fn disconnect_or_expiry_never_schedules_a_power_action() {
     let (mut e, s) = (Engine::default(), settings());
     start(&mut e, &s, "codex", "sleep");
-    for now in [30, 300, 3600, 86400] {
+    for now in [30, 300, 1829] {
         assert_eq!(tick(&mut e, &s, now), None);
         assert!(e.should_hold_awake());
         assert!(e.countdown.is_none());
     }
+    // An abandoned session is released without its completion action.
+    for now in [1830, 3600, 86400] {
+        assert_eq!(tick(&mut e, &s, now), None);
+        assert!(!e.should_hold_awake());
+        assert!(e.countdown.is_none());
+    }
+    assert_eq!(e.agents.items[0].status, Status::Cancelled);
+}
+#[test]
+fn abandoned_session_stops_deferring_the_users_timer() {
+    let (mut e, s) = (Engine::default(), settings());
+    start(&mut e, &s, "codex", "sleep");
+    e.schedule(600, PowerAction::Lock);
+    assert_eq!(tick(&mut e, &s, 600), None);
+    assert!(e.countdown.is_none());
+    tick(&mut e, &s, 1830);
+    let countdown = e.countdown.as_ref().unwrap();
+    assert_eq!(
+        (countdown.source, countdown.action),
+        (Source::Timer, PowerAction::Lock)
+    );
+}
+#[test]
+fn heartbeat_within_grace_restarts_the_lost_timer() {
+    let (mut e, s) = (Engine::default(), settings());
+    let id = start(&mut e, &s, "codex", "sleep");
+    tick(&mut e, &s, 30);
+    tick(&mut e, &s, 1000);
+    call(&mut e, &s, "codex", "heartbeat", json!({"session_id":id})).unwrap();
+    // Lost again at 1030; the grace period counts from the new loss.
+    tick(&mut e, &s, 1030);
+    tick(&mut e, &s, 2000);
+    assert_eq!(e.agents.items[0].status, Status::ConnectionLost);
+    tick(&mut e, &s, 2860);
+    assert_eq!(e.agents.items[0].status, Status::Cancelled);
 }
 #[test]
 fn other_agents_block_completion_until_last_explicit_finish() {
@@ -315,6 +350,11 @@ fn suspend_and_clock_reset_preserve_uncertain_wake_without_completion() {
     assert_eq!(e.agents.items[0].status, Status::ConnectionLost);
     assert_eq!(tick(&mut e, &s, 1000), None);
     assert!(e.should_hold_awake());
+    // A later suspend does not restart the grace period of an already lost session.
+    e.now = 1500;
+    e.reset_transient("resume");
+    assert_eq!(tick(&mut e, &s, 1800), None);
+    assert!(!e.should_hold_awake());
 }
 #[test]
 fn optional_timeout_is_uncertainty_and_cannot_be_renewed() {

@@ -328,7 +328,7 @@ public sealed partial class MainWindow : Window
         Card("Enable MCP", "Agents connect locally. New profiles need your approval before keeping awake or requesting a power action.", "\uE716", enable);
         var leases = new ComboBox { Width = 160, ItemsSource = new[] { 60, 300, 900, 1800, 3600 }, SelectedItem = settings?["leaseSeconds"]?.GetValue<int>() ?? 300 };
         leases.SelectionChanged += async (_, _) => { if (leases.SelectedItem is int seconds) await bridge.SendAgentAsync("agent-lease", seconds: seconds); };
-        Card("Default lease (seconds)", "Agents must heartbeat before this expires. A lost connection keeps the computer awake until resolved.", "\uE823", leases);
+        Card("Default lease (seconds)", "Agents must heartbeat before this expires. A lost connection keeps the computer awake for up to 30 minutes, then releases without a completion action.", "\uE823", leases);
         var completion = new ComboBox { Width = 180 };
         completion.Items.Add(new ComboBoxItem { Content = "Return to normal", Tag = "normal" });
         foreach (var action in Actions) completion.Items.Add(new ComboBoxItem { Content = ActionNames[action], Tag = action });

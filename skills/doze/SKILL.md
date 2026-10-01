@@ -21,7 +21,7 @@ Send `doze.heartbeat` with the session ID at least twice per lease interval. Cal
 
 Prefer a runtime integration that renews from fresh authoritative job status without invoking the model. Its status must describe the whole job and its child tasks, not a cached running flag or merely a live MCP connection. This skill installs no runtime hooks or background renewer. If automatic renewal is unavailable, renew at work checkpoints within the interval and disclose that a long uninterrupted operation can lose contact. Do not claim that skill instructions guarantee renewal after a crash, a long model turn, or user Stop.
 
-Missing heartbeats or disconnection means `connection_lost`, not success or definitive failure. Doze keeps awake until resolved. Use `get_session` or `list_sessions` to inspect sessions belonging to this client. Recover a known session with a heartbeat only if its job is still running and Doze accepts renewal; do not invent replacement sessions to bypass a timeout or revocation.
+Missing heartbeats or disconnection means `connection_lost`, not success or definitive failure. Doze keeps awake for up to 30 minutes, until the user resolves it or a heartbeat recovers it; after that the session is cancelled without its completion action. Use `get_session` or `list_sessions` to inspect sessions belonging to this client. Recover a known session with a heartbeat only if its job is still running and Doze accepts renewal; do not invent replacement sessions to bypass a timeout or revocation.
 
 ## Report the actual outcome
 

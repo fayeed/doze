@@ -66,7 +66,7 @@ impl Engine {
         Ok(())
     }
     pub fn reset_transient(&mut self, reason: &str) {
-        self.agents.uncertain();
+        self.agents.uncertain(self.now);
         self.agents.completion_consumed = true;
         self.stop_awake();
         self.while_audio = false;
@@ -185,11 +185,15 @@ impl Engine {
             }
             // Pausing playback is itself input. During grace, input resets the platform's
             // idle duration; keep waiting instead of permanently disarming the rule.
+            // After Playback reuses the silence start only while it is armed and waiting.
+            // Otherwise an unarmed rule would let a short chime hold the computer awake forever.
+            let playback_waiting = self.playback_enabled
+                && matches!(self.playback_phase, Phase::GracePeriod | Phase::Countdown);
             if self.while_audio
                 && self
                     .silence_since
                     .is_some_and(|s| now.saturating_sub(s) >= settings.silence_seconds)
-                && !self.playback_enabled
+                && !playback_waiting
             {
                 self.silence_since = None;
             }

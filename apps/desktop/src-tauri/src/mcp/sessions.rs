@@ -37,7 +37,13 @@ pub struct Session {
     pub status: Status,
     #[serde(skip)]
     pub timeout_at: Option<u64>,
+    #[serde(skip)]
+    pub lost_at: Option<u64>,
 }
+/// A lost connection keeps holding the wake request for this long without a heartbeat.
+/// The session is then released without its completion action, so a crashed agent can
+/// never keep the computer awake or defer the user's own timers indefinitely.
+pub const LOST_GRACE_SECONDS: u64 = 1800;
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Sessions {
     pub items: Vec<Session>,
@@ -53,10 +59,11 @@ impl Sessions {
     pub fn unsettled(&self) -> bool {
         self.items.iter().any(|s| !s.status.terminal())
     }
-    pub fn uncertain(&mut self) {
+    pub fn uncertain(&mut self, now: u64) {
         for session in &mut self.items {
-            if session.status.holds_awake() {
+            if session.status == Status::Active {
                 session.status = Status::ConnectionLost;
+                session.lost_at = Some(now);
             }
         }
     }
@@ -66,6 +73,14 @@ impl Sessions {
                 && (now >= session.lease_expires_at || session.timeout_at.is_some_and(|t| now >= t))
             {
                 session.status = Status::ConnectionLost;
+                // Leases never outlive their optional timeout, so this is when contact ended.
+                session.lost_at = Some(session.lease_expires_at.min(now));
+            }
+            if session.status == Status::ConnectionLost
+                && now.saturating_sub(*session.lost_at.get_or_insert(now)) >= LOST_GRACE_SECONDS
+            {
+                // Cancellation vetoes the batch: abandonment is never treated as completion.
+                session.status = Status::Cancelled;
             }
             if session.status == Status::AwaitingAuthorization
                 && now.saturating_sub(session.created_at) >= 600
