@@ -71,9 +71,53 @@ public sealed partial class MainWindow
             Switch("Write diagnostic logs", draft.Logging, value => { draft.Logging = value; Changed(); }));
         Card("Preferences file", snapshot["settingsPath"]?.GetValue<string>() ?? "Loading…", "", ActionButton("Open folder", OpenData));
         Card("This computer", "Power actions: " + string.Join(", ", Actions.Select(Labels.Action)) + ". Audio monitoring " + (Capability("audioSupported") ? "available; audio is never recorded." : "unavailable."), "");
+        CommandLine();
         Section("Reset");
         Card("Reset preferences", "Restores the defaults on every page. Agent connections and sessions are kept.", "", ActionButton("Reset…", ConfirmResetAsync, "Reset preferences"));
         Footer("Doze validates every change and owns all power actions. Closing this window keeps Doze running; sessions are never restored after a restart or after the computer sleeps.");
+    }
+
+    /// doze-cli.exe beside the engine: the console front end that shells wait for.
+    private string CommandLinePath()
+    {
+        var engine = Text(snapshot["executable"]);
+        if (engine is null) return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Doze", "doze-cli.exe");
+        return Path.Combine(Path.GetDirectoryName(engine) ?? "", "doze-cli.exe");
+    }
+
+    private static string PowerShellQuoted(string text) => "'" + text.Replace("'", "''") + "'";
+
+    private void CommandLine()
+    {
+        var path = CommandLinePath();
+        var example = $"& {PowerShellQuoted(path)} run --then sleep -- ffmpeg -i in.mov out.mp4";
+        var alias = $"Set-Alias doze {PowerShellQuoted(path)}";
+        Section("Command line");
+        var rows = ExpanderCard("doze run and doze watch", "Keep the computer awake while a job runs in PowerShell or Command Prompt, then optionally sleep.", "");
+        Code(Row(rows, "Program", path, CopyButton("Copy path", path, "Copy the doze-cli.exe path")));
+        Code(Row(rows, "PowerShell alias", alias, CopyButton("Copy alias", alias, "Copy the PowerShell alias")));
+        Code(Row(rows, "Example", example + "\ndoze watch --pid 1234 --then sleep", CopyButton("Copy example", example, "Copy the example command")));
+        Footer("Add the alias to your PowerShell profile (notepad $PROFILE) to type doze run and doze watch. The -2060-2060then option accepts nothing, sleep, display-off, lock, hibernate or shutdown. The action runs only after the job succeeds and its final warning ends; a failed job or Ctrl-C releases the computer without any action. Running jobs appear in Agents. Doze must be running.");
+    }
+
+    private static void Code(TextBlock text) => text.Style = Style("CodeTextStyle");
+
+    private Button CopyButton(string label, string text, string accessibleName)
+    {
+        var button = new Button { Content = label };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, accessibleName);
+        button.Click += (_, _) =>
+        {
+            try
+            {
+                var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                data.SetText(text);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+                button.Content = "Copied";
+            }
+            catch (Exception error) { Notify("Couldn't copy", error.Message, InfoBarSeverity.Error); }
+        };
+        return button;
     }
 
     private void MenuGuide()
@@ -86,7 +130,7 @@ public sealed partial class MainWindow
         Card("After Playback", "Once playback has been heard, Doze waits for silence and inactivity, then shows the final warning. It is one-shot: it turns itself off after its action runs or when you choose Cancel or Stay Awake. Using the computer or resumed audio keeps it armed.", Tinted("", "DozePurpleBrush"));
         Card("Final warning", "Every power action shows a warning first. Cancel removes the action, Snooze waits 15 more minutes, and Stay Awake keeps the computer awake instead.", Tinted("", "DozeRedBrush"));
         Section("More ways to use Doze");
-        Card("Command line", "doze run --then sleep -- your-command stays awake until a job finishes; doze watch --pid follows one that is already running. See Advanced.", Tinted("", "DozeGrayBrush"));
+        Card("Command line", "doze run --then sleep -- your-command stays awake until a job finishes; doze watch --pid follows one that is already running. Advanced has the doze-cli.exe path and a PowerShell alias.", Tinted("", "DozeGrayBrush"));
         Card("Agents", "Coding agents connected through MCP keep the computer awake while they work. New requests need your approval in Agents unless you granted them there.", Tinted("", "DozeTealBrush"));
         Card("Quick Settings", "Checkmarks are saved preferences. Duration defaults apply to new sessions; other changes, such as display sleep, apply right away.", Tinted("", "DozeGrayBrush"));
         Card("Unavailable commands", "Stop, Extend, Cancel and Snooze are dimmed when there is nothing to stop. Actions this computer doesn't support stay dimmed.", Tinted("", "DozeGrayBrush"));

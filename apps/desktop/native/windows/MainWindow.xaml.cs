@@ -219,6 +219,9 @@ public sealed partial class MainWindow : Window
         SelectPage("Advanced");
         if (!Shows("Reset preferences") || ResetDialog().PrimaryButtonText != "Reset" || ResetDialog().DefaultButton != ContentDialogButton.Close)
             throw new InvalidOperationException("Reset does not ask for confirmation.");
+        if (!Shows("Copy the example command") || !Shows("Copy the PowerShell alias")
+            || !Descendants(Cards).OfType<TextBlock>().Any(t => t.Text.StartsWith(@"& 'C:\Users\example\AppData\Local\Doze\doze-cli.exe' run --then sleep -- ", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Advanced does not show the doze-cli.exe command line.");
         SelectPage("Agents");
         foreach (var expected in new[] { "Keep sessions alive while connected", "5 minutes", "Waiting for your approval", "Connection lost · keeping awake", "Command line", "Running ffmpeg" })
             if (!Descendants(Cards).Any(e => (e as TextBlock)?.Text.Contains(expected) == true || (e as ComboBoxItem)?.Content as string == expected
