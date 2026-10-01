@@ -53,6 +53,7 @@ The installed `Doze.app` bundle was used throughout.
 | Menu bar | Real menu: status rows, submenu arrows, ⌘, and ⌘Q; "0:13" beside the icon during a countdown |
 | Windows | Settings sidebar and toolbar glass, the countdown's glass button group, and the timer window captured from the screen in dark mode |
 | Shut down | A Shut down timer's request reached loginwindow ("Received a kAEShutDown", logout with no extra UI) at 19:33:09; the Mac shut down and booted at 19:33:59. No Automation consent prompt was needed for this event |
+| Light appearance | Doze's Light theme over a dark system: Settings captured from the screen with correct contrast and full sidebar labels |
 | Real login launch | Launch at login was on during that restart: after boot, launchd started Doze from the LaunchAgent with `--startup`, in the menu bar without Settings |
 
 Found and fixed in this run: "Help  About" lost its ampersand (macOS strips single `&`
@@ -70,8 +71,8 @@ unexpectedly; the switch, saved setting and LaunchAgent always agreed.
 
 ## Still requiring verification on a Mac
 
-- Bluetooth/AirPlay output switching, keyboard navigation of the menu bar menu, and the
-  light appearance on screen.
+- Bluetooth/AirPlay output switching (only the built-in speakers were approved for testing)
+  and keyboard navigation of the menu bar menu (synthetic keystrokes were avoided).
 
 # Windows QA — 1 October 2026
 
