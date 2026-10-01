@@ -370,11 +370,17 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         notice = ""
         if timerWindow == nil {
             timerWindow = window("Doze · Custom session", size: NSSize(width: 480, height: 280), content: TimerView(model: self))
+            timerWindow?.styleMask.remove([.resizable, .miniaturizable])
+            timerWindow?.isOpaque = false
+            timerWindow?.backgroundColor = .clear
         }
         if let window = timerWindow { activate(window) }
     }
 
     func startTimer() {
+        guard timerUsesDate || (1...10080).contains(durationMinutes) else {
+            notice = "Choose a duration between 1 minute and 7 days."; return
+        }
         let seconds = timerUsesDate ? Int(ceil(targetDate.timeIntervalSinceNow)) : durationMinutes * 60
         guard (60...604800).contains(seconds) else { notice = "Choose a duration between 1 minute and 7 days."; return }
         send(timerIsAwake ? "awake" : "timer", extra: ["seconds": seconds])
@@ -733,12 +739,13 @@ struct WarningView: View {
 struct TimerView: View {
     @ObservedObject var model: NativeUI
     var body: some View {
-        Form {
+        VStack(alignment: .leading, spacing: 18) {
             Text(model.timerIsAwake ? "Keep Awake" : "Power Timer").font(.title2.bold())
             if model.timerUsesDate {
                 DatePicker("End time", selection: $model.targetDate, in: Date()...Date().addingTimeInterval(604800))
             } else {
                 TextField("Duration (minutes)", value: $model.durationMinutes, format: .number)
+                    .textFieldStyle(.roundedBorder)
                 Text("From 1 minute to 7 days.").foregroundStyle(.secondary)
             }
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.red) }
@@ -747,7 +754,11 @@ struct TimerView: View {
                 Spacer()
                 Button("Start", action: model.startTimer).keyboardShortcut(.defaultAction)
             }
-        }.formStyle(.grouped).padding(12)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .navigationGlass()
+        .padding(16)
     }
 }
 

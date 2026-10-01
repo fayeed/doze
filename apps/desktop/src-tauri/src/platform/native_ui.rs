@@ -29,7 +29,6 @@ struct UiRequest {
     name: Option<String>,
     action: Option<crate::core::sessions::PowerAction>,
     agent_seconds: Option<u64>,
-    #[cfg(target_os = "macos")]
     seconds: Option<u64>,
 }
 
@@ -85,11 +84,9 @@ impl UiRequest {
             "snooze" => Operation::Snooze,
             #[cfg(target_os = "macos")]
             "quit" => Operation::Quit,
-            #[cfg(target_os = "macos")]
             "awake" => Operation::KeepAwake {
                 seconds: Some(self.seconds.ok_or("Duration missing.")?),
             },
-            #[cfg(target_os = "macos")]
             "timer" => Operation::ScheduleSelected {
                 seconds: self.seconds.ok_or("Duration missing.")?,
             },

@@ -7,6 +7,7 @@ public partial class App : Application
 {
     private MainWindow? window;
     private CountdownWindow? countdown;
+    private TimerWindow? timer;
     private EngineBridge? bridge;
     private string theme = "system";
 
@@ -15,6 +16,7 @@ public partial class App : Application
         theme = value;
         window?.SetTheme(value);
         countdown?.SetTheme(value);
+        timer?.SetTheme(value);
     }
 
     public App() => InitializeComponent();
@@ -32,6 +34,8 @@ public partial class App : Application
                 var commands = new List<string>();
                 countdown = new CountdownWindow(command => { commands.Add(command); return Task.CompletedTask; }, true);
                 await countdown.VerifyAsync();
+                timer = new TimerWindow(bridge);
+                timer.Verify();
                 if (!commands.SequenceEqual(new[] { "cancel", "snooze", "stay-awake" }))
                     throw new InvalidOperationException("Preview submitted an engine operation.");
                 var arguments = Environment.GetCommandLineArgs();
@@ -40,10 +44,13 @@ public partial class App : Application
                 {
                     await window.RenderVerificationAsync(arguments[render + 1]);
                     await countdown.RenderVerificationAsync(arguments[render + 1]);
+                    await timer.RenderVerificationAsync(arguments[render + 1]);
                 }
                 await bridge.SendAsync("verified");
                 window.StopAppearance();
                 countdown.StopAppearance();
+                timer.StopAppearance();
+                timer.Close();
                 Exit();
                 return;
             }
@@ -52,12 +59,14 @@ public partial class App : Application
             await bridge.ListenAsync(message => dispatcher.TryEnqueue(() => Receive(message)));
             window?.StopAppearance();
             countdown?.StopAppearance();
+            timer?.StopAppearance();
             Exit();
         }
         catch (Exception error)
         {
             window?.StopAppearance();
             countdown?.StopAppearance();
+            timer?.StopAppearance();
             await Console.Error.WriteLineAsync(error.ToString());
             Exit();
         }
@@ -71,6 +80,14 @@ public partial class App : Application
                  && message["snapshot"]?["settings"]?["theme"]?.GetValue<string>() is string savedTheme)
             ChangeTheme(savedTheme);
         var type = message["type"]?.GetValue<string>();
+        if (type == "open" && message["view"]?.GetValue<string>() is "awakeDuration" or "awakeTime" or "timerDuration" or "timerTime")
+        {
+            timer ??= new TimerWindow(bridge!);
+            timer.SetTheme(theme);
+            timer.Open(message);
+            return;
+        }
+        timer?.Receive(message);
         if (type is "preview" or "countdown")
         {
             countdown ??= new CountdownWindow(command => bridge!.SendAsync(command));

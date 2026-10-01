@@ -20,7 +20,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Next.js site and the Tauri desktop app. Open the website at the URL printed by Next.js. Desktop development starts a tray app and requires the platform prerequisites above. Click the Doze tray icon to open its native system menu. Settings and About use native WinUI 3; custom timers use native Windows dialogs.
+This starts the Next.js site and the Tauri desktop app. Open the website at the URL printed by Next.js. Desktop development starts a tray app and requires the platform prerequisites above. Click the Doze tray icon to open its native system menu. Settings, About and custom timers use native WinUI 3 with Mica on Windows; macOS custom timers use Liquid Glass on macOS 26+ with native material on older releases.
 
 To run one app at a time:
 

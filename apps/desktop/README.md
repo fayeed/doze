@@ -15,7 +15,7 @@ pnpm --filter @doze/desktop test
 pnpm build:desktop
 ```
 
-Requires Rust 1.88+, Microsoft C++ desktop build tools, and a .NET 8 SDK on Windows. The native build script also recognizes a workspace-local SDK at `.tools/dotnet/`. The app starts in the tray by default. Left-click or right-click opens the native system menu. Settings and About use WinUI 3; custom durations and specific dates/times use native Windows dialogs. Closing a dialog keeps sessions running. Quit releases the native power request.
+Requires Rust 1.88+, Microsoft C++ desktop build tools, and a .NET 8 SDK on Windows. The native build script also recognizes a workspace-local SDK at `.tools/dotnet/`. The app starts in the tray by default. Left-click or right-click opens the native system menu. Settings, About, custom durations and specific dates/times use WinUI 3 with Mica on Windows. Closing a dialog keeps sessions running. Quit releases the native power request.
 
 Build output is in `src-tauri/target/release/`: `doze.exe`, its `windows-ui/` companion folder, and `bundle/nsis/`. Windows uses NSIS: MSI validation rejects language IDs in the bundled Microsoft runtime DLLs. Installers are unsigned development artifacts.
 
@@ -67,7 +67,7 @@ One channel-driven worker owns sessions, COM interfaces, and power requests. Nat
 | --- | --- |
 | Settings / About | WinUI 3 companion; Rust owns validation and persistence |
 | Countdown | WinUI 3, matching Mica and theme resources; native always-on-top presenter |
-| Custom timers | Win32 native dialogs and date/time pickers; alpha-correct themed text over system glass |
+| Custom timers | WinUI 3 Mica, native number/date/time pickers, inline validation, and theme resources |
 | Keep Awake | `SetThreadExecutionState` with a continuous system requirement and optional display requirement; released on the same worker thread |
 | Sleep / Hibernate | `GetPwrCapabilities`, `SetSuspendState` |
 | Shutdown | `InitiateSystemShutdownExW`; temporary `SeShutdownPrivilege`, restored after execution; no forced app closure |
@@ -85,7 +85,7 @@ Audio meters observe all active render endpoints, including non-default devices.
 
 ## Native appearance
 
-Windows Settings, About, Menu Guide and countdown share WinUI 3 Mica Alt and native theme resources. Settings has sidebar navigation, search, cards, toggles, number fields and action selectors. The guide uses the native Library icon. Navigation keeps the window backdrop intact and resets page scrolling. Custom timer windows extend DWM glass across their client area and paint labels with composited alpha; editable fields remain opaque for readability. The system tray menu remains OS-rendered. Hidden Settings/countdown windows keep the private UI pipe available, with no UI polling timer while hidden. Restart Doze after updating the native companion to load the new binary.
+Windows Settings, About, Menu Guide, countdown and custom timers share WinUI 3 Mica Alt and native theme resources. Settings has sidebar navigation, search, cards, toggles, number fields and action selectors. The guide uses the native Library icon. Navigation keeps the window backdrop intact and resets page scrolling. Custom session popups use native number/date/time pickers, inline errors, and Cancel/Start buttons. The system tray menu remains OS-rendered. Hidden native windows keep the private UI pipe available, with no UI polling timer while hidden. Restart Doze after updating the native companion to load the new binary.
 
 macOS uses native SwiftUI/AppKit windows: sidebar preferences, About, custom durations/end times, and a floating countdown with Cancel/Snooze. Native navigation and controls adopt the current OS design when built against its SDK. Command surfaces use `glassEffect` on macOS 26+ and native material on older releases; system accessibility preferences govern transparency and contrast. Settings and About use the same window shell. The menu bar continues to use native macOS menus, template status icons, grouped actions, checkmarks, and Command shortcuts. Windows uses its native tray menu and WinUI controls. References: [Windows materials](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type), [Apple's Liquid Glass guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
 

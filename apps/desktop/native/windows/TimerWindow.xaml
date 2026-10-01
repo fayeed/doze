@@ -1,0 +1,28 @@
+<Window x:Class="Doze.SettingsUi.TimerWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid x:Name="root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid x:Name="titlebar" Margin="16,0,140,0">
+            <TextBlock Text="Doze" VerticalAlignment="Center" />
+        </Grid>
+        <StackPanel Grid.Row="1" Spacing="18" Margin="24,12,24,24">
+            <TextBlock x:Name="heading" FontSize="18" FontWeight="SemiBold" />
+            <TextBlock x:Name="help" TextWrapping="Wrap" Opacity="0.7" />
+            <NumberBox x:Name="minutes" Header="Duration in minutes" Minimum="1" Maximum="10080"
+                       SmallChange="1" SpinButtonPlacementMode="Inline" AutomationProperties.Name="Duration in minutes" />
+            <StackPanel x:Name="pickers" Orientation="Horizontal" Spacing="16">
+                <CalendarDatePicker x:Name="date" PlaceholderText="Choose a date" Width="224" AutomationProperties.Name="End date" />
+                <TimePicker x:Name="time" Width="224" AutomationProperties.Name="End time" />
+            </StackPanel>
+            <InfoBar x:Name="error" Severity="Error" IsClosable="True" />
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                <Button x:Name="cancel" Content="Cancel" MinWidth="108" />
+                <Button x:Name="start" Content="Start" MinWidth="108" Style="{StaticResource AccentButtonStyle}" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Window>

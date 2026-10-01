@@ -42,13 +42,14 @@ try {
     $stderr = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit(30000)) {
         $process.Kill()
-        throw 'Native WinUI page verification timed out.'
+        $process.WaitForExit()
+        throw "Native WinUI page verification timed out: $($stderr.GetAwaiter().GetResult()) $($stdout.GetAwaiter().GetResult())"
     }
     $output = $stdout.GetAwaiter().GetResult()
     $errors = $stderr.GetAwaiter().GetResult()
     if ($process.ExitCode -ne 0 -or $output -notmatch '"command":"verified"' -or $errors) {
         throw "Native WinUI verification failed (exit $($process.ExitCode)): $errors $output"
     }
-    Write-Output 'Verified: nine native pages including agent authorization/connection-loss/permissions/configuration controls, immediate changes/rollback, 72-point countdown, topmost preview/real warnings, safe preview dismissal, and Cancel/Snooze/Stay Awake routing. No power actions or settings writes.'
+    Write-Output 'Verified: nine native pages, four Mica custom session forms and duration validation, agent controls, immediate changes/rollback, 72-point countdown, topmost preview/real warnings, safe preview dismissal, and Cancel/Snooze/Stay Awake routing. No power actions or settings writes.'
 }
 finally { $process.Dispose() }
