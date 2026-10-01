@@ -1,6 +1,6 @@
 # Doze desktop
 
-A local tray utility built with Tauri 2 and Rust. Windows is the first supported target. No account, cloud services, telemetry, or simulated input.
+A local tray (Windows) and menu bar (macOS 13+) utility built with Tauri 2 and Rust. No account, cloud services, telemetry, or simulated input.
 
 ## Run and verify
 
@@ -15,7 +15,7 @@ pnpm --filter @doze/desktop test
 pnpm build:desktop
 ```
 
-Requires Rust 1.88+, Microsoft C++ desktop build tools, and a .NET 8 SDK on Windows. The native build script also recognizes a workspace-local SDK at `.tools/dotnet/`. The app starts in the tray by default. Left-click or right-click opens the native system menu. Settings, About, custom durations and specific dates/times use WinUI 3 with Mica on Windows. Closing a dialog keeps sessions running. Quit releases the native power request.
+Requires Rust 1.88+, plus Microsoft C++ desktop build tools and a .NET 8 SDK on Windows, or Xcode with a macOS 26+ SDK on macOS. The native build script also recognizes a workspace-local SDK at `.tools/dotnet/`. The app starts in the tray by default. Left-click or right-click opens the native system menu. Settings, About, custom durations and specific dates/times use WinUI 3 with Mica on Windows. Closing a dialog keeps sessions running. Quit releases the native power request.
 
 Build output is in `src-tauri/target/release/`: `doze.exe`, its `windows-ui/` companion folder, and `bundle/nsis/`. Windows uses NSIS: MSI validation rejects language IDs in the bundled Microsoft runtime DLLs. Installers are unsigned development artifacts.
 
@@ -25,9 +25,11 @@ Build output is in `src-tauri/target/release/`: `doze.exe`, its `windows-ui/` co
 
 The clickable status rows open native help. “Normal sleep allowed” means Doze is not preventing Windows from sleeping; ordinary Windows power settings apply. Inactive controls explain their reason in the menu, and “Help & About → Menu Guide” explains every feature, checked state, unavailable action, and current timing setting.
 
-The tray uses native icon menu items with antialiased line glyphs, short live status rows, and separators between session, timer, and preference groups. Keep Awake contains Extend/Stop; Power Timer contains action, duration, and Stop; Countdown contains Cancel/Snooze/Preview; Help & About contains the Menu Guide and About. Checkmarks retain their native toggle meaning. Settings and Quit show platform keyboard shortcuts. On macOS, applicable items use AppKit's built-in icons and the tray glyph uses template rendering for the menu bar's appearance. macOS rendering still requires verification on a Mac.
+The tray uses native icon menu items with antialiased line glyphs, short live status rows, and separators between session, timer, and preference groups. Keep Awake contains Extend/Stop; Power Timer contains action, duration, and Stop; Countdown contains Cancel/Snooze/Preview; Help & About contains the Menu Guide and About. Checkmarks retain their native toggle meaning. Settings and Quit show platform keyboard shortcuts. On macOS, applicable items use AppKit's built-in icons and the tray glyph uses template rendering for the menu bar's appearance. While a countdown, power timer or timed Keep Awake session runs, the macOS menu bar shows the time left beside the icon (General → "Show time remaining in the menu bar").
 
 - Keep Awake: 15m, 30m, 1h, 2h, custom duration, a local date/time, or indefinitely. Timed sessions can be extended or stopped.
+- Control center (macOS): Settings → Overview starts, extends and stops Keep Awake, schedules and stops Power Timers with a chosen action, toggles the audio rules, and handles a running final warning with live times. The custom timer window has an action picker, presets, a stepper and an end-time preview.
+- First launch opens Settings and saves defaults; later launches and launches at login stay in the tray or menu bar. On macOS, opening Doze again from Finder, Spotlight or Launchpad shows Settings, as a second launch does on Windows.
 - Keep awake while audio plays: retains the power request through the configured silence grace period.
 - Sleep Timer: supported native actions with presets or custom duration/date/time. The selected duration is followed by the common countdown. The timer holds the computer awake until it finishes.
 - After Playback: three meaningful observations in distinct seconds arm the rule. Silence alone cannot arm it. After the silence grace and required idle duration, a countdown starts. Clicking Pause/Stop or using the computer during the silence wait restarts the inactivity wait without disarming the rule. Resumed audio restarts the silence wait; input during a visible countdown cancels it. Observation failures or device changes cancel the playback action. Cancellation requires fresh playback to arm again.
@@ -89,9 +91,27 @@ Windows Settings, About, Menu Guide, countdown and custom timers share WinUI 3 M
 
 macOS uses native SwiftUI/AppKit windows: sidebar preferences, About, custom durations/end times, and a floating countdown with Cancel/Snooze. Native navigation and controls adopt the current OS design when built against its SDK. Command surfaces use `glassEffect` on macOS 26+ and native material on older releases; system accessibility preferences govern transparency and contrast. Settings and About use the same window shell. The menu bar continues to use native macOS menus, template status icons, grouped actions, checkmarks, and Command shortcuts. Windows uses its native tray menu and WinUI controls. References: [Windows materials](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type), [Apple's Liquid Glass guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
 
-Build macOS on a Mac with Xcode and a macOS 26 or newer SDK selected through `xcode-select`. `pnpm --filter @doze/desktop native:build` compiles a universal Swift companion for Apple Silicon and Intel; `native:test` constructs the native pages in light/dark without saving preferences or performing power actions. `pnpm build:desktop` includes the companion in the app's Resources/macos-ui folder. Native macOS sources and packaging have not been compiled or visually verified from this Windows workspace. Use the newest available Xcode SDK for the latest system appearance.
+Build macOS on a Mac with Xcode and a macOS 26 or newer SDK selected through `xcode-select`. `pnpm --filter @doze/desktop native:build` compiles a universal Swift companion for Apple Silicon and Intel; `native:test` constructs the native pages in light/dark without saving preferences or performing power actions; `native:render [folder]` draws every page and window offscreen to PNG files for visual review (screen capture would need Screen Recording permission). `pnpm build:desktop` produces `Doze.app` and a DMG with the companion in `Contents/Resources/macos-ui` and an `Info.plist` that hides the Dock icon (`LSUIElement`) and declares Apple Events use for Shut down. Bundles are ad-hoc signed development artifacts. Use the newest available Xcode SDK for the latest system appearance.
 
-Separate adapters include IOKit keep-awake assertions and Sleep, Core Graphics idle detection, and native notifications through Tauri. These have not been compiled or tested on a Mac. After Playback, launch at login, and native suspend/resume observation remain unimplemented on macOS; controls are disabled and the limitation is reported. Other macOS power actions are disabled. The Rust engine remains the only owner of countdown time and power execution. Preview controls submit no power operation; losing the native companion cancels any pending real countdown.
+## Native macOS APIs
+
+| Feature | API |
+| --- | --- |
+| Settings / About / timers / countdown | SwiftUI and AppKit companion over private pipes; Rust owns validation and persistence |
+| Keep Awake | `IOPMAssertionCreateWithName`: `PreventUserIdleDisplaySleep`, or `PreventUserIdleSystemSleep` when the display may sleep |
+| Sleep | `IOPMSleepSystem` |
+| Shut down | Standard `aevt/shut` request to loginwindow; apps with unsaved documents can stop it. Requires Automation consent on first use |
+| Lock | Login framework `SACLockScreenImmediate`, resolved at runtime; Lock is offered only when present |
+| Display off | `pmset displaysleepnow` |
+| Hibernate | Not offered: macOS does not let apps request hibernation |
+| Idle | `CGEventSourceSecondsSinceLastEventType` |
+| Audio | Core Audio object state: an output device running (`kAudioDevicePropertyDeviceIsRunningSomewhere`), not muted and above zero volume; on macOS 14+ a process must be running output (`kAudioProcessPropertyIsRunningOutput`) |
+| Startup | Per-user LaunchAgent `~/Library/LaunchAgents/app.getdoze.desktop.plist` starting the current executable with `--startup` |
+| Suspend/resume | `IORegisterForSystemPower` on a dedicated run loop thread |
+
+macOS playback detection captures and inspects no audio and asks for no recording permission. Unlike Windows peak meters, a silent stream that keeps an output device running counts as playback, and very quiet content counts too. Muted or zero-volume output counts as silence. Device or default-output changes cancel a playback action, as on Windows. Read-only probe: `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml audio::tests::native_read_only_probe -- --ignored --nocapture`.
+
+The Rust engine remains the only owner of countdown time and power execution. Preview controls submit no power operation; losing the native companion cancels any pending real countdown.
 
 ## Hardware verification
 
@@ -103,7 +123,7 @@ Read-only Windows probe:
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml native_read_only_probe -- --ignored --nocapture
 ```
 
-Before release, verify native menu and dialog keyboard navigation/layout across monitor/DPI/taskbar configurations; Stop/Quit/crash power-request release; Modern Standby and power plans; every countdown action including privilege refusal and unsaved documents; browser/player audio, buffering, mute, silent sessions, quiet content, exclusive audio, headphones and Bluetooth; installed notifications and Focus Assist; startup after installation/reboot; invalid settings, clock changes, lid close, suspend/resume, and pending-shutdown restart; long-running CPU/RAM; and macOS compilation/native hardware behavior.
+Before release, verify native menu and dialog keyboard navigation/layout across monitor/DPI/taskbar configurations; Stop/Quit/crash power-request release; Modern Standby and power plans; every countdown action including privilege refusal and unsaved documents; browser/player audio, buffering, mute, silent sessions, quiet content, exclusive audio, headphones and Bluetooth; installed notifications and Focus Assist; startup after installation/reboot; invalid settings, clock changes, lid close, suspend/resume, and pending-shutdown restart; long-running CPU/RAM; and on macOS, real Sleep/Shut down/Lock/Display Off execution, audible playback detection with unmuted output, notifications from an installed bundle, and an actual login with launch at login enabled.
 
 ## Agents and MCP
 
@@ -206,7 +226,7 @@ pnpm test
 pnpm build
 ```
 
-`mcp:test` uses the official TypeScript MCP client SDK against the actual Doze stdio binary, connected to a test-only engine host with MockPower. It checks handshake/tool discovery, session creation and mock assertion, UI snapshot data, heartbeat renewal, finish/countdown, user cancellation, overlapping clients, conflicting actions, ownership and invalid credentials, unauthorized shutdown, disconnect/expiry and reconnect. Rust tests cover authorization decisions, leases, timers, wake arbitration, timeout, failure state and cancellation. Native UI tests construct the Agents approval, lost-connection, permissions and connection controls in light/dark themes. The mock host is excluded from normal builds and installers by a required `mcp-test-support` Cargo feature. Tests never execute native sleep/shutdown. Real native power transitions and macOS compilation require separate platform hardware validation.
+`mcp:test` uses the official TypeScript MCP client SDK against the actual Doze stdio binary, connected to a test-only engine host with MockPower. It checks handshake/tool discovery, session creation and mock assertion, UI snapshot data, heartbeat renewal, finish/countdown, user cancellation, overlapping clients, conflicting actions, ownership and invalid credentials, unauthorized shutdown, disconnect/expiry and reconnect. Rust tests cover authorization decisions, leases, timers, wake arbitration, timeout, failure state and cancellation. Native UI tests construct the Agents approval, lost-connection, permissions and connection controls in light/dark themes. The mock host is excluded from normal builds and installers by a required `mcp-test-support` Cargo feature. Tests never execute native sleep/shutdown. Real native power transitions require separate platform hardware validation.
 
 On Windows, if a running debug app locks `doze.exe`, set `$env:DOZE_MCP_TEST_RELEASE="1"` in PowerShell before running `mcp:test`. The test then builds and uses the release binaries without closing the desktop app.
 

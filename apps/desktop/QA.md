@@ -1,3 +1,52 @@
+# macOS QA — 1 October 2026
+
+First run of Doze on a Mac: macOS 27.0.1 on Apple Silicon, Xcode with the macOS 27 SDK,
+Rust 1.97. Interactive checks drove the real app through the Accessibility API (Swift AX
+helper and System Events). The menu bar menu itself cannot be opened through
+Accessibility, so its actions were exercised through the Settings control center, which
+sends the same engine operations. Screen capture needs Screen Recording permission, so
+visual review used `native:render` and headless Chrome for the website.
+
+## Found and fixed
+
+| Problem | Fix |
+| --- | --- |
+| Two skill installer tests failed: `/var` is a link to `/private/var`, and every ancestor was rejected | Only components below the trusted root (home or Doze's data folder) are checked; new test refuses a link below the root |
+| Tray status permanently read "Needs attention: Suspend notifications unavailable" | IOKit sleep/wake observer (`IORegisterForSystemPower`) |
+| Launch at login, audio sessions, After Playback, Lock, Display Off and Shut down were unavailable | LaunchAgent, Core Audio playback state, login framework lock, `pmset displaysleepnow`, loginwindow shut down request |
+| `pnpm build:desktop` failed: stripped proc-macro dylibs rejected by dyld ("mis-aligned LINKEDIT string pool") | `[profile.release.build-override] strip = false`; shipped binary still stripped |
+| Opening the running app from Finder or Spotlight did nothing visible | Reopen event shows Settings |
+| New users saw only a menu bar icon | First launch opens Settings and saves defaults |
+| Labels "Shutdown"/"Displayoff", raw lease seconds and agent statuses | Shared action labels, "5 minutes", "Waiting for your approval" |
+| VoiceOver: number fields read their label twice; identical "Start for 15m" buttons; a decorative moon announced as "Snooze" | Single labels, "Keep awake for 15m" / "Sleep in 15m", icons hidden |
+| Custom Power Timer did not show which action would run | Action picker, presets, stepper, end-time preview |
+| Live QA runner was Windows-only | macOS paths and `DOZE_QA_CLIENT` |
+
+## Verified live
+
+| Area | Evidence |
+| --- | --- |
+| Checks | 87 Rust tests, 6 Node lease tests, MCP SDK integration against the real stdio binary, native `--verify-ui`, workspace lint/test/build, and Windows-target clippy (`x86_64-pc-windows-msvc`, warnings denied) all passed |
+| Keep Awake | 15m start, Extend (15 → 30 minutes), Stop and Indefinitely; `pmset -g assertions` showed `PreventUserIdleDisplaySleep "Doze keep awake"` owned by Doze, switching to `PreventUserIdleSystemSleep` when display sleep was allowed, and no assertion after Stop |
+| Power Timer and final warning | 1-minute Turn display off timer held the Mac awake; the floating warning appeared after about 61 seconds with a live 0:14; Snooze hid it and moved the deadline to 15:04; Cancel cleared it and released the assertion. A second run's Stay Awake cleared the timer and continued as Keep Awake indefinitely |
+| Preview | 60-second preview of the selected action, "Preview only", no Stay Awake, Cancel dismissed it with no engine change |
+| Audio | Core Audio probe: idle reported not running; `afplay` set device and process output running; muted output (this Mac's state) correctly counted as silence. Both audio toggles ran without monitoring errors |
+| Launch at login | Toggle wrote a valid LaunchAgent (`plutil -lint`) for the current executable with `--startup`; toggling off removed it |
+| Suspend observer | Registered at startup; the permanent error disappeared |
+| Menu bar time | "15m" appeared beside the icon during a 15-minute session; the preference removed and restored it live |
+| Agents | Claude Code profile setup showed the macOS command, endpoint and key; a real stdio session waited for approval with no assertion, Allow Once made it active and held the assertion, heartbeat renewed the lease, finish released it and the runner exited cleanly |
+| Bundle | `Doze.app` and DMG built; universal companion in Resources, `LSUIElement` and Apple Events usage in Info.plist; the bundled app used its bundled companion and reopened to Settings |
+
+## Still requiring verification on a Mac
+
+- Real Sleep, Shut down (including the Automation consent prompt), Lock and Display Off
+  execution. Only availability was checked; timers used Turn display off and were
+  cancelled before running.
+- Audible playback with unmuted output and Bluetooth/AirPlay devices; this Mac stayed muted.
+- Notifications from the installed bundle, and an actual login with launch at login on.
+- The menu bar menu's own rendering and keyboard navigation, and the Liquid Glass and
+  sidebar appearance, which offscreen rendering cannot draw.
+
 # Windows QA — 1 October 2026
 
 This run found and fixed a countdown command race. Engine updates previously

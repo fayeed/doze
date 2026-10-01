@@ -1,6 +1,6 @@
 # Doze
 
-Doze is a lightweight desktop utility for keeping your computer awake when it should be awake, and letting it sleep when it should sleep. The Windows tray app lives in `apps/desktop`; the website remains a placeholder.
+Doze is a lightweight desktop utility for keeping your computer awake when it should be awake, and letting it sleep when it should sleep. The Windows tray and macOS menu bar app lives in `apps/desktop`; the landing page lives in `apps/web`.
 
 > Your computer knows when it's bedtime.
 
@@ -20,7 +20,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Next.js site and the Tauri desktop app. Open the website at the URL printed by Next.js. Desktop development starts a tray app and requires the platform prerequisites above. Click the Doze tray icon to open its native system menu. Settings, About and custom timers use native WinUI 3 with Mica on Windows; macOS custom timers use Liquid Glass on macOS 26+ with native material on older releases.
+This starts the Next.js site and the Tauri desktop app. Open the website at the URL printed by Next.js. Desktop development starts a tray (Windows) or menu bar (macOS) app and requires the platform prerequisites above. Click the Doze icon to open its native system menu. The first launch also opens Settings, whose Overview page doubles as a control center. Settings, About and custom timers use native WinUI 3 with Mica on Windows and SwiftUI/AppKit on macOS, with Liquid Glass on macOS 26+ and native material on older releases.
 
 To run one app at a time:
 
@@ -45,11 +45,11 @@ pnpm dev:desktop
 ## Workspace
 
 - `apps/desktop` — native tray menus, WinUI 3 settings, Tauri 2, and Rust
-- `apps/web` — Next.js App Router placeholder
+- `apps/web` — Next.js App Router landing page
 - `packages/brand` — shared product name, domain, and tagline
 - `packages/config` — shared TypeScript compiler options
 
-See [the desktop README](apps/desktop/README.md) for native API choices, verification commands, and remaining hardware/macOS validation. The marketing website remains a placeholder.
+See [the desktop README](apps/desktop/README.md) for native API choices, verification commands, and remaining hardware validation, and [QA.md](apps/desktop/QA.md) for the latest Windows and macOS QA runs.
 
 ## Coding agents
 
