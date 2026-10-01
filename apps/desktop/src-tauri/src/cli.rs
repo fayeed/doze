@@ -197,7 +197,11 @@ fn execute(job: Job) -> Result<i32, String> {
         .ok_or("Doze returned no session.")?
         .to_string();
     let then = action_label(job.then);
-    eprintln!("doze: keeping this computer awake while {what} runs (then: {then}).");
+    if job.then == "return_to_normal" {
+        eprintln!("doze: keeping this computer awake while {what} runs.");
+    } else {
+        eprintln!("doze: keeping this computer awake while {what} runs, then Doze will {then}.");
+    }
 
     let stop = Arc::new(AtomicBool::new(false));
     let lease = session["lease_expires_at"]
@@ -245,13 +249,19 @@ fn execute(job: Job) -> Result<i32, String> {
             if job.then == "return_to_normal" {
                 eprintln!("doze: done; normal sleep settings apply again.");
             } else {
-                eprintln!("doze: done; {then} follows Doze's final warning.");
+                eprintln!("doze: done; Doze will {then} after its final warning.");
             }
             Ok(0)
         }
         Ok(code) => {
             call("fail_session", json!({ "session_id": id }))?;
-            eprintln!("doze: {what} exited with status {code}; released without {then}.");
+            if job.then == "return_to_normal" {
+                eprintln!(
+                    "doze: {what} exited with status {code}; normal sleep settings apply again."
+                );
+            } else {
+                eprintln!("doze: {what} exited with status {code}; Doze will not {then}.");
+            }
             Ok(code)
         }
         Err(error) => {

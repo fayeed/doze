@@ -95,7 +95,7 @@ try {
     process.platform === "win32" ? ["cmd", "/c"] : ["/bin/sh", "-c"];
   const succeeded = await job(["--then", "sleep", "--", ...shell, "exit 0"]);
   assert.equal(succeeded.code, 0, succeeded.stderr);
-  assert.match(succeeded.stderr, /sleep follows Doze's final warning/);
+  assert.match(succeeded.stderr, /Doze will sleep after its final warning/);
   assert.deepEqual(await command("state"), {
     awake: true,
     countdown: true,
@@ -104,7 +104,7 @@ try {
   await command("cancel");
   const failed = await job(["--then", "sleep", "--", ...shell, "exit 3"]);
   assert.equal(failed.code, 3, failed.stderr);
-  assert.match(failed.stderr, /released without sleep/);
+  assert.match(failed.stderr, /Doze will not sleep/);
   assert.deepEqual(await command("state"), {
     awake: false,
     countdown: false,
