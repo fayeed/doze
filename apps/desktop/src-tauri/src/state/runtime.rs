@@ -105,6 +105,11 @@ pub(super) fn worker(
     if let Err(error) = &warning {
         errors.startup = Some(format!("Countdown window unavailable: {error}"));
     }
+    // The login item follows the saved setting, even after settings were reset or the app
+    // moved: re-register the current executable, or remove a stale item.
+    if let Err(error) = platform::startup::set_enabled(snapshot.settings.launch_at_startup) {
+        errors.startup = Some(error);
+    }
     let lifecycle = platform::lifecycle::Registration::new(sender.clone());
     if let Err(error) = &lifecycle {
         errors

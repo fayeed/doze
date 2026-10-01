@@ -60,9 +60,14 @@ fn set_at(home: &Path, executable: &Path, enabled: bool) -> io::Result<()> {
     let folder = path
         .parent()
         .ok_or_else(|| io::Error::other("LaunchAgents folder unavailable"))?;
+    let contents = property_list(executable);
+    // Rewriting an identical item would make macOS announce a new background item.
+    if fs::read_to_string(&path).is_ok_and(|current| current == contents) {
+        return Ok(());
+    }
     fs::create_dir_all(folder)?;
     let staging = folder.join(format!(".{LABEL}.{}.tmp", std::process::id()));
-    fs::write(&staging, property_list(executable))?;
+    fs::write(&staging, contents)?;
     fs::rename(&staging, &path).inspect_err(|_| {
         let _ = fs::remove_file(&staging);
     })
@@ -97,6 +102,17 @@ mod tests {
         assert!(!agent_path(&home).exists());
         // Disabling twice is not an error.
         set_at(&home, executable, false).unwrap();
+        // An unchanged item is left alone; a moved app is rewritten for its new location.
+        use std::os::unix::fs::MetadataExt;
+        set_at(&home, executable, true).unwrap();
+        let inode = fs::metadata(agent_path(&home)).unwrap().ino();
+        set_at(&home, executable, true).unwrap();
+        assert_eq!(fs::metadata(agent_path(&home)).unwrap().ino(), inode);
+        let moved = Path::new("/Applications/Utilities/Doze.app/Contents/MacOS/doze");
+        set_at(&home, moved, true).unwrap();
+        assert!(fs::read_to_string(agent_path(&home))
+            .unwrap()
+            .contains("/Applications/Utilities/Doze.app"));
         fs::remove_dir_all(home).unwrap();
     }
 }
