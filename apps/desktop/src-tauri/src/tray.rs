@@ -131,16 +131,8 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         &PredefinedMenuItem::separator(app)?,
         &preview,
     ])?;
-    let support = menu_icons::submenu(
-        app,
-        "support_menu",
-        if cfg!(windows) {
-            "Help && About"
-        } else {
-            "Help & About"
-        },
-        Glyph::Help,
-    )?;
+    // Menu titles treat a single & as a mnemonic marker on every platform, including macOS.
+    let support = menu_icons::submenu(app, "support_menu", "Help && About", Glyph::Help)?;
     support.append_items(&[&help, &about])?;
     // Session management lives beside its start controls rather than filling the root with
     // inactive rows. Disabled commands still explain why they cannot run.
