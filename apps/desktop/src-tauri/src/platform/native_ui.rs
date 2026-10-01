@@ -199,7 +199,21 @@ fn snapshot_json(snapshot: &Snapshot) -> Value {
         "version": env!("CARGO_PKG_VERSION"),
         // Shown in Settings so `doze run` can be copied with the right path.
         "executable": std::env::current_exe().ok(),
+        "iconPath": icon_path(),
     })
+}
+
+/// Doze's app icon for the native Settings sidebar and About page: the bundle's icon when
+/// installed, otherwise the checkout's.
+fn icon_path() -> Option<std::path::PathBuf> {
+    let bundled = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .join("../Resources/icon.icns");
+    let development = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/128x128@2x.png");
+    [bundled, development]
+        .into_iter()
+        .find(|path| path.is_file())
 }
 
 pub(super) fn show(snapshot: Snapshot, requests: Sender<Request>) -> Result<(), String> {

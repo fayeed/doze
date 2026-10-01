@@ -412,6 +412,7 @@ public sealed partial class MainWindow : Window
         PageDescription.Text = "Your computer knows when it's bedtime.";
         Card("Doze", $"Version {snapshot["version"]!.GetValue<string>()} · Windows {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}", "\uE708");
         Card("A quiet desktop companion", "Keep your computer awake when you need it, then let it rest. Native tray controls, audio-aware rules, power timers, and a shared final countdown.", "\uE946");
+        Card("Made by Fayeed Pawaskar", "Also from the developer: Clypy, a clipboard manager for Mac, Windows, Linux and phones.", "\uE77B", ActionButton("Visit Clypy", OpenClypy));
         Section("Local and private");
         Card("No account. No cloud. No ads.", "Doze does not record audio, simulate input, or send telemetry. Your preferences and optional diagnostic logs stay on this computer.", "\uE72E");
         Section("Built with");
@@ -513,6 +514,12 @@ public sealed partial class MainWindow : Window
         var button = new Button { Content = label };
         button.Click += async (_, _) => { try { await action(); } catch (Exception error) { Notify("Couldn't complete action", error.Message, InfoBarSeverity.Error); } };
         return button;
+    }
+
+    private static Task OpenClypy()
+    {
+        Process.Start(new ProcessStartInfo("https://clypy.app") { UseShellExecute = true });
+        return Task.CompletedTask;
     }
 
     private Task OpenData()

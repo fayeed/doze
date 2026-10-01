@@ -100,6 +100,7 @@ struct EngineSnapshot: Codable {
     var agentSkills: [AgentSkill]?
     var agentSkillMessage: String?
     var executable: String?
+    var iconPath: String?
 }
 
 enum Page: String, CaseIterable, Identifiable {
@@ -132,17 +133,32 @@ enum Page: String, CaseIterable, Identifiable {
         let words = query.split(separator: " ")
         return words.allSatisfy { rawValue.localizedCaseInsensitiveContains($0) || keywords.localizedCaseInsensitiveContains($0) }
     }
+    /// Sidebar groups, separated like System Settings.
+    static let groups: [[Page]] = [[.overview], [.general, .session, .playback, .notifications], [.agents, .advanced], [.help, .about]]
     var symbol: String {
         switch self {
-        case .overview: return "house"
-        case .general: return "gearshape"
-        case .session: return "moon"
-        case .playback: return "speaker.wave.2"
-        case .notifications: return "bell"
-        case .agents: return "person.2"
+        case .overview: return "moon.zzz.fill"
+        case .general: return "gearshape.fill"
+        case .session: return "sun.max.fill"
+        case .playback: return "speaker.wave.2.fill"
+        case .notifications: return "bell.badge.fill"
+        case .agents: return "person.2.fill"
         case .advanced: return "slider.horizontal.3"
-        case .help: return "book"
-        case .about: return "info.circle"
+        case .help: return "book.fill"
+        case .about: return "info"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .overview: return .indigo
+        case .general: return .gray
+        case .session: return .orange
+        case .playback: return .pink
+        case .notifications: return .red
+        case .agents: return .teal
+        case .advanced: return .gray
+        case .help: return .brown
+        case .about: return .blue
         }
     }
 }
@@ -167,6 +183,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     @Published var durationMinutes = 30
     @Published var targetDate = Date().addingTimeInterval(1800)
     @Published var timerAction = "sleep"
+    @Published var appIcon: NSImage?
 
     private var settingsWindow: NSWindow?
     private var warningWindow: NSWindow?
@@ -396,6 +413,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
                 || (type == "saved" && draft == pendingSettings)
             snapshot = incoming
             if replaceDraft { draft = incoming.settings }
+            if appIcon == nil, let path = incoming.iconPath { appIcon = NSImage(contentsOfFile: path) }
         }
         switch type {
         case "open":
@@ -462,8 +480,8 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
 
     private func showSettings() {
         if settingsWindow == nil {
-            settingsWindow = window("Doze Settings", size: NSSize(width: 940, height: 720), content: SettingsView(model: self))
-            settingsWindow?.minSize = NSSize(width: 760, height: 540)
+            settingsWindow = window("Doze Settings", size: NSSize(width: 860, height: 640), content: SettingsView(model: self))
+            settingsWindow?.minSize = NSSize(width: 740, height: 500)
         }
         if let window = settingsWindow { activate(window) }
     }
@@ -570,17 +588,31 @@ struct SettingsView: View {
     @State private var copiedAgentConfig = false
     @State private var confirmAgentRevocation = false
     @State private var confirmSkillUpdate = false
+    @State private var confirmReset = false
 
     var body: some View {
         NavigationSplitView {
             List(selection: $model.page) {
-                ForEach(Page.allCases.filter { model.search.isEmpty || $0.matches(model.search) }) { page in
-                    Label(page.rawValue, systemImage: page.symbol).tag(page)
+                sidebarHeader
+                ForEach(Page.groups, id: \.self) { group in
+                    let pages = group.filter { model.search.isEmpty || $0.matches(model.search) }
+                    if !pages.isEmpty {
+                        Section {
+                            ForEach(pages) { page in
+                                Label {
+                                    Text(page.rawValue)
+                                } icon: {
+                                    SettingsIcon(symbol: page.symbol, color: page.color)
+                                }
+                                .tag(page)
+                            }
+                        }
+                    }
                 }
             }
-            .searchable(text: $model.search, placement: .sidebar, prompt: "Find a setting")
+            .searchable(text: $model.search, placement: .sidebar, prompt: "Search")
             // Outermost on the column, or the split view ignores it and truncates page names.
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 300)
+            .navigationSplitViewColumnWidth(min: 210, ideal: 225, max: 300)
         } detail: {
             VStack(spacing: 0) {
                 Form {
@@ -590,7 +622,8 @@ struct SettingsView: View {
                 // New native form identity also resets scroll when changing pages.
                 .id(model.page)
                 if !model.notice.isEmpty {
-                    Text(model.notice).font(.callout).textSelection(.enabled).padding(12)
+                    Label(model.notice, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout).foregroundStyle(.secondary).textSelection(.enabled).padding(12)
                 }
             }
             .navigationTitle(model.page?.rawValue ?? "Doze")
@@ -598,6 +631,28 @@ struct SettingsView: View {
         .sheet(isPresented: Binding(get: { selectedAgent != nil }, set: { if !$0 { selectedAgent = nil } })) {
             agentSheet
         }
+        .confirmationDialog("Reset all preferences to their defaults?", isPresented: $confirmReset) {
+            Button("Reset Preferences", role: .destructive, action: model.reset)
+        } message: {
+            Text("Agent connections, permissions and running sessions are kept.")
+        }
+    }
+
+    /// Like the account row in System Settings: the app and what it is doing right now.
+    private var sidebarHeader: some View {
+        HStack(spacing: 10) {
+            AppIcon(model: model, size: 34)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Doze").font(.headline)
+                Text(model.snapshot?.status ?? "Normal sleep allowed")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { model.page = .overview }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 
     @ViewBuilder private var pageContent: some View {
@@ -605,105 +660,153 @@ struct SettingsView: View {
         case .overview:
             controlCenter
         case .general:
-            Section("Launch behavior") {
-                Toggle("Launch at sign-in", isOn: $model.draft.launchAtStartup).disabled(model.snapshot?.startupSupported != true)
-                if model.snapshot?.startupSupported != true { Text("Launch-at-login integration is not available in this build.").foregroundStyle(.secondary) }
-                Toggle("Start in the menu bar", isOn: $model.draft.startMinimized)
+            Section("Startup") {
+                toggle("Launch at login", "Doze starts quietly in the menu bar when you log in.", $model.draft.launchAtStartup)
+                    .disabled(model.snapshot?.startupSupported != true)
+                toggle("Start in the menu bar", "Opening Doze doesn’t show this window.", $model.draft.startMinimized)
             }
-            Section("Appearance") {
-                Picker("Theme", selection: $model.draft.theme) {
-                    Text("System").tag("system")
+            Section("Display") {
+                Picker(selection: $model.draft.theme) {
+                    Text("Automatic").tag("system")
                     Text("Light").tag("light")
                     Text("Dark").tag("dark")
+                } label: {
+                    described("Appearance", "Automatic follows your Mac.")
                 }
-                Text("System follows your Mac’s appearance automatically. Changes apply immediately to Doze windows.").foregroundStyle(.secondary)
-                Toggle("Show time remaining in the menu bar", isOn: $model.draft.menuBarTime)
-                Text("Shows the final warning, power timer or timed Keep Awake session beside Doze’s icon.").foregroundStyle(.secondary)
-                explanation("Made for macOS", "Native controls, sidebar and Liquid Glass follow the system appearance on recent macOS releases. Older systems use native vibrancy. macOS controls contrast and reduced transparency.", "macwindow")
+                toggle("Show time remaining in the menu bar", "The final warning, power timer or timed Keep Awake appears beside Doze’s icon.", $model.draft.menuBarTime)
             }
         case .session:
-            Section("Keep Awake") {
-                Toggle("Allow the display to sleep", isOn: $model.draft.allowDisplaySleep)
-                Text("The system stays awake; macOS can turn off the display.").foregroundStyle(.secondary)
-                number("Default awake duration (minutes)", $model.draft.defaultAwakeMinutes, 1...10080)
+            Section {
+                minutesPicker("Default duration", "Used by Keep Awake › Default in the menu bar.", $model.draft.defaultAwakeMinutes)
+                toggle("Allow the display to sleep", "Your Mac stays awake, but the screen can turn off.", $model.draft.allowDisplaySleep)
+            } header: {
+                Text("Keep Awake")
             }
-            Section("Power Timer") {
-                number("Default timer duration (minutes)", $model.draft.defaultTimerMinutes, 1...10080)
-                actionPicker("Default action", $model.draft.defaultAction)
-                Text("These defaults apply to new sessions. A timer holds the computer awake until its final warning.").foregroundStyle(.secondary)
+            Section {
+                minutesPicker("Default duration", "Used by Power Timer › Default in the menu bar.", $model.draft.defaultTimerMinutes)
+                actionPicker("Default action", "Applies to new timers.", $model.draft.defaultAction)
+            } header: {
+                Text("Power Timer")
+            } footer: {
+                Text("A timer keeps your Mac awake until its final warning.").foregroundStyle(.secondary)
             }
         case .playback:
-            Section("After Playback") {
-                if model.snapshot?.audioSupported != true {
-                    explanation("Audio monitoring unavailable", "After Playback and keeping awake while audio plays are unavailable on this platform build. Timed and indefinite sessions remain available.", "speaker.slash")
-                }
-                actionPicker("When playback ends", $model.draft.playbackAction)
-                number("Continuous silence (seconds)", $model.draft.silenceSeconds, 10...3600)
-                number("User inactivity (seconds)", $model.draft.idleSeconds, 30...7200)
-            }.disabled(model.snapshot?.audioSupported != true)
-            Section("Safety") { Text("Playback must first be observed. Both silence and user inactivity must continue before the final countdown. Resumed playback or input cancels that countdown. It is one-shot: once its action runs, or you choose Cancel or Stay Awake on its warning, it turns itself off until you turn it on again.") }
+            if model.snapshot?.audioSupported != true {
+                Section { explanation("Audio monitoring unavailable", "After Playback and keeping awake while audio plays are unavailable in this build.", "speaker.slash.fill", .gray) }
+            }
+            Section {
+                actionPicker("When playback ends", "What happens once audio has stopped and you’re away.", $model.draft.playbackAction)
+                secondsPicker("After silence of", "Pauses, buffering and quiet scenes shorter than this are ignored.", $model.draft.silenceSeconds, [10, 20, 30, 60, 120, 300, 600, 900, 1800])
+                secondsPicker("And no activity for", "Using the keyboard or mouse restarts this wait.", $model.draft.idleSeconds, [30, 60, 120, 300, 600, 900, 1800, 3600])
+            } footer: {
+                Text("Turn it on from the menu bar or Overview before you start watching. It is one-shot: after its action runs, or when you choose Cancel or Stay Awake on its warning, it turns itself off.")
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(model.snapshot?.audioSupported != true)
         case .notifications:
-            Section("Final warning") {
-                Toggle("Show system countdown notifications", isOn: $model.draft.notifications)
-                number("Countdown duration (seconds)", $model.draft.countdownSeconds, 15...1800)
-                Text("The native countdown window always provides Cancel and Snooze, even when notifications are disabled.").foregroundStyle(.secondary)
-                Button("Preview countdown") { model.send("preview") }
+            Section {
+                secondsPicker("Warning length", "How long you have to cancel before the action runs.", $model.draft.countdownSeconds, [15, 30, 60, 120, 180, 300, 600, 900, 1800])
+                toggle("Show a notification", "Also announces the final warning in Notification Center.", $model.draft.notifications)
+                setting("Preview", "Shows the warning without scheduling anything.") {
+                    Button("Preview Warning") { model.send("preview") }
+                }
+            } header: {
+                Text("Final warning")
+            } footer: {
+                Text("The floating warning window always offers Cancel, Snooze 15 minutes and Stay Awake.").foregroundStyle(.secondary)
             }
         case .agents:
             agentsView
         case .advanced:
-            Section("Local data") {
-                Toggle("Enable diagnostic logging", isOn: $model.draft.logging)
-                Text(model.snapshot?.settingsPath ?? "Loading…").font(.callout).textSelection(.enabled)
-                Button("Show preferences in Finder", action: model.openData)
+            Section("Diagnostics") {
+                toggle("Write diagnostic logs", "Errors are logged on this Mac, up to about 256 KB.", $model.draft.logging)
+                setting("Preferences file", model.snapshot?.settingsPath ?? "Loading…") {
+                    Button("Show in Finder", action: model.openData)
+                }
             }
-            Section("Command line") {
+            Section {
                 let alias = "alias doze=" + shellQuoted(model.snapshot?.executable ?? "/Applications/Doze.app/Contents/MacOS/doze")
-                Text("Keep this Mac awake while a job runs, then optionally sleep. Doze must be running; a failed job or Ctrl-C releases without any action.")
-                    .foregroundStyle(.secondary)
-                LabeledContent("Add to ~/.zshrc") {
-                    Button("Copy alias") {
+                setting("Shell alias", "Add it to ~/.zshrc so you can type doze in Terminal.") {
+                    Button("Copy Alias") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(alias, forType: .string)
                     }
                 }
                 Text("doze run --then sleep -- ffmpeg -i in.mov out.mp4\ndoze watch --pid 1234 --then sleep")
                     .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-                Text("--then accepts nothing, sleep, display-off, lock or shutdown.")
-                    .font(.callout).foregroundStyle(.secondary)
+            } header: {
+                Text("Command line")
+            } footer: {
+                Text("Keeps your Mac awake while a job runs. --then accepts nothing, sleep, display-off, lock or shutdown, and runs only after the job succeeds and the final warning ends. A failed job or Ctrl-C releases without any action.")
+                    .foregroundStyle(.secondary)
             }
-            Section("Session safety") { Text("Rust validates settings and owns all power actions. Closing Settings keeps Doze running. Transient sessions are never restored from disk.") }
-            Section("Reset preferences") {
-                Text("Restore default preferences immediately. Existing timers keep their deadlines.").foregroundStyle(.secondary)
-                Button("Reset defaults", action: model.reset)
+            Section {
+                setting("Reset preferences", "Restores the defaults on every page.") {
+                    Button("Reset…") { confirmReset = true }
+                }
+            } footer: {
+                Text("Doze validates every change and owns all power actions. Closing this window keeps Doze running; sessions are never restored after a restart.")
+                    .foregroundStyle(.secondary)
             }
         case .help:
-            Section("Menu guide") {
-                explanation("Normal sleep allowed", "No Doze session is holding your Mac awake. Your macOS sleep settings apply normally. Select Keep Awake to start a session.", "moon")
-                explanation("Keep Awake", "Choose a duration, an end time, or indefinitely. Stop releases Doze's power assertion; Extend adds 15 minutes to a timed session.", "sun.max")
-                explanation("Power Timer", "Choose an action and duration. A native final warning lets you cancel or snooze before Rust performs the action.", "timer")
-                explanation("Keep awake while audio plays", "Holds your Mac awake while an output device is playing, through the silence grace period. Muted or zero-volume output counts as silence.", "speaker.wave.2")
-                explanation("After Playback", "Once playback has been seen, Doze waits for both silence and inactivity, then shows the final warning. Resumed playback or using your Mac restarts the wait. It is one-shot: once its action runs, or you choose Cancel or Stay Awake on its warning, it turns itself off until you turn it on again.", "play.slash")
-                explanation("Countdown", "Every power action shows a floating final warning. Cancel removes the action, Snooze waits 15 more minutes, and Stay Awake keeps your Mac awake instead.", "hourglass")
-                explanation("Command line", "Run doze run --then sleep -- your-command in Terminal to stay awake until a job finishes, or doze watch --pid to follow one that is already running. See Advanced for the exact path.", "terminal")
-                explanation("Agents", "Coding agents connected through MCP can keep your Mac awake while they work. Each new request needs your approval in Agents unless you granted it there.", "person.2")
-                explanation("Quick Settings", "These checkmarks represent saved defaults. Duration defaults apply to new sessions. Other changes, such as display sleep, take effect immediately.", "slider.horizontal.3")
-                explanation("Disabled commands", "No session to stop or extend, no timer to stop, and no countdown to cancel or snooze are informational states. Unavailable platform actions remain disabled.", "info.circle")
+            Section {
+                explanation("Normal sleep allowed", "No Doze session is holding your Mac awake. Your macOS sleep settings apply normally.", "moon.fill", .indigo)
+                explanation("Keep Awake", "Choose a duration, an end time, or indefinitely. Stop releases Doze’s power assertion; Extend adds 15 minutes to a timed session.", "sun.max.fill", .orange)
+                explanation("Power Timer", "Choose an action and duration. A final warning lets you cancel or snooze before the action runs.", "timer", .blue)
+                explanation("Keep awake while audio plays", "Holds your Mac awake while sound is playing, through the silence grace period. Muted or zero-volume output counts as silence.", "speaker.wave.2.fill", .pink)
+                explanation("After Playback", "Once playback has been seen, Doze waits for silence and inactivity, then shows the final warning. It turns itself off after it runs or when you cancel it.", "play.slash.fill", .purple)
+                explanation("Final warning", "Every power action shows a floating warning first. Cancel removes the action, Snooze waits 15 more minutes, and Stay Awake keeps your Mac awake instead.", "hourglass", .red)
+            } header: {
+                Text("In the menu bar")
+            }
+            Section {
+                explanation("Command line", "doze run --then sleep -- your-command stays awake until a job finishes; doze watch --pid follows one already running. See Advanced.", "terminal.fill", .gray)
+                explanation("Agents", "Coding agents connected through MCP keep your Mac awake while they work. New requests need your approval in Agents unless you granted them there.", "person.2.fill", .teal)
+                explanation("Quick Settings", "Checkmarks are saved defaults. Duration defaults apply to new sessions; other changes, such as display sleep, apply immediately.", "slider.horizontal.3", .gray)
+                explanation("Unavailable commands", "Commands such as Stop or Cancel appear dimmed when there is nothing to stop. Actions this Mac does not support stay dimmed.", "info", .gray)
+            } header: {
+                Text("More ways to use Doze")
             }
         case .about:
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: "moon.zzz.fill").font(.system(size: 40)).foregroundStyle(.tint).accessibilityHidden(true)
-                    Text("Doze").font(.largeTitle.bold())
+                VStack(spacing: 6) {
+                    AppIcon(model: model, size: 96)
+                    Text("Doze").font(.title.bold())
                     Text("Version \(model.snapshot?.version ?? "0.1.0")").foregroundStyle(.secondary)
-                    Text("Your computer knows when it's bedtime.")
-                }.padding(.vertical, 12)
+                    Text("Your computer knows when it’s bedtime.").padding(.top, 2)
+                    Text("Made by Fayeed Pawaskar").font(.callout).foregroundStyle(.secondary)
+                    HStack {
+                        Link("Source Code", destination: URL(string: "https://github.com/fayeed/doze")!)
+                        Text("·").foregroundStyle(.tertiary)
+                        Button("Show Local Data", action: model.openData).buttonStyle(.link)
+                    }
+                    .font(.callout).padding(.top, 6)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 14)
             }
-            Section("Local and private") { explanation("No account. No cloud. No ads.", "Doze does not record audio, simulate input or send telemetry. Preferences and optional diagnostics stay on this computer.", "lock") }
-            Section("Built with") {
-                explanation("Rust and Tauri", "The Rust engine owns sessions, power assertions, validation and countdown safety. The menu bar uses native macOS menus.", "terminal")
-                explanation("SwiftUI and AppKit", "Settings, About, custom timers and countdown windows use Apple's native controls and system materials. Open-source components retain their respective licenses.", "swift")
-                Button("Show local preferences", action: model.openData)
+            Section {
+                HStack(alignment: .top, spacing: 12) {
+                    SettingsIcon(symbol: "doc.on.clipboard.fill", color: .blue, size: 26)
+                    described("Clypy", "A clipboard manager for Mac, Windows, Linux and phones, also by Fayeed Pawaskar.")
+                    Spacer()
+                    Link("Visit", destination: URL(string: "https://clypy.app")!)
+                }
+                .padding(.vertical, 3)
+            } header: {
+                Text("Also from the developer")
+            }
+            Section {
+                explanation("No account. No cloud. No ads.", "Doze does not record audio, simulate input or send telemetry. Preferences and optional diagnostics stay on this Mac.", "lock.fill", .green)
+            } header: {
+                Text("Privacy")
+            }
+            Section {
+                explanation("Rust and Tauri", "The engine owns sessions, power assertions, validation and countdown safety.", "gearshape.2.fill", .orange)
+                explanation("SwiftUI and AppKit", "Settings, timers and the final warning use Apple’s native controls and materials.", "swift", .orange)
+            } header: {
+                Text("Built with")
+            } footer: {
+                Text("Open-source components retain their respective licenses.").foregroundStyle(.secondary)
             }
         }
     }
@@ -720,17 +823,14 @@ struct SettingsView: View {
         return remainingText(remaining) + " left"
     }
     private var statusTint: Color {
-        session.holdingAwake || session.countdown != nil ? .orange : .accentColor
+        session.holdingAwake || session.countdown != nil ? .orange : .indigo
     }
 
     /// Overview doubles as a control center: everything in the menu bar, with live times.
     @ViewBuilder private var controlCenter: some View {
         Section {
             HStack(spacing: 14) {
-                Image(systemName: statusSymbol)
-                    .font(.system(size: 28))
-                    .foregroundStyle(statusTint)
-                    .frame(width: 40).accessibilityHidden(true)
+                SettingsIcon(symbol: statusSymbol, color: statusTint, size: 40)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(model.snapshot?.status ?? "Normal sleep allowed").font(.title3.weight(.semibold))
                         .textSelection(.enabled)
@@ -778,7 +878,7 @@ struct SettingsView: View {
                     }.fixedSize()
                 }
             }
-            Toggle("Keep awake while audio plays", isOn: Binding(get: { session.whileAudio }, set: { _ in model.send("audio-toggle") }))
+            toggle("Keep awake while audio plays", "Holds your Mac awake while sound is playing.", Binding(get: { session.whileAudio }, set: { _ in model.send("audio-toggle") }))
                 .disabled(model.snapshot?.audioSupported != true)
         }
         Section("Power Timer") {
@@ -796,14 +896,10 @@ struct SettingsView: View {
                     }.fixedSize()
                 }
             }
-            Toggle(isOn: Binding(get: { session.playbackEnabled }, set: { _ in model.send("playback-toggle") })) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(actionLabel(model.snapshot?.settings.playbackAction ?? "sleep") + " after playback stops")
-                    if session.playbackEnabled {
-                        Text(playbackPhaseLabel(session.playbackPhase)).font(.callout).foregroundStyle(.secondary)
-                    }
-                }
-            }.disabled(model.snapshot?.audioSupported != true)
+            toggle(actionLabel(model.snapshot?.settings.playbackAction ?? "sleep") + " after playback stops",
+                   session.playbackEnabled ? playbackPhaseLabel(session.playbackPhase) : "Turn on before you start watching; it turns off after it runs.",
+                   Binding(get: { session.playbackEnabled }, set: { _ in model.send("playback-toggle") }))
+                .disabled(model.snapshot?.audioSupported != true)
         }
         Section("Quick access") {
             HStack {
@@ -827,25 +923,25 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var agentsView: some View {
-        Section("Agents") {
-            Toggle("Enable MCP", isOn: Binding(get: { model.agentSettings?.enabled ?? false }, set: { _ in model.send("agent-enable") }))
-            Picker("Heartbeat lease", selection: Binding(get: { model.agentSettings?.leaseSeconds ?? 300 }, set: { model.send("agent-lease", extra: ["agent_seconds": $0]) })) {
+        Section {
+            toggle("Allow agents to connect", "Coding agents such as Codex and Claude Code connect through MCP on this Mac.", Binding(get: { model.agentSettings?.enabled ?? false }, set: { _ in model.send("agent-enable") }))
+            Picker(selection: Binding(get: { model.agentSettings?.leaseSeconds ?? 300 }, set: { model.send("agent-lease", extra: ["agent_seconds": $0]) })) {
                 ForEach([60, 300, 900, 1800, 3600], id: \.self) { seconds in
                     Text(leaseLabel(seconds)).tag(seconds)
                 }
+            } label: {
+                described("Heartbeat lease", "How long a session stays awake between check-ins.")
             }
-            Picker("Default completion", selection: Binding(get: { model.agentSettings?.defaultCompletion ?? "normal" }, set: { model.send("agent-default", extra: ["action": $0 == "normal" ? NSNull() : $0 as Any]) })) {
+            Picker(selection: Binding(get: { model.agentSettings?.defaultCompletion ?? "normal" }, set: { model.send("agent-default", extra: ["action": $0 == "normal" ? NSNull() : $0 as Any]) })) {
                 Text("Return to normal").tag("normal")
                 ForEach(model.snapshot?.actions ?? [], id: \.self) { Text(actionLabel($0)).tag($0) }
+            } label: {
+                described("When an agent finishes", "Used when the agent doesn’t ask for an action.")
             }
-            Toggle(isOn: Binding(get: { model.agentSettings?.keepAliveWhileConnected ?? true }, set: { _ in model.send("agent-keepalive") })) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Keep sessions alive while the agent app is connected")
-                    Text("Renews a session through long steps without agent heartbeats, for up to 24 hours. It never finishes a session.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-            }
-            Text("A lost connection keeps the computer awake for up to 30 minutes, then releases without a completion action. Automatic completion requires all overlapping agents to finish with the same authorized action, followed by at least five minutes to cancel.").foregroundStyle(.secondary)
+            toggle("Keep sessions alive while connected", "Renews a session through long steps without check-ins, for up to 24 hours. It never finishes a session.", Binding(get: { model.agentSettings?.keepAliveWhileConnected ?? true }, set: { _ in model.send("agent-keepalive") }))
+        } footer: {
+            Text("A lost connection keeps your Mac awake for up to 30 minutes, then releases without any action. An automatic action needs every overlapping agent to finish with the same approved action, followed by a final warning of at least five minutes.")
+                .foregroundStyle(.secondary)
         }
         Section("Agent connections") {
             ForEach(["Codex", "Claude Code", "Generic MCP client"], id: \.self) { name in
@@ -978,36 +1074,111 @@ struct SettingsView: View {
         }
     }
 
-    private func explanation(_ title: String, _ detail: String, _ symbol: String) -> some View {
-        Label {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title).fontWeight(.semibold)
-                Text(detail).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+    /// A setting title with its explanation underneath, as in System Settings.
+    private func described(_ title: String, _ detail: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            if let detail {
+                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             }
-        } icon: { Image(systemName: symbol).frame(width: 24) }
-        .padding(.vertical, 5)
-    }
-
-    private func number(_ title: String, _ binding: Binding<Int>, _ range: ClosedRange<Int>) -> some View {
-        let validated = Binding<Int>(get: { binding.wrappedValue }, set: { value in
-            guard range.contains(value) else {
-                model.notice = "Choose a value between \(range.lowerBound) and \(range.upperBound)."
-                return
-            }
-            binding.wrappedValue = value
-        })
-        return LabeledContent(title) {
-            TextField(title, value: validated, format: .number).labelsHidden().frame(width: 90)
-            Stepper(title, value: validated, in: range).labelsHidden()
         }
     }
 
-    private func actionPicker(_ title: String, _ binding: Binding<String>) -> some View {
-        Picker(title, selection: binding) {
+    private func setting<Control: View>(_ title: String, _ detail: String? = nil, @ViewBuilder control: () -> Control) -> some View {
+        LabeledContent { control() } label: { described(title, detail) }
+    }
+
+    private func toggle(_ title: String, _ detail: String? = nil, _ binding: Binding<Bool>) -> some View {
+        Toggle(isOn: binding) { described(title, detail) }
+    }
+
+    private func explanation(_ title: String, _ detail: String, _ symbol: String, _ color: Color = .accentColor) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            SettingsIcon(symbol: symbol, color: color, size: 26)
+            described(title, detail)
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Durations are chosen from menus, like the System Settings energy options. A value
+    /// saved outside the list stays available.
+    private func minutesPicker(_ title: String, _ detail: String, _ binding: Binding<Int>) -> some View {
+        let options = Set([5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440, binding.wrappedValue]).sorted()
+        return Picker(selection: binding) {
+            ForEach(options, id: \.self) { Text(durationLabel(minutes: $0)).tag($0) }
+        } label: {
+            described(title, detail)
+        }
+    }
+
+    private func secondsPicker(_ title: String, _ detail: String, _ binding: Binding<Int>, _ choices: [Int]) -> some View {
+        let options = Set(choices + [binding.wrappedValue]).sorted()
+        return Picker(selection: binding) {
+            ForEach(options, id: \.self) { Text(durationLabel(seconds: $0)).tag($0) }
+        } label: {
+            described(title, detail)
+        }
+    }
+
+    private func actionPicker(_ title: String, _ detail: String? = nil, _ binding: Binding<String>) -> some View {
+        Picker(selection: binding) {
             ForEach(model.snapshot?.actions ?? ["sleep"], id: \.self) { action in
                 Text(actionLabel(action)).tag(action)
             }
+        } label: {
+            described(title, detail)
         }
+    }
+}
+
+func durationLabel(minutes: Int) -> String {
+    func unit(_ value: Int, _ name: String) -> String { "\(value) \(name)\(value == 1 ? "" : "s")" }
+    if minutes < 60 { return unit(minutes, "minute") }
+    if minutes % 60 == 0 { return minutes % 1440 == 0 ? unit(minutes / 1440, "day") : unit(minutes / 60, "hour") }
+    return unit(minutes / 60, "hour") + " " + unit(minutes % 60, "minute")
+}
+
+func durationLabel(seconds: Int) -> String {
+    func unit(_ value: Int, _ name: String) -> String { "\(value) \(name)\(value == 1 ? "" : "s")" }
+    if seconds < 60 { return unit(seconds, "second") }
+    if seconds % 60 == 0 { return durationLabel(minutes: seconds / 60) }
+    return unit(seconds / 60, "minute") + " " + unit(seconds % 60, "second")
+}
+
+/// The rounded-square icons System Settings uses for its sidebar and rows.
+struct SettingsIcon: View {
+    let symbol: String
+    let color: Color
+    var size: CGFloat = 22
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.55, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(
+                LinearGradient(colors: [color.opacity(0.8), color], startPoint: .top, endPoint: .bottom),
+                in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+            )
+            .accessibilityHidden(true)
+    }
+}
+
+/// Doze's own app icon, with the moon symbol as a fallback before the engine reports it.
+struct AppIcon: View {
+    @ObservedObject var model: NativeUI
+    let size: CGFloat
+    var body: some View {
+        Group {
+            if let image = model.appIcon {
+                Image(nsImage: image).resizable().interpolation(.high)
+            } else {
+                SettingsIcon(symbol: "moon.zzz.fill", color: .indigo, size: size)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 
