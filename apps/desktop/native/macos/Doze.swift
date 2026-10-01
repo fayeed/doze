@@ -220,6 +220,69 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         guard !warningVisible else { throw verificationError("Preview did not dismiss.") }
     }
 
+    /// Draws every page and window offscreen to PNG files for visual review. Like --verify-ui,
+    /// it uses sample data and never contacts the engine or saves preferences.
+    func render(to folder: URL) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        snapshot = EngineSnapshot(settings: Preferences(), settingsPath: "~/Library/Application Support/app.getdoze.desktop/settings.json",
+                                  actions: ["sleep", "shutdown", "lock", "displayOff"], audioSupported: true, startupSupported: true,
+                                  status: "Keeping awake · 42m left", timerStatus: "Sleep in 1h 5m", version: "0.1.0")
+        draft = snapshot!.settings
+        func capture(_ view: some View, size: NSSize, name: String, appearance: NSAppearance.Name) throws {
+            let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
+                                  styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: appearance)
+            window.titlebarAppearsTransparent = true
+            let host = NSHostingView(rootView: view)
+            window.contentView = host
+            window.orderFrontRegardless()
+            for _ in 0..<3 { RunLoop.main.run(until: Date().addingTimeInterval(0.15)) }
+            host.layoutSubtreeIfNeeded()
+            // Render the whole frame view's layer tree; cacheDisplay omits layer-hosted SwiftUI text.
+            guard let root = window.contentView?.superview, let layer = root.layer else {
+                throw verificationError("Could not render \(name).")
+            }
+            let scale = window.backingScaleFactor
+            guard let context = CGContext(data: nil, width: Int(root.bounds.width * scale), height: Int(root.bounds.height * scale),
+                                          bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                throw verificationError("Could not render \(name).")
+            }
+            context.scaleBy(x: scale, y: scale)
+            NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+                context.setFillColor(NSColor.windowBackgroundColor.cgColor)
+            }
+            context.fill(root.bounds)
+            layer.render(in: context)
+            window.orderOut(nil)
+            guard let rendered = context.makeImage(),
+                  let png = NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:]) else {
+                throw verificationError("Could not encode \(name).")
+            }
+            let theme = appearance == .aqua ? "light" : "dark"
+            try png.write(to: folder.appendingPathComponent("\(name)-\(theme).png"))
+        }
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            for selected in Page.allCases {
+                page = selected
+                try capture(SettingsView(model: self), size: NSSize(width: 940, height: 720),
+                            name: "settings-\(selected.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))", appearance: appearance)
+            }
+            for (isPreview, name) in [(true, "countdown-preview"), (false, "countdown")] {
+                preview = isPreview
+                warningAction = "Sleep"
+                remaining = 287
+                try capture(WarningView(model: self), size: NSSize(width: 520, height: 440), name: name, appearance: appearance)
+            }
+            for (awake, date) in [(true, false), (false, true)] {
+                timerIsAwake = awake
+                timerUsesDate = date
+                try capture(TimerView(model: self), size: NSSize(width: 480, height: 280),
+                            name: "timer-\(awake ? "awake" : "power")-\(date ? "time" : "duration")", appearance: appearance)
+            }
+        }
+    }
+
     private func verificationError(_ message: String) -> NSError {
         NSError(domain: "Doze.NativeUI", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
@@ -768,6 +831,15 @@ enum DozeNativeUI {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         let ui = NativeUI()
+        if let index = CommandLine.arguments.firstIndex(of: "--render-ui"), index + 1 < CommandLine.arguments.count {
+            do {
+                try ui.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+            } catch {
+                FileHandle.standardError.write(Data("\(error)\n".utf8))
+                exit(1)
+            }
+            return
+        }
         if CommandLine.arguments.contains("--verify-ui") {
             do {
                 try ui.verify()
