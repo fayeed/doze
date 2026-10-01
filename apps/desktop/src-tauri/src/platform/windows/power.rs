@@ -158,13 +158,15 @@ unsafe fn with_shutdown_privilege(
             }],
         };
         let mut previous = TOKEN_PRIVILEGES::default();
+        let mut previous_length = 0;
+        // Windows requires ReturnLength when PreviousState is supplied.
         AdjustTokenPrivileges(
             token,
             false,
             Some(&requested),
             std::mem::size_of::<TOKEN_PRIVILEGES>() as u32,
             Some(&mut previous),
-            None,
+            Some(&mut previous_length),
         )
         .map_err(|e| e.to_string())?;
         let error = GetLastError();
@@ -182,6 +184,32 @@ unsafe fn with_shutdown_privilege(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shutdown_privilege_wrapper_reaches_action_without_executing_power_change() {
+        let mut called = false;
+        let result = unsafe {
+            with_shutdown_privilege(|| {
+                called = true;
+                Ok(())
+            })
+        };
+        match result {
+            Ok(()) => assert!(called),
+            // Restricted test tokens can lack this privilege. The Windows call must
+            // still succeed, report that restriction, and never invoke the action.
+            Err(error)
+                if error
+                    == format!(
+                        "Shutdown privilege unavailable: {:?}",
+                        windows::Win32::Foundation::ERROR_NOT_ALL_ASSIGNED
+                    ) =>
+            {
+                assert!(!called);
+            }
+            Err(error) => panic!("Shutdown privilege setup failed: {error}"),
+        }
+    }
+
     #[test]
     fn allowing_display_sleep_preserves_the_system_awake_request() {
         let flags = execution_flags(true, true);
