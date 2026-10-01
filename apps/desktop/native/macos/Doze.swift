@@ -509,8 +509,6 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         if timerWindow == nil {
             timerWindow = window("Doze · Custom session", size: NSSize(width: 480, height: 360), content: TimerView(model: self))
             timerWindow?.styleMask.remove([.resizable, .miniaturizable])
-            timerWindow?.isOpaque = false
-            timerWindow?.backgroundColor = .clear
         }
         if let window = timerWindow {
             // Fit the form: duration and end-time variants differ in height.
