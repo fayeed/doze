@@ -79,10 +79,14 @@ impl Engine {
     pub fn needs_audio(&self) -> bool {
         self.playback_enabled || self.while_audio
     }
+    /// Keep awake while audio plays only holds during audio and its silence grace.
+    fn audio_holds_awake(&self) -> bool {
+        self.while_audio && (self.audio_active || self.silence_since.is_some())
+    }
     pub fn should_hold_awake(&self) -> bool {
         self.agents.holds_awake()
             || self.awake
-            || (self.while_audio && (self.audio_active || self.silence_since.is_some()))
+            || self.audio_holds_awake()
             || self.countdown.is_some()
             || self.timer.is_some()
             || (self.playback_enabled
@@ -227,8 +231,10 @@ impl Engine {
             });
         }
         // Every power path respects agent wake leases, including timers already counting down.
+        // An enabled After Playback rule deliberately takes precedence over agent completion.
+        // Audio keep-awake only defers completion while audio is actually holding the computer.
         let other_wake_required =
-            self.awake || self.while_audio || self.timer.is_some() || self.playback_enabled;
+            self.awake || self.audio_holds_awake() || self.timer.is_some() || self.playback_enabled;
         if !(self.agents.holds_awake() || other_wake_required || self.countdown.is_some()) {
             if let Some(action) = self.agents.completion() {
                 self.countdown = Some(Countdown {
@@ -243,7 +249,7 @@ impl Engine {
             .countdown
             .as_ref()
             .is_some_and(|c| c.source == Source::Agents)
-            && (self.awake || self.while_audio || self.timer.is_some())
+            && (self.awake || self.audio_holds_awake() || self.timer.is_some())
         {
             self.cancel_countdown();
         }

@@ -100,6 +100,8 @@ pub enum Request {
     ),
     Lifecycle,
     WarningFailed(String),
+    /// The local MCP bridge could not start. The rest of Doze keeps working.
+    AgentsUnavailable(String),
 }
 #[derive(Clone)]
 pub struct Snapshot {

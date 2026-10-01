@@ -2,6 +2,7 @@ use super::{
     model::{Operation, Request, Snapshot},
     operations::apply,
 };
+use crate::core::countdown::Source;
 use crate::platform::{self, AudioMonitor, IdleMonitor, NotificationManager, PowerManager};
 use std::{
     path::PathBuf,
@@ -20,13 +21,15 @@ struct Errors {
     startup: Option<String>,
     settings: Option<String>,
     observation: Option<String>,
+    agents: Option<String>,
     recent: Option<(String, u64)>,
 }
 impl Errors {
     fn report(&mut self, error: String, now: u64) {
         self.recent = Some((error, now.saturating_add(RECENT_ERROR_SECONDS)));
     }
-    fn current(&mut self, now: u64) -> Option<String> {
+    /// Agent bridge failures only matter to people who enabled MCP.
+    fn current(&mut self, now: u64, agents_enabled: bool) -> Option<String> {
         if self.recent.as_ref().is_some_and(|(_, until)| now >= *until) {
             self.recent = None;
         }
@@ -35,6 +38,7 @@ impl Errors {
             .map(|(error, _)| error)
             .or(self.observation.as_ref())
             .or(self.startup.as_ref())
+            .or(self.agents.as_ref().filter(|_| agents_enabled))
             .or(self.settings.as_ref())
             .cloned()
     }
@@ -43,6 +47,43 @@ impl Errors {
         self.recent
             .as_ref()
             .map(|(_, until)| Duration::from_secs(until.saturating_sub(now).max(1)))
+    }
+}
+
+/// Whether the engine may have been suspended or frozen since its last iteration.
+/// Deadlines use the monotonic clock, so wall-clock changes alone (time sync, manual
+/// changes, time zones) never affect sessions. They are only a suspend heuristic when
+/// native suspend notifications are unavailable. A stalled worker always counts, since
+/// a deadline may have passed without its visible countdown.
+fn discontinuity(
+    elapsed: Duration,
+    wall_elapsed: Option<Duration>,
+    wait: Duration,
+    suspend_notifications: bool,
+) -> bool {
+    let overslept = elapsed > wait + Duration::from_secs(10);
+    let clock_jumped = wall_elapsed.is_none_or(|w| w.abs_diff(elapsed) > Duration::from_secs(5));
+    overslept || (!suspend_notifications && clock_jumped)
+}
+
+type CountdownKey = (u64, Source);
+
+/// Whether a countdown needs a native notification now, and whether it is the only warning.
+/// Optional notifications are attempted once per countdown. Without its warning window a
+/// countdown still runs only once Windows has shown its notification; Cancel and Snooze
+/// remain in the tray.
+fn announcement(
+    countdown: Option<CountdownKey>,
+    attempted: Option<CountdownKey>,
+    shown: Option<CountdownKey>,
+    notifications: bool,
+    window_failed: bool,
+) -> Option<bool> {
+    let countdown = countdown?;
+    if window_failed {
+        (shown != Some(countdown)).then_some(true)
+    } else {
+        (notifications && attempted != Some(countdown)).then_some(false)
     }
 }
 
@@ -91,6 +132,8 @@ pub(super) fn worker(
     let mut previous_activity_marker = None;
     snapshot.selected_action = snapshot.settings.default_action;
     let mut logged_error = None;
+    let mut attempted_notification = None;
+    let mut shown_notification = None;
     loop {
         let now = origin.elapsed().as_secs();
         snapshot.engine.now = now;
@@ -120,13 +163,11 @@ pub(super) fn worker(
         };
         let elapsed = previous_time.elapsed();
         let wall_elapsed = SystemTime::now().duration_since(previous_wall);
-        let clock_changed =
-            wall_elapsed.map_or(true, |w| w.abs_diff(elapsed) > Duration::from_secs(5));
-        let overslept = elapsed > wait + Duration::from_secs(10);
+        let interrupted = discontinuity(elapsed, wall_elapsed.ok(), wait, lifecycle.is_ok());
         previous_time = Instant::now();
         previous_wall = SystemTime::now();
         snapshot.engine.now = origin.elapsed().as_secs();
-        if clock_changed || overslept {
+        if interrupted {
             snapshot
                 .engine
                 .reset_transient("Clock or system state changed · sessions cleared");
@@ -138,6 +179,7 @@ pub(super) fn worker(
         let mut snoozing = false;
         let mut open_dialog = false;
         let mut preview_countdown = false;
+        let mut warning_failed = false;
         if let Some(request) = request {
             match request {
                 Request::Mcp(call, tx) => {
@@ -160,10 +202,14 @@ pub(super) fn worker(
                 }
                 Request::WarningFailed(error) => {
                     if snapshot.engine.countdown.is_some() {
-                        snapshot.engine.cancel_countdown();
-                        errors.report(format!("Countdown cancelled: {error}"), snapshot.engine.now);
+                        warning_failed = true;
+                        errors.report(
+                            format!("Countdown window unavailable: {error}"),
+                            snapshot.engine.now,
+                        );
                     }
                 }
+                Request::AgentsUnavailable(error) => errors.agents = Some(error),
                 Request::Lifecycle => {
                     snapshot
                         .engine
@@ -245,11 +291,6 @@ pub(super) fn worker(
         let user_active = input_changed && !snoozing;
         previous_idle = idle_seconds;
         previous_activity_marker = activity_marker;
-        let old_countdown = snapshot
-            .engine
-            .countdown
-            .as_ref()
-            .map(|c| (c.deadline, c.source));
         let mut action = snapshot.engine.tick(
             snapshot.engine.now,
             observation,
@@ -257,12 +298,6 @@ pub(super) fn worker(
             user_active,
             &snapshot.settings,
         );
-        if let Err(error) = &warning {
-            if snapshot.engine.countdown.is_some() {
-                snapshot.engine.cancel_countdown();
-                errors.report(format!("Countdown cancelled: {error}"), snapshot.engine.now);
-            }
-        }
         if let Err(e) = power.set_awake(
             snapshot.engine.should_hold_awake(),
             snapshot.settings.allow_display_sleep,
@@ -276,15 +311,31 @@ pub(super) fn worker(
                 .engine
                 .reset_transient("Power request failed · sessions cleared");
         }
-        if let Some(c) = &snapshot.engine.countdown {
-            if old_countdown != Some((c.deadline, c.source)) && snapshot.settings.notifications {
-                if let Err(e) = notifications
+        if let Some(c) = snapshot.engine.countdown.clone() {
+            let key = Some((c.deadline, c.source));
+            if let Some(only_warning) = announcement(
+                key,
+                attempted_notification,
+                shown_notification,
+                snapshot.settings.notifications,
+                warning.is_err() || warning_failed,
+            ) {
+                attempted_notification = key;
+                match notifications
                     .countdown(c.action, c.deadline.saturating_sub(snapshot.engine.now))
                 {
-                    errors.report(
+                    Ok(()) => shown_notification = key,
+                    Err(e) if only_warning => {
+                        snapshot.engine.cancel_countdown();
+                        errors.report(
+                            format!("Countdown cancelled: no warning window or notification: {e}"),
+                            snapshot.engine.now,
+                        );
+                    }
+                    Err(e) => errors.report(
                         format!("Notification unavailable: {e}"),
                         snapshot.engine.now,
-                    );
+                    ),
                 }
             }
         }
@@ -305,7 +356,7 @@ pub(super) fn worker(
                 snapshot.engine.message = Some("Power action failed".into());
             }
         }
-        snapshot.error = errors.current(snapshot.engine.now);
+        snapshot.error = errors.current(snapshot.engine.now, snapshot.settings.agents.enabled);
         let tray_app = app.clone();
         let tray_snapshot = snapshot.clone();
         let _ = app.run_on_main_thread(move || crate::tray::update(&tray_app, &tray_snapshot));
@@ -350,6 +401,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn clock_changes_only_signal_suspend_without_native_notifications() {
+        let (minute, wait) = (Duration::from_secs(60), Duration::from_secs(3600));
+        let hour_jump = Some(Duration::from_secs(3660));
+        assert!(!discontinuity(minute, hour_jump, wait, true));
+        assert!(!discontinuity(minute, None, wait, true));
+        assert!(discontinuity(minute, hour_jump, wait, false));
+        assert!(discontinuity(minute, None, wait, false));
+        assert!(!discontinuity(minute, Some(minute), wait, false));
+    }
+
+    #[test]
+    fn a_stalled_worker_always_signals_a_discontinuity() {
+        let wait = Duration::from_secs(1);
+        let stalled = Duration::from_secs(60);
+        assert!(discontinuity(stalled, Some(stalled), wait, true));
+        assert!(!discontinuity(
+            Duration::from_secs(5),
+            Some(Duration::from_secs(5)),
+            wait,
+            true
+        ));
+    }
+
+    #[test]
     fn recent_errors_expire_and_restore_the_underlying_condition() {
         let mut errors = Errors {
             startup: Some("Countdown window unavailable".into()),
@@ -357,16 +432,16 @@ mod tests {
         };
         errors.report("Session already ended.".into(), 10);
         assert_eq!(
-            errors.current(10).as_deref(),
+            errors.current(10, false).as_deref(),
             Some("Session already ended.")
         );
         assert_eq!(errors.expires_in(10), Some(Duration::from_secs(300)));
         assert_eq!(
-            errors.current(309).as_deref(),
+            errors.current(309, false).as_deref(),
             Some("Session already ended.")
         );
         assert_eq!(
-            errors.current(310).as_deref(),
+            errors.current(310, false).as_deref(),
             Some("Countdown window unavailable")
         );
         assert_eq!(errors.expires_in(310), None);
@@ -381,12 +456,58 @@ mod tests {
         errors.observation = Some("No active audio output device.".into());
         errors.report("Power action failed".into(), 0);
         errors.observation = None;
-        assert_eq!(errors.current(1).as_deref(), Some("Power action failed"));
         assert_eq!(
-            errors.current(300).as_deref(),
+            errors.current(1, false).as_deref(),
+            Some("Power action failed")
+        );
+        assert_eq!(
+            errors.current(300, false).as_deref(),
             Some("Could not read settings")
         );
         errors.settings = None;
-        assert_eq!(errors.current(301), None);
+        assert_eq!(errors.current(301, false), None);
+    }
+
+    #[test]
+    fn countdowns_without_a_window_fall_back_to_one_required_notification() {
+        let countdown = Some((300, Source::Timer));
+        // Optional notifications follow the preference and are attempted once.
+        assert_eq!(
+            announcement(countdown, None, None, true, false),
+            Some(false)
+        );
+        assert_eq!(announcement(countdown, countdown, None, true, false), None);
+        assert_eq!(announcement(countdown, None, None, false, false), None);
+        // Without the window, a notification is required whatever the preference.
+        assert_eq!(announcement(countdown, None, None, false, true), Some(true));
+        assert_eq!(
+            announcement(countdown, countdown, countdown, false, true),
+            None
+        );
+        // An optional attempt that failed is retried once the window is gone.
+        assert_eq!(
+            announcement(countdown, countdown, None, true, true),
+            Some(true)
+        );
+        // A snoozed countdown is a new countdown.
+        let snoozed = Some((1200, Source::Timer));
+        assert_eq!(
+            announcement(snoozed, countdown, countdown, false, true),
+            Some(true)
+        );
+        assert_eq!(announcement(None, None, None, true, true), None);
+    }
+
+    #[test]
+    fn agent_bridge_failure_only_shows_when_mcp_is_enabled() {
+        let mut errors = Errors {
+            agents: Some("Agent connections unavailable".into()),
+            ..Errors::default()
+        };
+        assert_eq!(errors.current(0, false), None);
+        assert_eq!(
+            errors.current(0, true).as_deref(),
+            Some("Agent connections unavailable")
+        );
     }
 }

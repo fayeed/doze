@@ -239,6 +239,22 @@ fn manual_wake_defers_agent_completion() {
     assert!(e.countdown.is_some());
 }
 #[test]
+fn audio_keep_awake_defers_agent_completion_only_while_audio_holds() {
+    let (mut e, s) = (Engine::default(), settings());
+    e.while_audio = true;
+    let id = start(&mut e, &s, "codex", "sleep");
+    finish(&mut e, &s, "codex", &id);
+    e.tick(1, Some(true), Some(0), false, &s);
+    assert!(e.countdown.is_none());
+    e.tick(2, Some(false), Some(0), false, &s);
+    assert!(e.countdown.is_none());
+    e.tick(62, Some(false), Some(0), false, &s);
+    assert_eq!(e.countdown.as_ref().unwrap().source, Source::Agents);
+    // Resumed audio is user intent to stay awake and cancels the agent countdown.
+    e.tick(63, Some(true), Some(0), false, &s);
+    assert!(e.countdown.is_none());
+}
+#[test]
 fn timer_and_existing_countdown_respect_agent_leases() {
     let (mut e, s) = (Engine::default(), settings());
     e.schedule(1, PowerAction::Shutdown);

@@ -33,10 +33,16 @@ pub fn run() {
                 settings.start_minimized || std::env::args().any(|a| a == "--startup");
             app.manage(state::start(app.handle().clone(), path, settings, error)?);
             let state = app.state::<state::AppState>();
-            mcp::server::start(
+            // Agent connections are optional; their failure must never prevent the tray app.
+            if let Err(error) = mcp::server::start(
                 app.path().app_config_dir()?.join("mcp-endpoint.json"),
                 state.sender.clone(),
-            )?;
+            ) {
+                eprintln!("Doze MCP bridge unavailable: {error}");
+                let _ = state.sender.send(state::Request::AgentsUnavailable(format!(
+                    "Agent connections unavailable: {error}"
+                )));
+            }
             tray::setup(app)?;
             if !start_minimized {
                 tray::show(app.handle());
