@@ -115,6 +115,35 @@ fn idle_is_required_and_errors_fail_closed() {
     e.tick(603, None, None, false, &Settings::default());
     assert!(e.countdown.is_none());
 }
+
+#[test]
+fn clicking_pause_waits_for_idle_then_starts_playback_countdown() {
+    let mut engine = armed();
+    let settings = Settings::default();
+    engine.tick(3, Some(false), Some(0), true, &settings);
+    engine.tick(63, Some(false), Some(60), false, &settings);
+    assert!(engine.countdown.is_none());
+    engine.tick(303, Some(false), Some(300), false, &settings);
+    assert_eq!(
+        engine.countdown.as_ref().map(|c| c.source),
+        Some(Source::Playback)
+    );
+}
+
+#[test]
+fn input_during_silence_wait_defers_without_requiring_new_playback() {
+    let mut engine = armed();
+    let settings = Settings::default();
+    engine.tick(3, Some(false), Some(0), false, &settings);
+    engine.tick(120, Some(false), Some(0), true, &settings);
+    engine.tick(419, Some(false), Some(299), false, &settings);
+    assert!(engine.countdown.is_none());
+    engine.tick(420, Some(false), Some(300), false, &settings);
+    assert_eq!(
+        engine.countdown.as_ref().map(|c| c.source),
+        Some(Source::Playback)
+    );
+}
 #[test]
 fn timer_uses_common_countdown_and_snooze() {
     let mut e = Engine::default();

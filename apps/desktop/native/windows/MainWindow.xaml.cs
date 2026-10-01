@@ -304,7 +304,7 @@ public sealed partial class MainWindow : Window
         Action("After playback action", "Enable After Playback from the tray. Brief sounds and silence alone cannot arm it.", draft.PlaybackAction, value => draft.PlaybackAction = value);
         Number("Silence grace period", "Seconds of silence to tolerate between tracks or while buffering.", "\uE995", draft.SilenceSeconds, 10, 3600, value => draft.SilenceSeconds = value);
         Number("Required idle time", "Seconds without keyboard or mouse activity. Both silence and idle checks must pass.", "\uE916", draft.IdleSeconds, 30, 7200, value => draft.IdleSeconds = value);
-        Card("Your activity takes priority", "Resumed audio or user activity cancels a pending playback action. Manual Keep Awake blocks it. An explicit Power Timer takes priority.", "\uE72E");
+        Card("Your activity takes priority", "Pausing playback or using the computer restarts the inactivity wait. Resumed audio restarts the silence wait; input during the warning cancels it. Manual Keep Awake blocks the action. An explicit Power Timer takes priority.", "\uE72E");
         if (!Capability("audioSupported")) Card("Audio monitoring unavailable", "After Playback is not available on this platform.", "\uE7BA");
     }
 

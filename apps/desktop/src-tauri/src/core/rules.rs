@@ -176,11 +176,15 @@ impl Engine {
                     && idle.is_none_or(|seconds| seconds < settings.idle_seconds)
             });
             if self.playback_enabled
-                && (user_active || idle.is_none() || playback_due_without_idle)
+                && (idle.is_none()
+                    || playback_due_without_idle
+                    || (user_active && self.playback_phase == Phase::Countdown))
                 && matches!(self.playback_phase, Phase::GracePeriod | Phase::Countdown)
             {
                 self.cancel_playback();
             }
+            // Pausing playback is itself input. During grace, input resets the platform's
+            // idle duration; keep waiting instead of permanently disarming the rule.
             if self.while_audio
                 && self
                     .silence_since
@@ -195,6 +199,7 @@ impl Engine {
                     .silence_since
                     .is_some_and(|s| now.saturating_sub(s) >= settings.silence_seconds)
                 && idle.is_some_and(|i| i >= settings.idle_seconds)
+                && !user_active
                 && !self.agents.holds_awake()
                 && !self.awake
                 && self.timer.is_none()

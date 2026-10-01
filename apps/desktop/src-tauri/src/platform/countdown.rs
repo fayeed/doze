@@ -97,6 +97,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn paused_playback_reaches_native_warning_after_idle_wait() {
+        use crate::core::sessions::{Engine, Settings};
+        let mut engine = Engine::default();
+        let settings = Settings::default();
+        let mut warning = WarningState::default();
+        engine.enable_playback(true);
+        for now in 0..3 {
+            engine.tick(now, Some(true), Some(0), false, &settings);
+        }
+        engine.tick(3, Some(false), Some(0), true, &settings);
+        assert!(warning
+            .update(engine.countdown.as_ref(), 3, false)
+            .is_none());
+        engine.tick(303, Some(false), Some(300), false, &settings);
+        let message = warning
+            .update(engine.countdown.as_ref(), 303, false)
+            .unwrap();
+        assert_eq!(message["type"], "countdown");
+        assert_eq!(message["countdown"]["remaining"], 300);
+    }
+
+    #[test]
     fn snooze_hides_warning_for_fifteen_minutes_then_restores_it() {
         let mut state = WarningState::default();
         let mut countdown = Countdown {
