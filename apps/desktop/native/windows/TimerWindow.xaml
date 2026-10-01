@@ -5,24 +5,49 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="40" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid x:Name="titlebar" Margin="16,0,140,0">
-            <TextBlock Text="Doze" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                <Image x:Name="titleIcon" Width="16" Height="16" AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock x:Name="titleText" Text="Doze" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
+            </StackPanel>
         </Grid>
-        <StackPanel Grid.Row="1" Spacing="18" Margin="24,12,24,24">
-            <TextBlock x:Name="heading" FontSize="18" FontWeight="SemiBold" />
-            <TextBlock x:Name="help" TextWrapping="Wrap" Opacity="0.7" />
-            <NumberBox x:Name="minutes" Header="Duration in minutes" Minimum="1" Maximum="10080"
-                       SmallChange="1" SpinButtonPlacementMode="Inline" AutomationProperties.Name="Duration in minutes" />
-            <StackPanel x:Name="pickers" Orientation="Horizontal" Spacing="16">
-                <CalendarDatePicker x:Name="date" PlaceholderText="Choose a date" Width="224" AutomationProperties.Name="End date" />
-                <TimePicker x:Name="time" Width="224" AutomationProperties.Name="End time" />
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="form" Spacing="16" Margin="24,8,24,24">
+                <StackPanel Spacing="4">
+                    <TextBlock x:Name="heading" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+                    <TextBlock x:Name="help" Style="{StaticResource CardDescriptionStyle}" FontSize="14" />
+                </StackPanel>
+                <ComboBox x:Name="action" Header="Action" HorizontalAlignment="Stretch" AutomationProperties.Name="Action" />
+                <StackPanel x:Name="durationPanel" Spacing="8">
+                    <NumberBox x:Name="minutes" Header="Duration in minutes" Minimum="1" Maximum="10080"
+                               SmallChange="5" LargeChange="60" SpinButtonPlacementMode="Inline"
+                               AutomationProperties.Name="Duration in minutes" />
+                    <StackPanel x:Name="presets" Orientation="Horizontal" Spacing="6" />
+                </StackPanel>
+                <StackPanel x:Name="pickers" Spacing="12">
+                    <CalendarDatePicker x:Name="date" Header="Date" PlaceholderText="Choose a date" HorizontalAlignment="Stretch" AutomationProperties.Name="End date" />
+                    <TimePicker x:Name="time" Header="Time" HorizontalAlignment="Stretch" AutomationProperties.Name="End time" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE823;" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AccessibilityView="Raw" />
+                    <TextBlock x:Name="preview" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+                <InfoBar x:Name="error" Severity="Error" IsClosable="True" />
             </StackPanel>
-            <InfoBar x:Name="error" Severity="Error" IsClosable="True" />
-            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                <Button x:Name="cancel" Content="Cancel" MinWidth="108" />
-                <Button x:Name="start" Content="Start" MinWidth="108" Style="{StaticResource AccentButtonStyle}" />
-            </StackPanel>
-        </StackPanel>
+        </ScrollViewer>
+        <!-- The footer band of a Windows dialog, with equal-width buttons. -->
+        <Border x:Name="footer" Grid.Row="2" Padding="24" BorderThickness="0,1,0,0"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="start" Content="Start Timer" HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" />
+                <Button x:Name="cancel" Grid.Column="1" Content="Cancel" HorizontalAlignment="Stretch" />
+            </Grid>
+        </Border>
     </Grid>
 </Window>

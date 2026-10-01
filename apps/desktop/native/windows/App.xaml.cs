@@ -47,7 +47,7 @@ public partial class App : Application
                 countdown = new CountdownWindow(command => { commands.Add(command); return Task.CompletedTask; }, true);
                 await countdown.VerifyAsync();
                 timer = new TimerWindow(bridge);
-                timer.Verify();
+                timer.Verify(initial["snapshot"] as JsonObject);
                 if (!commands.SequenceEqual(new[] { "cancel", "snooze", "stay-awake" }))
                     throw new InvalidOperationException("Preview submitted an engine operation.");
                 var arguments = Environment.GetCommandLineArgs();
@@ -56,7 +56,7 @@ public partial class App : Application
                 {
                     await window.RenderVerificationAsync(arguments[render + 1]);
                     await countdown.RenderVerificationAsync(arguments[render + 1]);
-                    await timer.RenderVerificationAsync(arguments[render + 1]);
+                    await timer.RenderVerificationAsync(arguments[render + 1], initial["snapshot"] as JsonObject);
                 }
                 await bridge.SendAsync("verified");
                 window.StopAppearance();
