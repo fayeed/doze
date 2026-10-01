@@ -286,6 +286,17 @@ fn remaining(deadline: u64, now: u64) -> String {
     }
 }
 
+/// Minutes left, rounded up. Awake and timer labels refresh once a minute; seconds
+/// would look frozen between refreshes.
+fn minutes_left(deadline: u64, now: u64) -> String {
+    let minutes = deadline.saturating_sub(now).div_ceil(60);
+    if minutes >= 60 {
+        format!("{}h {}m", minutes / 60, minutes % 60)
+    } else {
+        format!("{minutes}m")
+    }
+}
+
 pub(crate) fn status_text(snapshot: &Snapshot) -> String {
     let engine = &snapshot.engine;
     if let Some(error) = &snapshot.error {
@@ -300,7 +311,10 @@ pub(crate) fn status_text(snapshot: &Snapshot) -> String {
     } else if engine.agents.holds_awake() {
         "Keeping awake · agents working".into()
     } else if let Some(deadline) = engine.awake_deadline {
-        format!("Keeping awake · {} left", remaining(deadline, engine.now))
+        format!(
+            "Keeping awake · {} left",
+            minutes_left(deadline, engine.now)
+        )
     } else if engine.awake {
         "Keeping awake · indefinitely".into()
     } else if engine.countdown.is_some() {
@@ -340,7 +354,7 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
         format!(
             "{} in {}",
             timer.action.label(),
-            remaining(timer.deadline, engine.now)
+            minutes_left(timer.deadline, engine.now)
         )
     } else if engine.playback_enabled {
         use crate::core::sessions::Phase;
@@ -611,6 +625,14 @@ fn update_agents(app: &tauri::AppHandle, menu: &NativeMenu, snapshot: &Snapshot)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn session_labels_round_up_to_whole_minutes() {
+        assert_eq!(super::minutes_left(100, 100), "0m");
+        assert_eq!(super::minutes_left(130, 100), "1m");
+        assert_eq!(super::minutes_left(1900, 100), "30m");
+        assert_eq!(super::minutes_left(3700, 100), "1h 0m");
+        assert_eq!(super::minutes_left(7301, 100), "2h 1m");
+    }
     #[test]
     fn template_badges_distinguish_awake_from_countdown_without_color() {
         let center_alpha = (25 * 32 + 25) * 4 + 3;

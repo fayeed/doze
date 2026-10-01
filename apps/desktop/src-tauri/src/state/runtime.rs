@@ -149,7 +149,8 @@ pub(super) fn worker(
             .chain(snapshot.engine.timer.as_ref().map(|t| t.deadline))
             .min()
         {
-            Duration::from_secs(deadline.saturating_sub(now).max(1))
+            // Tray labels show the minutes left, so refresh them at least once a minute.
+            Duration::from_secs(deadline.saturating_sub(now).clamp(1, 60))
         } else {
             Duration::from_secs(3600)
         };

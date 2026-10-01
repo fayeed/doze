@@ -49,7 +49,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
         SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
-        AppWindow.Resize(new SizeInt32(1120, 780));
+        FitToDisplay(1120, 780);
         AppWindow.Closing += (window, args) =>
         {
             if (verification) return;
@@ -120,6 +120,19 @@ public sealed partial class MainWindow : Window
                 Activate();
             }
         });
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(nint window);
+
+    // Size in effective pixels for the window's DPI, centered and kept within the work area.
+    private void FitToDisplay(int width, int height)
+    {
+        var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
+        var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
+        var fittedWidth = Math.Min((int)(width * scale), area.Width * 92 / 100);
+        var fittedHeight = Math.Min((int)(height * scale), area.Height * 92 / 100);
+        AppWindow.MoveAndResize(new RectInt32(area.X + (area.Width - fittedWidth) / 2, area.Y + (area.Height - fittedHeight) / 2, fittedWidth, fittedHeight));
     }
 
     private void HideWindow()

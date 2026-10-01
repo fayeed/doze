@@ -9,7 +9,7 @@ Manage an explicit wake session through the local Doze desktop app. Loading this
 
 ## Start and authorize
 
-- Discover the connected Doze MCP tools. Logical names below may have a client-specific prefix. If unavailable, explain that the user must run Doze, enable MCP in Agents settings, and connect this client. Do not substitute shell power commands or change client credentials/settings.
+- Discover the connected Doze MCP tools. Logical names below may have a client-specific prefix, and clients may show dots as underscores (for example, `doze.start_session` as `mcp__doze__doze_start_session`). If unavailable, explain that the user must run Doze, enable MCP in Agents settings, and connect this client. Do not substitute shell power commands or change client credentials/settings.
 - Call `doze.start_session` with a short `reason` describing the authorized work and an explicit `completion_action`. Use `return_to_normal` for keeping awake only. Use `sleep`, `hibernate`, `lock`, `display_off`, or `shutdown` only when the user requests that exact outcome. Ask if the requested outcome is ambiguous; never infer Shutdown from Sleep.
 - Supply `optional_timeout` only when requested. This is a total duration in seconds (30–604800), not a completion deadline: expiry means uncertainty and does not trigger the action.
 - Retain the returned `session_id` for this job. If `status` is `awaiting_authorization`, tell the user to choose Allow Once or Deny in Doze, then use `doze.get_session` to check the decision. Pending sessions do not keep the computer awake. Denied requests must not be retried to bypass the decision. Persistent permissions belong in Doze Settings.

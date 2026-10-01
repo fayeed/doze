@@ -117,7 +117,9 @@ public sealed partial class CountdownWindow : Window
     {
         Notice.IsOpen = false;
         SetPending(false);
-        if (!visible && !verification) Activate();
+        // Appear on top without taking keyboard focus: typing elsewhere must never press
+        // Snooze, Cancel or Stay Awake. Escape works once the warning is clicked.
+        if (!visible && !verification) AppWindow.Show(false);
         visible = true;
     }
 
