@@ -136,9 +136,9 @@ pub(super) fn apply(
             }
         }
 
-        Operation::Cancel => snapshot.engine.cancel_countdown(),
+        Operation::Cancel => snapshot.engine.dismiss_countdown(),
         Operation::StayAwake => {
-            snapshot.engine.cancel_countdown();
+            snapshot.engine.dismiss_countdown();
             snapshot.engine.keep_awake(None);
         }
         Operation::Snooze => snapshot.engine.snooze()?,

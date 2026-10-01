@@ -639,7 +639,7 @@ struct SettingsView: View {
                 number("Continuous silence (seconds)", $model.draft.silenceSeconds, 10...3600)
                 number("User inactivity (seconds)", $model.draft.idleSeconds, 30...7200)
             }.disabled(model.snapshot?.audioSupported != true)
-            Section("Safety") { Text("Playback must first be observed. Both silence and user inactivity must continue before the final countdown. Resumed playback or input cancels that countdown.") }
+            Section("Safety") { Text("Playback must first be observed. Both silence and user inactivity must continue before the final countdown. Resumed playback or input cancels that countdown. It is one-shot: once its action runs, or you choose Cancel or Stay Awake on its warning, it turns itself off until you turn it on again.") }
         case .notifications:
             Section("Final warning") {
                 Toggle("Show system countdown notifications", isOn: $model.draft.notifications)
@@ -666,7 +666,7 @@ struct SettingsView: View {
                 explanation("Keep Awake", "Choose a duration, an end time, or indefinitely. Stop releases Doze's power assertion; Extend adds 15 minutes to a timed session.", "sun.max")
                 explanation("Power Timer", "Choose an action and duration. A native final warning lets you cancel or snooze before Rust performs the action.", "timer")
                 explanation("Keep awake while audio plays", "Holds your Mac awake while an output device is playing, through the silence grace period. Muted or zero-volume output counts as silence.", "speaker.wave.2")
-                explanation("After Playback", "Once playback has been seen, Doze waits for both silence and inactivity, then shows the final warning. Resumed playback or using your Mac restarts the wait.", "play.slash")
+                explanation("After Playback", "Once playback has been seen, Doze waits for both silence and inactivity, then shows the final warning. Resumed playback or using your Mac restarts the wait. It is one-shot: once its action runs, or you choose Cancel or Stay Awake on its warning, it turns itself off until you turn it on again.", "play.slash")
                 explanation("Countdown", "Every power action shows a floating final warning. Cancel removes the action, Snooze waits 15 more minutes, and Stay Awake keeps your Mac awake instead.", "hourglass")
                 explanation("Agents", "Coding agents connected through MCP can keep your Mac awake while they work. Each new request needs your approval in Agents unless you granted it there.", "person.2")
                 explanation("Quick Settings", "These checkmarks represent saved defaults. Duration defaults apply to new sessions. Other changes, such as display sleep, take effect immediately.", "slider.horizontal.3")

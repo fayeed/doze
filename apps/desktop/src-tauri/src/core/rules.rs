@@ -60,6 +60,20 @@ impl Engine {
             self.message = Some("Power action cancelled".into());
         }
     }
+    /// Cancel or Stay Awake chosen by the user. After Playback is one-shot: dismissing its
+    /// warning turns the rule off, so it cannot trip again later in the day. Automatic
+    /// cancellations (input or resumed audio) keep it armed for fresh playback.
+    pub fn dismiss_countdown(&mut self) {
+        let playback = self
+            .countdown
+            .as_ref()
+            .is_some_and(|c| c.source == Source::Playback);
+        self.cancel_countdown();
+        if playback {
+            self.playback_enabled = false;
+            self.message = Some("Power action cancelled · After Playback turned off".into());
+        }
+    }
     pub fn snooze(&mut self) -> Result<(), String> {
         let c = self.countdown.as_mut().ok_or("No countdown is active.")?;
         c.deadline = c.deadline.saturating_add(900);
@@ -261,6 +275,10 @@ impl Engine {
             self.stop_awake();
             self.while_audio = false;
             self.playback_phase = Phase::Completed;
+            // One-shot: after its action runs, After Playback must be turned on again.
+            if c.source == Source::Playback {
+                self.playback_enabled = false;
+            }
             self.silence_since = None;
             self.message = Some(format!("{} requested", c.action.label()));
             return Some(c.action);

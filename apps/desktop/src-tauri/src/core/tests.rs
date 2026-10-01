@@ -39,6 +39,34 @@ fn grace_then_countdown_then_action_once() {
     assert_eq!(e.playback_phase, Phase::Countdown);
     assert_eq!(audio(&mut e, 363, false), Some(PowerAction::Sleep));
     assert_eq!(audio(&mut e, 364, false), None);
+    // One-shot: the rule turns itself off after its action, so daytime audio cannot trip it.
+    assert!(!e.playback_enabled);
+    for t in 365..370 {
+        audio(&mut e, t, true);
+    }
+    assert_eq!(audio(&mut e, 10000, false), None);
+    assert!(e.countdown.is_none());
+}
+#[test]
+fn dismissing_the_playback_warning_turns_the_rule_off() {
+    let mut e = armed();
+    audio(&mut e, 3, false);
+    audio(&mut e, 63, false);
+    assert_eq!(e.playback_phase, Phase::Countdown);
+    e.dismiss_countdown();
+    assert!(e.countdown.is_none());
+    assert!(!e.playback_enabled);
+    // A timer warning dismissed by the user leaves an armed playback rule alone.
+    let mut e = armed();
+    e.schedule(10, PowerAction::Lock);
+    e.enable_playback(true);
+    e.tick(20, Some(false), Some(600), false, &Settings::default());
+    assert!(e
+        .countdown
+        .as_ref()
+        .is_some_and(|c| c.source == Source::Timer));
+    e.dismiss_countdown();
+    assert!(e.playback_enabled);
 }
 #[test]
 fn buffering_restarts_grace() {
@@ -107,6 +135,8 @@ fn resumed_audio_cancels_at_deadline() {
     audio(&mut e, 63, false);
     assert_eq!(audio(&mut e, 363, true), None);
     assert!(e.countdown.is_none());
+    // Resumed playback is not a user decision to turn the rule off.
+    assert!(e.playback_enabled);
 }
 
 #[test]
@@ -128,6 +158,8 @@ fn input_cancels_at_deadline() {
         None
     );
     assert!(e.countdown.is_none());
+    // Moving the mouse during the warning keeps the rule armed for the next playback.
+    assert!(e.playback_enabled);
 }
 #[test]
 fn idle_is_required_and_errors_fail_closed() {
