@@ -87,8 +87,25 @@ impl UiRequest {
             "awake" => Operation::KeepAwake {
                 seconds: Some(self.seconds.ok_or("Duration missing.")?),
             },
-            "timer" => Operation::ScheduleSelected {
-                seconds: self.seconds.ok_or("Duration missing.")?,
+            "timer" => match self.action {
+                Some(action) => Operation::Schedule {
+                    seconds: self.seconds.ok_or("Duration missing.")?,
+                    action,
+                },
+                None => Operation::ScheduleSelected {
+                    seconds: self.seconds.ok_or("Duration missing.")?,
+                },
+            },
+            "awake-forever" => Operation::KeepAwake { seconds: None },
+            "awake-default" => Operation::KeepAwakeDefault,
+            "timer-default" => Operation::ScheduleDefault,
+            "stop-awake" => Operation::StopAwake,
+            "extend" => Operation::ExtendAwake { seconds: 900 },
+            "stop-timer" => Operation::StopTimer,
+            "audio-toggle" => Operation::ToggleWhileAudio,
+            "playback-toggle" => Operation::TogglePlayback,
+            "select-action" => Operation::SelectAction {
+                action: self.action.ok_or("Action missing.")?,
             },
             _ => return Err("Unknown native UI command.".into()),
         })
@@ -114,6 +131,37 @@ fn reply_to_ui(line: &str, requests: &Sender<Request>) -> Result<Value, String> 
     }))
 }
 
+/// Live session state for the native control center. Times are seconds remaining.
+fn session_json(snapshot: &Snapshot) -> Value {
+    use crate::core::sessions::Phase;
+    let engine = &snapshot.engine;
+    let remaining = |deadline: u64| deadline.saturating_sub(engine.now);
+    json!({
+        "awake": engine.awake,
+        "awakeRemaining": engine.awake_deadline.map(remaining),
+        "whileAudio": engine.while_audio,
+        "holdingAwake": engine.should_hold_awake(),
+        "playbackEnabled": engine.playback_enabled,
+        "playbackPhase": match engine.playback_phase {
+            Phase::Idle | Phase::Cancelled | Phase::Completed => "waiting",
+            Phase::Active => "playing",
+            Phase::GracePeriod => "grace",
+            Phase::Countdown => "countdown",
+        },
+        "selectedAction": snapshot.selected_action,
+        "timer": engine.timer.as_ref().map(|timer| json!({
+            "action": timer.action,
+            "remaining": remaining(timer.deadline),
+        })),
+        "countdown": engine.countdown.as_ref().map(|countdown| json!({
+            "action": countdown.action,
+            "remaining": remaining(countdown.deadline),
+            "source": countdown.source,
+        })),
+        "error": snapshot.error,
+    })
+}
+
 fn snapshot_json(snapshot: &Snapshot) -> Value {
     let engine = &snapshot.engine;
     let timer = if let Some(countdown) = &engine.countdown {
@@ -133,6 +181,7 @@ fn snapshot_json(snapshot: &Snapshot) -> Value {
     };
     json!({
         "settings": snapshot.settings,
+        "session": session_json(snapshot),
         "agentSessions": snapshot.engine.agents.items,
         "agentNow": snapshot.engine.now,
         "agentConnections": crate::mcp::server::connection_configs(&snapshot.settings, &snapshot.settings_path),
@@ -278,4 +327,41 @@ pub(super) fn executable() -> Result<std::path::PathBuf, String> {
         return Ok(development);
     }
     Err("The native Settings companion is missing. Run pnpm --filter @doze/desktop native:build or reinstall Doze.".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::sessions::PowerAction;
+
+    fn operation(line: &str) -> Result<Operation, String> {
+        serde_json::from_str::<UiRequest>(line)
+            .map_err(|error| error.to_string())?
+            .operation()
+    }
+
+    #[test]
+    fn control_center_commands_map_to_engine_operations() {
+        assert!(matches!(
+            operation(r#"{"command":"awake-forever"}"#),
+            Ok(Operation::KeepAwake { seconds: None })
+        ));
+        assert!(matches!(
+            operation(r#"{"command":"extend"}"#),
+            Ok(Operation::ExtendAwake { seconds: 900 })
+        ));
+        assert!(matches!(
+            operation(r#"{"command":"timer","seconds":600,"action":"displayOff"}"#),
+            Ok(Operation::Schedule {
+                seconds: 600,
+                action: PowerAction::DisplayOff
+            })
+        ));
+        assert!(matches!(
+            operation(r#"{"command":"timer","seconds":600}"#),
+            Ok(Operation::ScheduleSelected { seconds: 600 })
+        ));
+        assert!(operation(r#"{"command":"select-action"}"#).is_err());
+        assert!(operation(r#"{"command":"format-disk"}"#).is_err());
+    }
 }

@@ -36,8 +36,54 @@ struct AgentSkill: Codable, Identifiable {
     var name: String; var status: String; var path: String?; var error: String?
     var id: String { name }
 }
+struct SessionTimer: Codable { var action: String; var remaining: Int }
+struct SessionCountdown: Codable { var action: String; var remaining: Int; var source: String }
+struct SessionState: Codable {
+    var awake = false
+    var awakeRemaining: Int?
+    var whileAudio = false
+    var holdingAwake = false
+    var playbackEnabled = false
+    var playbackPhase = "waiting"
+    var selectedAction = "sleep"
+    var timer: SessionTimer?
+    var countdown: SessionCountdown?
+    var error: String?
+}
+
+/// Labels match the Rust engine and the menu bar.
+func actionLabel(_ action: String) -> String {
+    ["sleep": "Sleep", "hibernate": "Hibernate", "shutdown": "Shut down", "lock": "Lock",
+     "displayOff": "Turn display off"][action] ?? action
+}
+
+func agentStatusLabel(_ status: String) -> String {
+    switch status {
+    case "active": return "Working"
+    case "connection_lost": return "Connection lost · keeping awake"
+    case "awaiting_authorization": return "Waiting for your approval"
+    default: return status
+    }
+}
+
+func playbackPhaseLabel(_ phase: String) -> String {
+    switch phase {
+    case "playing": return "Playing · waiting for it to stop"
+    case "grace": return "Waiting for silence and inactivity"
+    case "countdown": return "Final warning shown"
+    default: return "Waiting for playback to start"
+    }
+}
+
+func remainingText(_ seconds: Int) -> String {
+    if seconds >= 3600 { return "\(seconds / 3600)h \(seconds / 60 % 60)m" }
+    if seconds >= 60 { return "\((seconds + 59) / 60)m" }
+    return "\(seconds)s"
+}
+
 struct EngineSnapshot: Codable {
     var settings: Preferences
+    var session: SessionState?
     var settingsPath: String
     var actions: [String]
     var audioSupported: Bool
@@ -98,6 +144,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     @Published var timerUsesDate = false
     @Published var durationMinutes = 30
     @Published var targetDate = Date().addingTimeInterval(1800)
+    @Published var timerAction = "sleep"
 
     private var settingsWindow: NSWindow?
     private var warningWindow: NSWindow?
@@ -227,6 +274,8 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         snapshot = EngineSnapshot(settings: Preferences(), settingsPath: "~/Library/Application Support/app.getdoze.desktop/settings.json",
                                   actions: ["sleep", "shutdown", "lock", "displayOff"], audioSupported: true, startupSupported: true,
                                   status: "Keeping awake · 42m left", timerStatus: "Sleep in 1h 5m", version: "0.1.0")
+        snapshot?.session = SessionState(awake: true, awakeRemaining: 2520, holdingAwake: true, playbackEnabled: true,
+                                         timer: SessionTimer(action: "sleep", remaining: 3900))
         draft = snapshot!.settings
         func capture(_ view: some View, size: NSSize, name: String, appearance: NSAppearance.Name) throws {
             let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
@@ -293,7 +342,9 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
             if remaining == 0 { previewDeadline = nil }
         }
         ticks += 1
-        if ticks % 5 == 0, settingsWindow?.isVisible == true, !saving { send("refresh") }
+        let session = snapshot?.session
+        let live = page == .overview && (session?.awakeRemaining != nil || session?.timer != nil || session?.countdown != nil)
+        if ticks % (live ? 1 : 5) == 0, settingsWindow?.isVisible == true, !saving { send("refresh") }
     }
 
     func send(_ command: String, extra: [String: Any] = [:]) {
@@ -430,15 +481,23 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         timerUsesDate = date
         durationMinutes = awake ? draft.defaultAwakeMinutes : draft.defaultTimerMinutes
         targetDate = Date().addingTimeInterval(Double(durationMinutes * 60))
+        timerAction = snapshot?.session?.selectedAction ?? draft.defaultAction
         notice = ""
         if timerWindow == nil {
-            timerWindow = window("Doze · Custom session", size: NSSize(width: 480, height: 280), content: TimerView(model: self))
+            timerWindow = window("Doze · Custom session", size: NSSize(width: 480, height: 360), content: TimerView(model: self))
             timerWindow?.styleMask.remove([.resizable, .miniaturizable])
             timerWindow?.isOpaque = false
             timerWindow?.backgroundColor = .clear
         }
-        if let window = timerWindow { activate(window) }
+        if let window = timerWindow {
+            // Fit the form: duration and end-time variants differ in height.
+            if let content = window.contentView { window.setContentSize(content.fittingSize) }
+            activate(window)
+        }
     }
+
+    /// Opens the custom duration or end-time window from the control center.
+    func openTimer(awake: Bool, date: Bool) { showTimer(awake: awake, date: date) }
 
     func startTimer() {
         guard timerUsesDate || (1...10080).contains(durationMinutes) else {
@@ -446,7 +505,8 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         }
         let seconds = timerUsesDate ? Int(ceil(targetDate.timeIntervalSinceNow)) : durationMinutes * 60
         guard (60...604800).contains(seconds) else { notice = "Choose a duration between 1 minute and 7 days."; return }
-        send(timerIsAwake ? "awake" : "timer", extra: ["seconds": seconds])
+        send(timerIsAwake ? "awake" : "timer",
+             extra: timerIsAwake ? ["seconds": seconds] : ["seconds": seconds, "action": timerAction])
         timerWindow?.orderOut(nil)
     }
 
@@ -519,18 +579,7 @@ struct SettingsView: View {
     @ViewBuilder private var pageContent: some View {
         switch model.page ?? .overview {
         case .overview:
-            Section("Current session") {
-                explanation("Keep Awake", model.snapshot?.status ?? "Normal sleep allowed", "moon")
-                explanation("Power action", model.snapshot?.timerStatus ?? "No power action scheduled", "timer")
-            }
-            Section("Quick access") {
-                Button("Preview the countdown") { model.send("preview") }
-                Button("Session defaults") { model.page = .session }
-                Button("Show local data", action: model.openData)
-            }
-            Section("How Doze works") {
-                explanation("Everything starts in the menu bar", "Keep Awake, Power Timer, After Playback and Quick Settings live in Doze's moon menu. Disabled commands explain why they aren't available.", "menubar.rectangle")
-            }
+            controlCenter
         case .general:
             Section("Launch behavior") {
                 Toggle("Launch at sign-in", isOn: $model.draft.launchAtStartup).disabled(model.snapshot?.startupSupported != true)
@@ -592,13 +641,17 @@ struct SettingsView: View {
                 explanation("Normal sleep allowed", "No Doze session is holding your Mac awake. Your macOS sleep settings apply normally. Select Keep Awake to start a session.", "moon")
                 explanation("Keep Awake", "Choose a duration, an end time, or indefinitely. Stop releases Doze's power assertion; Extend adds 15 minutes to a timed session.", "sun.max")
                 explanation("Power Timer", "Choose an action and duration. A native final warning lets you cancel or snooze before Rust performs the action.", "timer")
+                explanation("Keep awake while audio plays", "Holds your Mac awake while an output device is playing, through the silence grace period. Muted or zero-volume output counts as silence.", "speaker.wave.2")
+                explanation("After Playback", "Once playback has been seen, Doze waits for both silence and inactivity, then shows the final warning. Resumed playback or using your Mac restarts the wait.", "play.slash")
+                explanation("Countdown", "Every power action shows a floating final warning. Cancel removes the action, Snooze waits 15 more minutes, and Stay Awake keeps your Mac awake instead.", "hourglass")
+                explanation("Agents", "Coding agents connected through MCP can keep your Mac awake while they work. Each new request needs your approval in Agents unless you granted it there.", "person.2")
                 explanation("Quick Settings", "These checkmarks represent saved defaults. Duration defaults apply to new sessions. Other changes, such as display sleep, take effect immediately.", "slider.horizontal.3")
                 explanation("Disabled commands", "No session to stop or extend, no timer to stop, and no countdown to cancel or snooze are informational states. Unavailable platform actions remain disabled.", "info.circle")
             }
         case .about:
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: "moon.zzz.fill").font(.system(size: 40)).foregroundStyle(.tint)
+                    Image(systemName: "moon.zzz.fill").font(.system(size: 40)).foregroundStyle(.tint).accessibilityHidden(true)
                     Text("Doze").font(.largeTitle.bold())
                     Text("Version \(model.snapshot?.version ?? "0.1.0")").foregroundStyle(.secondary)
                     Text("Your computer knows when it's bedtime.")
@@ -613,15 +666,130 @@ struct SettingsView: View {
         }
     }
 
+    private var session: SessionState { model.snapshot?.session ?? SessionState() }
+    private var actions: [String] { model.snapshot?.actions ?? ["sleep"] }
+    private let presets: [(Int, String)] = [(900, "15m"), (1800, "30m"), (3600, "1h"), (7200, "2h")]
+    private var statusSymbol: String {
+        if session.countdown != nil { return "timer" }
+        return session.holdingAwake ? "sun.max.fill" : "moon.zzz.fill"
+    }
+    private var awakeText: String {
+        guard let remaining = session.awakeRemaining else { return "Indefinitely" }
+        return remainingText(remaining) + " left"
+    }
+    private var statusTint: Color {
+        session.holdingAwake || session.countdown != nil ? .orange : .accentColor
+    }
+
+    /// Overview doubles as a control center: everything in the menu bar, with live times.
+    @ViewBuilder private var controlCenter: some View {
+        Section {
+            HStack(spacing: 14) {
+                Image(systemName: statusSymbol)
+                    .font(.system(size: 28))
+                    .foregroundStyle(statusTint)
+                    .frame(width: 40).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.snapshot?.status ?? "Normal sleep allowed").font(.title3.weight(.semibold))
+                        .textSelection(.enabled)
+                    Text(model.snapshot?.timerStatus ?? "No power action scheduled").foregroundStyle(.secondary)
+                }
+            }.padding(.vertical, 6)
+        }
+        if let countdown = session.countdown {
+            Section("Final warning") {
+                LabeledContent(actionLabel(countdown.action) + " in") {
+                    Text(String(format: "%d:%02d", countdown.remaining / 60, countdown.remaining % 60))
+                        .font(.title2.monospacedDigit().weight(.semibold))
+                }
+                HStack {
+                    Button("Snooze 15 minutes") { model.send("snooze") }
+                    Button("Stay Awake") { model.send("stay-awake") }
+                    Spacer()
+                    Button("Cancel", role: .destructive) { model.send("cancel") }
+                }
+            }
+        }
+        Section("Keep Awake") {
+            if session.awake {
+                LabeledContent("Active") {
+                    Text(awakeText).monospacedDigit()
+                }
+                HStack {
+                    if session.awakeRemaining != nil {
+                        Button("Extend 15 minutes") { model.send("extend") }
+                    }
+                    Spacer()
+                    Button("Stop keeping awake") { model.send("stop-awake") }
+                }
+            } else {
+                presetRow(spoken: "Keep awake for", start: { model.send("awake", extra: ["seconds": $0]) }) {
+                    Button("Indefinitely") { model.send("awake-forever") }
+                    Menu("More") {
+                        Button("Custom duration…") { model.openTimer(awake: true, date: false) }
+                        Button("Until a specific time…") { model.openTimer(awake: true, date: true) }
+                    }.fixedSize()
+                }
+            }
+            Toggle("Keep awake while audio plays", isOn: Binding(get: { session.whileAudio }, set: { _ in model.send("audio-toggle") }))
+                .disabled(model.snapshot?.audioSupported != true)
+        }
+        Section("Power Timer") {
+            Picker("Action", selection: Binding(get: { session.selectedAction }, set: { model.send("select-action", extra: ["action": $0]) })) {
+                ForEach(actions, id: \.self) { Text(actionLabel($0)).tag($0) }
+            }
+            if let timer = session.timer {
+                LabeledContent(actionLabel(timer.action) + " in") { Text(remainingText(timer.remaining)).monospacedDigit() }
+                HStack { Spacer(); Button("Stop timer") { model.send("stop-timer") } }
+            } else {
+                presetRow(spoken: actionLabel(session.selectedAction) + " in", start: { model.send("timer", extra: ["seconds": $0, "action": session.selectedAction]) }) {
+                    Menu("More") {
+                        Button("Custom duration…") { model.openTimer(awake: false, date: false) }
+                        Button("At a specific time…") { model.openTimer(awake: false, date: true) }
+                    }.fixedSize()
+                }
+            }
+            Toggle(isOn: Binding(get: { session.playbackEnabled }, set: { _ in model.send("playback-toggle") })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(actionLabel(model.snapshot?.settings.playbackAction ?? "sleep") + " after playback stops")
+                    if session.playbackEnabled {
+                        Text(playbackPhaseLabel(session.playbackPhase)).font(.callout).foregroundStyle(.secondary)
+                    }
+                }
+            }.disabled(model.snapshot?.audioSupported != true)
+        }
+        Section("Quick access") {
+            HStack {
+                Button("Preview the countdown") { model.send("preview") }
+                Button("Session defaults") { model.page = .session }
+                Spacer()
+                Button("Show local data", action: model.openData)
+            }
+        }
+    }
+
+    private func presetRow(spoken: String, start: @escaping (Int) -> Void, @ViewBuilder trailing: () -> some View) -> some View {
+        HStack {
+            Text("Start").foregroundStyle(.secondary)
+            ForEach(presets, id: \.0) { preset in
+                Button(preset.1) { start(preset.0) }.accessibilityLabel(spoken + " " + preset.1)
+            }
+            Spacer()
+            trailing()
+        }
+    }
+
     @ViewBuilder private var agentsView: some View {
         Section("Agents") {
             Toggle("Enable MCP", isOn: Binding(get: { model.agentSettings?.enabled ?? false }, set: { _ in model.send("agent-enable") }))
-            Picker("Default lease (seconds)", selection: Binding(get: { model.agentSettings?.leaseSeconds ?? 300 }, set: { model.send("agent-lease", extra: ["agent_seconds": $0]) })) {
-                ForEach([60, 300, 900, 1800, 3600], id: \.self) { Text("\($0)").tag($0) }
+            Picker("Heartbeat lease", selection: Binding(get: { model.agentSettings?.leaseSeconds ?? 300 }, set: { model.send("agent-lease", extra: ["agent_seconds": $0]) })) {
+                ForEach([60, 300, 900, 1800, 3600], id: \.self) { seconds in
+                    Text(leaseLabel(seconds)).tag(seconds)
+                }
             }
             Picker("Default completion", selection: Binding(get: { model.agentSettings?.defaultCompletion ?? "normal" }, set: { model.send("agent-default", extra: ["action": $0 == "normal" ? NSNull() : $0 as Any]) })) {
                 Text("Return to normal").tag("normal")
-                ForEach(model.snapshot?.actions ?? [], id: \.self) { Text($0.capitalized).tag($0) }
+                ForEach(model.snapshot?.actions ?? [], id: \.self) { Text(actionLabel($0)).tag($0) }
             }
             Text("A lost connection keeps the computer awake for up to 30 minutes, then releases without a completion action. Automatic completion requires all overlapping agents to finish with the same authorized action, followed by at least five minutes to cancel.").foregroundStyle(.secondary)
         }
@@ -653,7 +821,8 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(session.client_name).bold()
                     Text(session.reason)
-                    Text("\(session.status.replacingOccurrences(of: "_", with: " ")) · When finished: \(session.completion_action ?? "Return to normal")").foregroundStyle(.secondary)
+                    let finish: String = session.completion_action.map(actionLabel) ?? "Return to normal"
+                    Text(agentStatusLabel(session.status) + " · When finished: " + finish).foregroundStyle(.secondary)
                     if session.status == "awaiting_authorization" {
                         HStack {
                             Button("Allow Once") { model.send("agent-authorize", extra: ["id": session.id, "decision": "once"]) }
@@ -678,8 +847,12 @@ struct SettingsView: View {
         }
     }
 
-    private func agentActionName(_ action: String) -> String {
-        ["sleep": "Sleep", "hibernate": "Hibernate", "lock": "Lock", "displayOff": "Turn display off", "shutdown": "Shut down"][action] ?? action
+    private func agentActionName(_ action: String) -> String { actionLabel(action) }
+
+    private func leaseLabel(_ seconds: Int) -> String {
+        if seconds == 60 { return "1 minute" }
+        if seconds == 3600 { return "1 hour" }
+        return "\(seconds / 60) minutes"
     }
 
     @ViewBuilder private var agentSheet: some View {
@@ -765,15 +938,14 @@ struct SettingsView: View {
         })
         return LabeledContent(title) {
             TextField(title, value: validated, format: .number).labelsHidden().frame(width: 90)
-                .accessibilityLabel(title)
-            Stepper(title, value: validated, in: range).labelsHidden().accessibilityLabel(title)
+            Stepper(title, value: validated, in: range).labelsHidden()
         }
     }
 
     private func actionPicker(_ title: String, _ binding: Binding<String>) -> some View {
         Picker(title, selection: binding) {
             ForEach(model.snapshot?.actions ?? ["sleep"], id: \.self) { action in
-                Text(action == "displayOff" ? "Turn display off" : action.capitalized).tag(action)
+                Text(actionLabel(action)).tag(action)
             }
         }
     }
@@ -783,7 +955,7 @@ struct WarningView: View {
     @ObservedObject var model: NativeUI
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "moon.zzz").font(.system(size: 24)).foregroundStyle(.tint)
+            Image(systemName: "moon.zzz").font(.system(size: 24)).foregroundStyle(.tint).accessibilityHidden(true)
             Text("\(model.warningAction) in").font(.title2.weight(.semibold))
             Text("\(model.remaining / 60):\(String(format: "%02d", model.remaining % 60))")
                 .font(.system(size: 64, weight: .semibold, design: .rounded))
@@ -801,25 +973,68 @@ struct WarningView: View {
 
 struct TimerView: View {
     @ObservedObject var model: NativeUI
+    private let presets = [15, 30, 60, 120, 240, 480]
+    private var startTitle: String {
+        model.timerIsAwake ? "Keep Awake" : "Start Timer"
+    }
+    private func presetTitle(_ minutes: Int) -> String {
+        minutes < 60 ? "\(minutes)m" : "\(minutes / 60)h"
+    }
+
+    private var endText: String {
+        if model.timerUsesDate {
+            let seconds = max(0, Int(model.targetDate.timeIntervalSinceNow.rounded()))
+            return seconds < 60 ? "Choose a time at least a minute from now." : "In \(remainingText(seconds))"
+        }
+        guard (1...10080).contains(model.durationMinutes) else { return "From 1 minute to 7 days." }
+        let end = Date().addingTimeInterval(Double(model.durationMinutes * 60))
+        return "Ends \(end.formatted(date: Calendar.current.isDateInToday(end) ? .omitted : .abbreviated, time: .shortened))"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(model.timerIsAwake ? "Keep Awake" : "Power Timer").font(.title2.bold())
-            if model.timerUsesDate {
-                DatePicker("End time", selection: $model.targetDate, in: Date()...Date().addingTimeInterval(604800))
-            } else {
-                TextField("Duration (minutes)", value: $model.durationMinutes, format: .number)
-                    .textFieldStyle(.roundedBorder)
-                Text("From 1 minute to 7 days.").foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(model.timerIsAwake ? "Keep Awake" : "Power Timer").font(.title2.bold())
+                Text(model.timerIsAwake ? "Your Mac stays awake, then normal sleep settings apply again."
+                     : "A final warning lets you cancel or snooze before the action runs.")
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            if !model.timerIsAwake {
+                Picker("Action", selection: $model.timerAction) {
+                    ForEach(model.snapshot?.actions ?? ["sleep"], id: \.self) { Text(actionLabel($0)).tag($0) }
+                }
+            }
+            if model.timerUsesDate {
+                DatePicker(model.timerIsAwake ? "Until" : "At", selection: $model.targetDate,
+                           in: Date()...Date().addingTimeInterval(604800))
+            } else {
+                HStack {
+                    Text("Duration")
+                    Spacer()
+                    TextField("Minutes", value: $model.durationMinutes, format: .number)
+                        .textFieldStyle(.roundedBorder).frame(width: 80).multilineTextAlignment(.trailing)
+                        .accessibilityLabel("Duration in minutes")
+                    Stepper("Duration in minutes", value: $model.durationMinutes, in: 1...10080, step: 5).labelsHidden()
+                    Text("minutes").foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    ForEach(presets, id: \.self) { minutes in
+                        Button(presetTitle(minutes)) { model.durationMinutes = minutes }
+                            .controlSize(.small)
+                    }
+                }
+            }
+            Text(endText).font(.callout).foregroundStyle(.secondary)
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.red) }
             HStack {
                 Button("Cancel", action: model.closeTimer).keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Start", action: model.startTimer).keyboardShortcut(.defaultAction)
+                Button(startTitle, action: model.startTimer)
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
-        .frame(maxWidth: .infinity)
+        .frame(width: 448)
         .navigationGlass()
         .padding(16)
     }
