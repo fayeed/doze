@@ -72,7 +72,7 @@ public sealed partial class MainWindow
         Card("Preferences file", snapshot["settingsPath"]?.GetValue<string>() ?? "Loading…", "", ActionButton("Open folder", OpenData));
         Card("This computer", "Power actions: " + string.Join(", ", Actions.Select(Labels.Action)) + ". Audio monitoring " + (Capability("audioSupported") ? "available; audio is never recorded." : "unavailable."), "");
         Section("Reset");
-        Card("Reset preferences", "Restores the defaults on every page.", "", ActionButton("Reset", () => { ResetDraft(); return Task.CompletedTask; }));
+        Card("Reset preferences", "Restores the defaults on every page. Agent connections and sessions are kept.", "", ActionButton("Reset…", ConfirmResetAsync, "Reset preferences"));
         Footer("Doze validates every change and owns all power actions. Closing this window keeps Doze running; sessions are never restored after a restart or after the computer sleeps.");
     }
 
@@ -95,15 +95,59 @@ public sealed partial class MainWindow
 
     private void About()
     {
-        Card("Doze", $"Version {snapshot["version"]?.GetValue<string>() ?? "0.1.0"} · Windows {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}", "");
+        var hero = new Grid { ColumnSpacing = 20 };
+        hero.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        hero.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var icon = Asset("Doze.png", 72, "");
+        icon.VerticalAlignment = VerticalAlignment.Top;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        hero.Children.Add(icon);
+        var text = new StackPanel { Spacing = 2 };
+        text.Children.Add(new TextBlock { Text = "Doze", Style = Style("SubtitleTextBlockStyle") });
+        text.Children.Add(new TextBlock { Text = $"Version {snapshot["version"]?.GetValue<string>() ?? "0.1.0"} · Windows {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()}", Style = Style("CardDescriptionStyle"), FontSize = 14, IsTextSelectionEnabled = true });
+        text.Children.Add(new TextBlock { Text = "Your computer knows when it's bedtime.", Style = Style("CardTitleStyle"), Margin = new Thickness(0, 8, 0, 0) });
+        text.Children.Add(new TextBlock { Text = "Made by Fayeed Pawaskar", Style = Style("CardDescriptionStyle") });
+        var links = new WrapPanel { Spacing = 4, Margin = new Thickness(-12, 6, 0, 0) };
+        links.Children.Add(Link("Source Code", () => OpenLink("https://github.com/fayeed/doze")));
+        links.Children.Add(Link("Open data folder", OpenData));
+        text.Children.Add(links);
+        Grid.SetColumn(text, 1);
+        hero.Children.Add(text);
+        group.Children.Add(new Border { Style = Style("SettingsCardStyle"), Padding = new Thickness(20), Child = hero });
+
         Section("Also from the developer");
-        Card("Clypy", "A clipboard manager for Mac, Windows, Linux and phones, also by Fayeed Pawaskar.", "", ActionButton("Visit", () => OpenLink("https://clypy.app"), "Visit Clypy"));
+        Card("Clypy", "A clipboard manager for Mac, Windows, Linux and phones, also by Fayeed Pawaskar.", Asset("Clypy.png", 32, ""),
+            ActionButton("Visit", () => OpenLink("https://clypy.app"), "Visit Clypy"));
         Section("Privacy");
         Card("No account. No cloud. No ads.", "Doze does not record audio, simulate input or send telemetry. Preferences and optional diagnostics stay on this computer.", Tinted("", "DozeGreenBrush"));
         Section("Built with");
         Card("Rust and Tauri", "The engine owns sessions, power requests, validation and countdown safety.", Tinted("", "DozeOrangeBrush"));
         Card("Windows App SDK and WinUI 3", "Settings, timers and the final warning use native Windows controls and Mica.", Tinted("", "DozeBlueBrush"));
         Footer("Open-source components retain their respective licenses.");
+    }
+
+    private HyperlinkButton Link(string label, Func<Task> open)
+    {
+        var link = new HyperlinkButton { Content = label };
+        link.Click += async (_, _) =>
+        {
+            try { await open(); }
+            catch (Exception error) { Notify("Couldn't open " + label, error.Message, InfoBarSeverity.Error); }
+        };
+        return link;
+    }
+
+    private ContentDialog ResetDialog() => new()
+    {
+        XamlRoot = Root.XamlRoot, RequestedTheme = Root.ActualTheme,
+        Title = "Reset all preferences?",
+        Content = new TextBlock { Text = "Every page returns to its defaults, including launch at sign-in. Agent connections, permissions and running sessions are kept.", TextWrapping = TextWrapping.Wrap },
+        PrimaryButtonText = "Reset", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close
+    };
+
+    private async Task ConfirmResetAsync()
+    {
+        if (await ResetDialog().ShowAsync() == ContentDialogResult.Primary) ResetDraft();
     }
 
     private void Agents()

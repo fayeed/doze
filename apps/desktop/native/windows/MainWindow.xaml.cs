@@ -176,6 +176,7 @@ public sealed partial class MainWindow : Window
     {
         LiveSettings.Verify();
         Labels.Verify();
+        VerifySearch();
         foreach (var appearance in new[] { "light", "dark", "system" })
         {
             SetTheme(appearance);
@@ -212,6 +213,12 @@ public sealed partial class MainWindow : Window
         }
         VerifyText();
         VerifyControlCenter();
+        SelectPage("About Doze");
+        if (Descendants(Cards).OfType<Image>().Count() != 2 || !Shows("Visit Clypy") || !Shows("Source Code") || !Shows("Open data folder") || !Shows("Made by Fayeed Pawaskar"))
+            throw new InvalidOperationException("About is missing Doze's or Clypy's icon, or a link.");
+        SelectPage("Advanced");
+        if (!Shows("Reset preferences") || ResetDialog().PrimaryButtonText != "Reset" || ResetDialog().DefaultButton != ContentDialogButton.Close)
+            throw new InvalidOperationException("Reset does not ask for confirmation.");
         SelectPage("Agents");
         foreach (var expected in new[] { "Keep sessions alive while connected", "5 minutes", "Waiting for your approval", "Connection lost · keeping awake", "Command line", "Running ffmpeg" })
             if (!Descendants(Cards).Any(e => (e as TextBlock)?.Text.Contains(expected) == true || (e as ComboBoxItem)?.Content as string == expected
@@ -358,6 +365,7 @@ public sealed partial class MainWindow : Window
                             await VisualVerification.SaveAsync(Root, Path.Combine(directory, file + "-end.png"));
                         }
                         if (name == "Overview") await RenderSessionsAsync(directory, file);
+                        if (label == "" && name == "Advanced") await RenderDialogAsync(ResetDialog(), theme, Path.Combine(directory, $"Advanced-Reset-{theme}.png"));
                         if (label == "" && name == "Agents" && AgentClient("Codex") is JsonObject client)
                             await RenderAgentDialogsAsync(directory, theme, client);
                     }
@@ -386,6 +394,14 @@ public sealed partial class MainWindow : Window
         }
         snapshot["session"] = original;
         ShowPage();
+    }
+
+    private static async Task RenderDialogAsync(ContentDialog dialog, ElementTheme theme, string path)
+    {
+        dialog.RequestedTheme = theme;
+        var shown = dialog.ShowAsync();
+        try { await Task.Delay(300); await VisualVerification.SaveAsync(dialog, path); }
+        finally { dialog.Hide(); await shown; }
     }
 
     private async Task RenderAgentDialogsAsync(string directory, ElementTheme theme, JsonObject client)
