@@ -25,12 +25,18 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let path = app.path().app_config_dir()?.join("settings.json");
+            // A first launch shows Settings so people can find Doze in the menu bar.
+            let first_run = !path.exists();
             let (settings, error) = match state::load(&path) {
                 Ok(s) => (s, None),
                 Err(e) => (core::sessions::Settings::default(), Some(e)),
             };
-            let start_minimized =
-                settings.start_minimized || std::env::args().any(|a| a == "--startup");
+            if first_run {
+                // Saving defaults makes the welcome a one-time event.
+                let _ = state::persist(&path, &settings);
+            }
+            let at_login = std::env::args().any(|a| a == "--startup");
+            let start_minimized = at_login || (settings.start_minimized && !first_run);
             app.manage(state::start(app.handle().clone(), path, settings, error)?);
             let state = app.state::<state::AppState>();
             // Agent connections are optional; their failure must never prevent the tray app.

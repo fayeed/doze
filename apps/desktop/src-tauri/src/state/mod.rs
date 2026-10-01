@@ -14,7 +14,7 @@ use std::{
 };
 
 pub use model::{DialogView, Operation, Preference, Request, Snapshot};
-pub use persistence::load;
+pub use persistence::{load, persist};
 
 /// Commands enter a single-owner engine through this channel.
 /// Native power requests and COM interfaces stay on the engine thread.

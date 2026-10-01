@@ -31,7 +31,7 @@ pub fn load(path: &std::path::Path) -> Result<Settings, String> {
         }
     })
 }
-pub(super) fn persist(path: &std::path::Path, settings: &Settings) -> Result<(), String> {
+pub fn persist(path: &std::path::Path, settings: &Settings) -> Result<(), String> {
     std::fs::create_dir_all(path.parent().ok_or("Invalid settings path")?)
         .map_err(|e| e.to_string())?;
     let temporary = path.with_extension("tmp");
