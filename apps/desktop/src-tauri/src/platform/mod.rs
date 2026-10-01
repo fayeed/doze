@@ -58,10 +58,15 @@ impl NotificationManager for NativeNotifications {
             .builder()
             .title("Doze · Power countdown")
             .body(format!(
-                "{} in {}m {}s. Open Doze in the tray to cancel or snooze 15 minutes.",
+                "{} in {}m {}s. Open Doze in the {} to cancel or snooze 15 minutes.",
                 action.label(),
                 seconds / 60,
-                seconds % 60
+                seconds % 60,
+                if cfg!(target_os = "macos") {
+                    "menu bar"
+                } else {
+                    "tray"
+                }
             ))
             .show()
             .map_err(|e| e.to_string())
