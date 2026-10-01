@@ -212,6 +212,11 @@ public sealed partial class MainWindow : Window
         }
         VerifyText();
         VerifyControlCenter();
+        SelectPage("Agents");
+        foreach (var expected in new[] { "Keep sessions alive while connected", "5 minutes", "Waiting for your approval", "Connection lost · keeping awake", "Command line", "Running ffmpeg" })
+            if (!Descendants(Cards).Any(e => (e as TextBlock)?.Text.Contains(expected) == true || (e as ComboBoxItem)?.Content as string == expected
+                    || Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(e) == expected))
+                throw new InvalidOperationException($"Agents is missing \"{expected}\".");
         var before = draft.DefaultAwakeMinutes;
         draft.DefaultAwakeMinutes = 42;
         SelectPage("General");

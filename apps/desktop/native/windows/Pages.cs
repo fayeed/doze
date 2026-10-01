@@ -110,14 +110,17 @@ public sealed partial class MainWindow
     {
         var settings = snapshot["settings"]?["agents"] as JsonObject;
         var enabled = settings?["enabled"]?.GetValue<bool>() == true;
-        Card("Allow agents to connect", "Coding agents such as Codex and Claude Code connect through MCP on this computer.", "",
+        var rows = ExpanderCard("Allow agents to connect", "Coding agents such as Codex and Claude Code connect through MCP on this computer.", "",
             Switch("Allow agents to connect", enabled, value => _ = Send("agent-enable")));
         var lease = settings?["leaseSeconds"]?.GetValue<int>() ?? 300;
-        Card("Heartbeat lease", "How long a session stays awake between check-ins.", "",
+        Row(rows, "Heartbeat lease", "How long a session stays awake between check-ins.",
             Choice("Heartbeat lease", SecondChoices(lease, 60, 300, 900, 1800, 3600), lease, value => _ = bridge.SendAgentAsync("agent-lease", seconds: value)));
         var completion = settings?["defaultCompletion"]?.GetValue<string>() ?? "normal";
-        Card("When an agent finishes", "Used when the agent doesn't ask for an action.", "",
+        Row(rows, "When an agent finishes", "Used when the agent doesn't ask for an action.",
             Choice("When an agent finishes", ActionChoices.Prepend(("normal", "Return to normal")), completion, value => _ = bridge.SendAgentAsync("agent-default", action: value == "normal" ? null : value)));
+        var keepAlive = settings?["keepAliveWhileConnected"]?.GetValue<bool>() ?? true;
+        Row(rows, "Keep sessions alive while connected", "Renews a session through long steps without check-ins, such as a build, for up to 24 hours while the agent app stays connected. It never finishes a session.",
+            Switch("Keep sessions alive while connected", keepAlive, value => _ = Send("agent-keepalive")));
         Footer("A lost connection keeps the computer awake for up to 30 minutes, then releases without any action. An automatic action needs every overlapping agent to finish with the same approved action, followed by a final warning of at least five minutes.");
         Section("Agent connections");
         foreach (var name in new[] { "Codex", "Claude Code", "Generic MCP client" })
