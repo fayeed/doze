@@ -58,7 +58,13 @@ if (process.platform !== "win32") process.exit(0);
 // doze-cli.exe is the console front end for `doze run` and `doze watch`, installed beside it.
 const cli = spawnSync(
   "cargo",
-  ["build", "--release", "--locked", "--manifest-path", "native/cli/Cargo.toml"],
+  [
+    "build",
+    "--release",
+    "--locked",
+    "--manifest-path",
+    "native/cli/Cargo.toml",
+  ],
   { cwd: desktop, stdio: "inherit" },
 );
 if (cli.error) console.error(cli.error.message);

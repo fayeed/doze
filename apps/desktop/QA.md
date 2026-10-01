@@ -166,3 +166,58 @@ to wake and unlock the machine for recovery checks.
 While the debug app is running, use a separate Cargo target directory for lint and
 tests to avoid the native companion's Windows file lock. MCP integration supports
 `DOZE_MCP_TEST_RELEASE=1` for the same reason.
+
+# Windows Settings parity QA — 1 October 2026
+
+Windows 11 Pro on x64, one 2560×1440 display at 100% scaling, .NET SDK 8.0.425, Rust 1.96.
+The WinUI companion was brought to parity with the redesigned macOS companion and restyled
+after Windows 11 Settings. The real app was the current release build of `doze.exe` with the
+new companion, driven through UI Automation (the tree a screen reader uses). Screenshots of
+the real windows used `PrintWindow`, which captures only Doze's own window. The keep-awake
+request was checked with `CallNtPowerInformation(SystemExecutionState)`, which needs no
+administrator rights; `powercfg /requests` needs elevation and this session was not
+elevated. Another app held the display throughout, so the baseline state was `0x2`
+(display required); Doze adds `0x1` (system required).
+
+## Found and fixed
+
+| Problem | Fix |
+| --- | --- |
+| `doze run` from PowerShell returned in 3 ms with no exit status or output: `doze.exe` is a GUI program | `doze-cli.exe`, a console front end installed beside it that waits and returns the job's status |
+| Overview showed status text only; the custom Power Timer had no action picker | Control center and a timer window with action, presets and an end preview |
+| Durations were number fields; leases read 300; statuses read `connection lost` | Menus of friendly values; "5 minutes", "Connection lost · keeping awake", "Waiting for your approval" |
+| Reset applied immediately | Confirmation dialog, Cancel by default, says agent connections and sessions are kept |
+| Search matched page names only | Keyword search inside pages |
+| Re-measuring cards in `SizeChanged` caused a WinUI layout cycle (`0xC000027B`) at render time | Card controls are re-placed only when the width changes, using their natural width; unhandled WinUI exceptions are now reported instead of a bare crash code |
+| A `JsonValue` created from an `int` did not read as `long`, hiding Extend in verification | Numbers are parsed from their JSON text |
+
+## Verified
+
+| Area | Evidence |
+| --- | --- |
+| Checks | `native:build`, `native:test`, `test` (92 Rust tests, 6 Node lease tests), `mcp:test` (official MCP SDK against the real stdio binary, including command-line jobs and keep-alive), `lint` passed. `format:check` passes for every changed file; locally Prettier still flags four untouched files that git stores with LF but this `core.autocrlf=true` checkout writes with CRLF (`--end-of-line auto` passes) |
+| Native verification | Nine pages in light/dark; no number fields, engine ids, raw seconds or repeated titles; Overview with idle, active and final-warning sessions, with distinct preset names ("Keep awake for 15m", "Sleep in 15m") and in-place clock updates; Agents keep-alive, lease labels, statuses and a Command line job; About icons and links; Reset confirmation; keyword search; the timer window's action, presets (pressed through their automation peer), request fields and preview |
+| Visual review | Every page rendered in both themes at 1120×780, at 883×475 (a 1080p display at 200% scaling) and at the 680×480 minimum, plus scrolled ends, Overview idle/busy states, dialogs, four timer forms and the countdown states, 142 images. Each render also fails on truncated text, controls narrower than their content, or cards extending past the page. Renders were reviewed by eye. Higher DPI changes rasterization, not layout in effective pixels, so the 200% case is covered by its effective size |
+| Keep Awake | Overview "Keep awake for 15m": status "Keeping awake · 15m left", state `0x2` → `0x3`; Extend 15 minutes → "30m left · ends 22:09"; Stop → "Normal sleep allowed", state back to `0x2` |
+| Power Timer and final warning | Action set to Turn display off, More → Custom duration…, duration 1 minute, preview "Turn display off at 21:41, after the final warning", Start Timer → "Turn display off scheduled · 42s left", state `0x3`. The floating warning appeared on time ("Turn display off in 4:46", Stay Awake present) and Overview showed its Final warning section. Cancel action released the request (`0x2`) |
+| Stay Awake | A second 1-minute timer reached its warning ("Turn display off in 5:00 · From the Power Timer"); Stay Awake on Overview turned it into "Keeping awake · indefinitely / Until you stop it" (`0x3`); Stop released it |
+| Audio switches | "Keep awake while audio plays" and "Sleep after playback stops" switched on and off through the engine; After Playback's description showed "Waiting for playback to start" while on |
+| Agents | "Keep sessions alive while connected" saved `false` then `true` in settings.json. A `doze-cli run` job appeared as "Command line · Running ping -n 20 127.0.0.1 · Working · When finished: Return to normal" (`0x3`); Cancel session released it (`0x2`) and the job exited 1 |
+| Advanced and Reset | The Command line section showed the doze-cli.exe path, alias and example; Copy example put the exact command on the clipboard. Reset… opened "Reset all preferences?" with Cancel as the default; Cancel left settings.json byte-identical |
+| About | Doze's and Clypy's icons from the bundled Assets; Source Code opened github.com/fayeed/doze in the browser; Open data folder opened Explorer at `%APPDATA%\app.getdoze.desktop`; Visit Clypy launched without error |
+| Themes on screen | Real Mica windows captured in dark (system) and Light; the theme was restored to "Use system setting" |
+| Command line, PowerShell | `doze-cli run --then nothing -- cmd /c "ping … & echo job-done"` waited 6 s, printed Doze's lines and the job's output, exit 0; a job exiting 3 returned 3 with "Doze will not sleep"; `watch --pid` waited 8 s for a running ping, exit 0; a missing pid exited 1 with a message; no arguments printed the usage (exit 0) and an unknown command printed it with exit 2 |
+| Command line, cmd.exe | In a real console window, `doze-cli run --then nothing -- cmd /c "timeout /t 5"` counted down 5…0, exit 0; a job exiting 7 returned 7 (checked with delayed `!errorlevel!`) |
+| Ctrl-C | A real `GenerateConsoleCtrlEvent` in the job's console: ping printed "Control-C", Doze reported "exited with status -1073741510; Doze will not sleep" and released, and doze-cli returned that status |
+
+## Still requiring verification
+
+- After Playback turning itself off after Cancel on a real playback warning. The user was
+  using the computer during this run, so the idle requirement could not be met without
+  disturbing them; the one-shot behaviour is covered by the engine's tests.
+- An interactive cmd.exe prompt does not wait for GUI programs; `cmd /c` scripts do. Plain
+  `doze.exe run` therefore still returns early at an interactive prompt, which is why
+  Advanced and the README point to `doze-cli.exe`.
+- The NSIS installer was not rebuilt in this run, so `doze-cli.exe` in the installed folder
+  is configured (`tauri.windows.conf.json`) but not yet observed after installation.
+- Physical 150%/200% displays, keyboard-only navigation of every page, and Narrator.
