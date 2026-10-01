@@ -13,7 +13,8 @@
                 <TextBlock Text="Doze · Countdown" FontSize="12" />
             </StackPanel>
         </Grid>
-        <Grid Grid.Row="1" Margin="36,20,36,36" RowSpacing="24">
+        <ScrollViewer x:Name="ContentScroller" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="36,20,36,36" RowSpacing="24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
@@ -44,5 +45,6 @@
             <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True" />
             </StackPanel>
         </Grid>
+        </ScrollViewer>
     </Grid>
 </Window>

@@ -35,8 +35,13 @@ public sealed partial class CountdownWindow : Window
         SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Doze.ico"));
         AppWindow.IsShownInSwitchers = true;
-        var dpi = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
-        AppWindow.Resize(new SizeInt32((int)(560 * dpi), (int)(420 * dpi)));
+        ResizeWarning();
+        Notice.RegisterPropertyChangedCallback(InfoBar.IsOpenProperty, (_, _) =>
+        {
+            // Keep the action and remaining time visible when an error occupies
+            // the footer; closing the message restores the compact warning.
+            ResizeWarning();
+        });
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
             presenter.IsAlwaysOnTop = true;
@@ -60,6 +65,15 @@ public sealed partial class CountdownWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint window);
 
+    private void ResizeWarning()
+    {
+        var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
+        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        var width = Math.Min((int)(560 * scale), (int)(area.Width * 0.92));
+        var height = Math.Min((int)((Notice.IsOpen ? 540 : 420) * scale), (int)(area.Height * 0.92));
+        AppWindow.MoveAndResize(new RectInt32(area.X + (area.Width - width) / 2, area.Y + (area.Height - height) / 2, width, height));
+    }
+
     public void SetTheme(string value) => WindowAppearance.Apply(Root, value);
     public void StopAppearance() => WindowAppearance.Stop(Root);
 
@@ -80,15 +94,16 @@ public sealed partial class CountdownWindow : Window
         {
             if (message["countdown"] is JsonObject countdown)
             {
+                var newlyShown = !visible || preview;
                 preview = false;
                 clock.Stop();
                 action = countdown["action"]!.GetValue<string>();
                 UpdateTime(countdown["remaining"]!.GetValue<ulong>());
-                ShowWarning();
+                ShowWarning(newlyShown);
             }
             else if (!preview) HideWarning();
         }
-        else if (message["command"]?.GetValue<string>() is "cancel" or "snooze")
+        else if (message["command"]?.GetValue<string>() is "cancel" or "snooze" or "stay-awake")
         {
             SetPending(false);
             if (message["error"] is JsonValue error)
@@ -113,10 +128,16 @@ public sealed partial class CountdownWindow : Window
         CancelButton.Content = preview ? "Dismiss preview" : "Cancel action";
     }
 
-    private void ShowWarning()
+    private void ShowWarning(bool reset = true)
     {
-        Notice.IsOpen = false;
-        SetPending(false);
+        // Engine ticks can arrive before a command's acknowledgement. Keep the
+        // command disabled and its error visible while refreshing the same warning.
+        if (reset)
+        {
+            Notice.IsOpen = false;
+            ContentScroller.ChangeView(null, 0, null, true);
+            SetPending(false);
+        }
         // Appear on top without taking keyboard focus: typing elsewhere must never press
         // Snooze, Cancel or Stay Awake. Escape works once the warning is clicked.
         if (!visible && !verification) AppWindow.Show(false);
@@ -147,6 +168,7 @@ public sealed partial class CountdownWindow : Window
             HideWarning();
             return;
         }
+        Notice.IsOpen = false;
         SetPending(true);
         try { await send(command); }
         catch (Exception error)
@@ -185,6 +207,10 @@ public sealed partial class CountdownWindow : Window
         if (AppWindow.Presenter is not OverlappedPresenter { IsAlwaysOnTop: true })
             throw new InvalidOperationException("Countdown is not always on top.");
         await CommandAsync("cancel");
+        Receive(new JsonObject { ["type"] = "countdown", ["countdown"] = new JsonObject { ["action"] = "Sleep", ["remaining"] = 299UL } });
+        if (!pending || CancelButton.IsEnabled || SnoozeButton.IsEnabled || StayAwakeButton.IsEnabled)
+            throw new InvalidOperationException("Countdown update enabled duplicate commands before acknowledgement.");
+        await CommandAsync("snooze");
         Receive(new JsonObject { ["type"] = "countdown" });
         if (visible) throw new InvalidOperationException("Cancelled countdown did not hide.");
         Receive(new JsonObject { ["type"] = "countdown", ["countdown"] = new JsonObject { ["action"] = "Sleep", ["remaining"] = 300UL } });
@@ -194,6 +220,12 @@ public sealed partial class CountdownWindow : Window
         Receive(new JsonObject { ["type"] = "countdown", ["countdown"] = new JsonObject { ["action"] = "Sleep", ["remaining"] = 300UL } });
         if (StayAwakeButton.Visibility != Visibility.Visible) throw new InvalidOperationException("Stay Awake is missing from the real countdown.");
         await CommandAsync("stay-awake");
+        Receive(new JsonObject { ["type"] = "error", ["command"] = "stay-awake", ["error"] = "Test engine refusal" });
+        if (pending || !Notice.IsOpen || Notice.Message != "Test engine refusal")
+            throw new InvalidOperationException("Stay Awake failure was not shown or retry was blocked.");
+        Receive(new JsonObject { ["type"] = "countdown", ["countdown"] = new JsonObject { ["action"] = "Sleep", ["remaining"] = 299UL } });
+        if (!Notice.IsOpen)
+            throw new InvalidOperationException("Countdown update erased the command failure.");
         Receive(new JsonObject { ["type"] = "countdown" });
         if (visible) throw new InvalidOperationException("Stay Awake did not dismiss the countdown.");
     }
@@ -205,13 +237,45 @@ public sealed partial class CountdownWindow : Window
             foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
             {
                 Root.RequestedTheme = theme;
+                Root.Background = new SolidColorBrush(theme == ElementTheme.Dark
+                    ? Windows.UI.Color.FromArgb(255, 32, 32, 32)
+                    : Windows.UI.Color.FromArgb(255, 243, 243, 243));
                 Receive(new JsonObject { ["type"] = "preview", ["action"] = "Sleep" });
                 AppWindow.Show(false);
                 await Task.Delay(150);
                 await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"Countdown-{theme}.png"));
                 HideWarning();
+                Receive(new JsonObject { ["type"] = "countdown", ["countdown"] = new JsonObject { ["action"] = "Sleep", ["remaining"] = 300UL } });
+                AppWindow.Show(false);
+                await Task.Delay(150);
+                await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"Countdown-real-{theme}.png"));
+                Receive(new JsonObject { ["type"] = "error", ["command"] = "stay-awake", ["error"] = "Windows could not update the power request." });
+                await Task.Delay(150);
+                Root.UpdateLayout();
+                var content = (FrameworkElement)((FrameworkElement)ActionText.Parent).Parent;
+                if (ActionText.TransformToVisual(content).TransformPoint(new Windows.Foundation.Point(0, 0)).Y < 0)
+                    throw new InvalidOperationException("Countdown action is clipped by the error message.");
+                await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"Countdown-error-{theme}.png"));
+                // A 768-pixel display at 200% scaling leaves less than 384 DIPs
+                // for the warning. Verify that its essential content remains reachable.
+                var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
+                AppWindow.Resize(new SizeInt32((int)(560 * scale), (int)(360 * scale)));
+                await Task.Delay(150);
+                Root.UpdateLayout();
+                await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"Countdown-constrained-{theme}.png"));
+                if (ActionText.TransformToVisual(content).TransformPoint(new Windows.Foundation.Point(0, 0)).Y < 0)
+                    throw new InvalidOperationException("Countdown action is clipped on a constrained display.");
+                if (ContentScroller.ScrollableHeight <= 0)
+                    throw new InvalidOperationException("Constrained countdown cannot scroll to its controls.");
+                ContentScroller.ChangeView(null, ContentScroller.ScrollableHeight, null, true);
+                await Task.Delay(150);
+                var bottom = StayAwakeButton.TransformToVisual(ContentScroller).TransformPoint(new Windows.Foundation.Point(0, StayAwakeButton.ActualHeight)).Y;
+                if (bottom > ContentScroller.ActualHeight || bottom < 0)
+                    throw new InvalidOperationException("Constrained countdown controls are unreachable.");
+                await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"Countdown-constrained-controls-{theme}.png"));
+                HideWarning();
             }
         }
-        finally { HideWarning(); }
+        finally { Root.Background = null; HideWarning(); }
     }
 }

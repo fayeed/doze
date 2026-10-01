@@ -200,7 +200,12 @@ public sealed partial class MainWindow : Window
             foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
             {
                 Root.RequestedTheme = theme;
-                foreach (var name in new[] { "Session defaults", "Agents", "Menu guide", "About Doze" })
+                // RenderTargetBitmap omits Mica. Give exported verification images
+                // an opaque surface so the title and navigation remain readable.
+                Root.Background = new SolidColorBrush(theme == ElementTheme.Dark
+                    ? Windows.UI.Color.FromArgb(255, 32, 32, 32)
+                    : Windows.UI.Color.FromArgb(255, 243, 243, 243));
+                foreach (var name in Pages)
                 {
                     SelectPage(name);
                     await Task.Delay(150);
@@ -223,7 +228,7 @@ public sealed partial class MainWindow : Window
                 }
             }
         }
-        finally { AppWindow.Hide(); }
+        finally { Root.Background = null; AppWindow.Hide(); }
     }
 
     private Preferences ReadPreferences() => snapshot["settings"]!.Deserialize<Preferences>(EngineBridge.Json)!;
