@@ -37,10 +37,15 @@ public sealed class EngineBridge
         finally { writeLock.Release(); }
     }
 
-    public async Task SendSessionAsync(bool awake, long seconds)
+    /// Any engine command with optional fields such as seconds, action or id. The engine
+    /// validates every field and rejects unknown ones.
+    public async Task SendCommandAsync(string command, JsonObject? fields = null)
     {
+        var message = new JsonObject { ["command"] = command };
+        if (fields is not null)
+            foreach (var (key, value) in fields) message[key] = value?.DeepClone();
         await writeLock.WaitAsync();
-        try { await output.WriteLineAsync(JsonSerializer.Serialize(new { command = awake ? "awake" : "timer", seconds }, Json)); }
+        try { await output.WriteLineAsync(message.ToJsonString()); }
         finally { writeLock.Release(); }
     }
 

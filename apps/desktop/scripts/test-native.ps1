@@ -40,7 +40,7 @@ try {
     $process.StandardInput.WriteLine((@{ type = 'open'; view = 'settings'; snapshot = $snapshot } | ConvertTo-Json -Depth 10 -Compress))
     $stdout = $process.StandardOutput.ReadToEndAsync()
     $stderr = $process.StandardError.ReadToEndAsync()
-    if (-not $process.WaitForExit(30000)) {
+    if (-not $process.WaitForExit($(if ($RenderDirectory) { 300000 } else { 30000 }))) {
         $process.Kill()
         $process.WaitForExit()
         throw "Native WinUI page verification timed out: $($stderr.GetAwaiter().GetResult()) $($stdout.GetAwaiter().GetResult())"

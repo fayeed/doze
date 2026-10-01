@@ -7,52 +7,71 @@
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <Grid x:Name="TitleBar" Margin="20,0,140,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="240" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
+        <Grid x:Name="TitleBar" Margin="16,0,140,0">
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                <FontIcon Glyph="&#xE708;" FontSize="18" />
-                <TextBlock Text="Doze Settings" FontSize="12" />
+                <Image x:Name="TitleIcon" Width="16" Height="16" AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock Text="Doze Settings" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
             </StackPanel>
         </Grid>
+        <!-- Like Windows Settings: a full pane when there is room, icons only when narrow. -->
         <NavigationView x:Name="Navigation" Grid.Row="1"
-                        PaneDisplayMode="Left" OpenPaneLength="240"
+                        PaneDisplayMode="Auto" OpenPaneLength="280"
+                        ExpandedModeThresholdWidth="960" CompactModeThresholdWidth="560"
                         IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
-                        AlwaysShowHeader="False" SelectionChanged="Navigate">
+                        IsTitleBarAutoPaddingEnabled="False"
+                        AlwaysShowHeader="False" SelectionChanged="Navigate"
+                        DisplayModeChanged="DisplayModeChanged">
             <NavigationView.AutoSuggestBox>
-                <AutoSuggestBox x:Name="Search" PlaceholderText="Find a setting"
+                <AutoSuggestBox x:Name="Search" PlaceholderText="Find a setting" QueryIcon="Find"
+                                AutomationProperties.Name="Find a setting"
                                 TextChanged="SearchChanged" SuggestionChosen="SearchChosen"
                                 QuerySubmitted="SearchSubmitted" />
             </NavigationView.AutoSuggestBox>
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Overview" Tag="Overview"><NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" /></NavigationViewItem.Icon></NavigationViewItem>
-                <NavigationViewItem Content="General" Tag="General"><NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon></NavigationViewItem>
-                <NavigationViewItem Content="Session defaults" Tag="Session defaults"><NavigationViewItem.Icon><FontIcon Glyph="&#xE708;" /></NavigationViewItem.Icon></NavigationViewItem>
-                <NavigationViewItem Content="After playback" Tag="After playback"><NavigationViewItem.Icon><FontIcon Glyph="&#xE995;" /></NavigationViewItem.Icon></NavigationViewItem>
-                <NavigationViewItem Content="Notifications" Tag="Notifications"><NavigationViewItem.Icon><FontIcon Glyph="&#xEA8F;" /></NavigationViewItem.Icon></NavigationViewItem>
-                <NavigationViewItem Content="Agents" Tag="Agents"><NavigationViewItem.Icon><FontIcon Glyph="&#xE716;" /></NavigationViewItem.Icon></NavigationViewItem>
-                <NavigationViewItem Content="Advanced" Tag="Advanced"><NavigationViewItem.Icon><FontIcon Glyph="&#xE115;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Overview" Tag="Overview"><NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" Foreground="{ThemeResource DozeIndigoBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItemSeparator />
+                <NavigationViewItem Content="General" Tag="General"><NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" Foreground="{ThemeResource DozeGrayBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Session defaults" Tag="Session defaults"><NavigationViewItem.Icon><FontIcon Glyph="&#xE706;" Foreground="{ThemeResource DozeOrangeBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="After playback" Tag="After playback"><NavigationViewItem.Icon><FontIcon Glyph="&#xE995;" Foreground="{ThemeResource DozePinkBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Notifications" Tag="Notifications"><NavigationViewItem.Icon><FontIcon Glyph="&#xEA8F;" Foreground="{ThemeResource DozeRedBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItemSeparator />
+                <NavigationViewItem Content="Agents" Tag="Agents"><NavigationViewItem.Icon><FontIcon Glyph="&#xE716;" Foreground="{ThemeResource DozeTealBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Advanced" Tag="Advanced"><NavigationViewItem.Icon><FontIcon Glyph="&#xE9E9;" Foreground="{ThemeResource DozeGrayBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
-                <NavigationViewItem Content="Menu guide" Tag="Menu guide"><NavigationViewItem.Icon><SymbolIcon Symbol="Library" /></NavigationViewItem.Icon></NavigationViewItem>
-                <NavigationViewItem Content="About Doze" Tag="About Doze"><NavigationViewItem.Icon><FontIcon Glyph="&#xE946;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Menu guide" Tag="Menu guide"><NavigationViewItem.Icon><FontIcon Glyph="&#xE736;" Foreground="{ThemeResource DozeBrownBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="About Doze" Tag="About Doze"><NavigationViewItem.Icon><FontIcon Glyph="&#xE946;" Foreground="{ThemeResource DozeBlueBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
             </NavigationView.FooterMenuItems>
-            <Grid Margin="32,20,32,24" MaxWidth="920" HorizontalAlignment="Stretch">
+            <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <StackPanel Margin="0,0,0,24" Spacing="6">
-                    <TextBlock x:Name="PageTitle" FontSize="28" FontWeight="SemiBold" />
-                    <TextBlock x:Name="PageDescription" TextWrapping="Wrap" Opacity="0.7" />
-                </StackPanel>
+                <Grid Padding="40,12,40,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MaxWidth="1000" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PageTitle" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap"
+                               AutomationProperties.HeadingLevel="Level1" />
+                </Grid>
                 <ScrollViewer x:Name="PageScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel x:Name="Cards" Spacing="8" Padding="0,0,12,12" />
+                    <Grid Padding="40,0,40,36">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MaxWidth="1000" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel x:Name="Cards" />
+                    </Grid>
                 </ScrollViewer>
-                <InfoBar x:Name="Notice" Grid.Row="2" IsOpen="False" IsClosable="True" Margin="0,12,0,0" />
+                <Grid Grid.Row="2" Padding="40,0,40,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MaxWidth="1000" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True" />
+                </Grid>
             </Grid>
         </NavigationView>
     </Grid>

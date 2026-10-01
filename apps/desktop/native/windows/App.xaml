@@ -7,12 +7,91 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+            <!-- Icon colours for navigation and guide rows, tuned for contrast in each theme. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="DozeIndigoBrush" Color="#5B4BC4" />
+                    <SolidColorBrush x:Key="DozeGrayBrush" Color="#5C5C66" />
+                    <SolidColorBrush x:Key="DozeOrangeBrush" Color="#C75100" />
+                    <SolidColorBrush x:Key="DozePinkBrush" Color="#C2185B" />
+                    <SolidColorBrush x:Key="DozeRedBrush" Color="#C42B1C" />
+                    <SolidColorBrush x:Key="DozeTealBrush" Color="#00787A" />
+                    <SolidColorBrush x:Key="DozeBrownBrush" Color="#8A5A2B" />
+                    <SolidColorBrush x:Key="DozeBlueBrush" Color="#005FB8" />
+                    <SolidColorBrush x:Key="DozeGreenBrush" Color="#0F7B0F" />
+                    <SolidColorBrush x:Key="DozePurpleBrush" Color="#8E3AC4" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="DozeIndigoBrush" Color="#A59BFF" />
+                    <SolidColorBrush x:Key="DozeGrayBrush" Color="#C5C5CC" />
+                    <SolidColorBrush x:Key="DozeOrangeBrush" Color="#FFA24D" />
+                    <SolidColorBrush x:Key="DozePinkBrush" Color="#FF7AB0" />
+                    <SolidColorBrush x:Key="DozeRedBrush" Color="#FF8A80" />
+                    <SolidColorBrush x:Key="DozeTealBrush" Color="#4FD1C5" />
+                    <SolidColorBrush x:Key="DozeBrownBrush" Color="#D9A66F" />
+                    <SolidColorBrush x:Key="DozeBlueBrush" Color="#60CDFF" />
+                    <SolidColorBrush x:Key="DozeGreenBrush" Color="#6CCB5F" />
+                    <SolidColorBrush x:Key="DozePurpleBrush" Color="#D29BFF" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <SolidColorBrush x:Key="DozeIndigoBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozeGrayBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozeOrangeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozePinkBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozeRedBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozeTealBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozeBrownBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozeBlueBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozeGreenBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozePurpleBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <!-- The Windows 11 Settings card: 4 px corners, 16 px padding, at least 68 px tall. -->
             <Style x:Key="SettingsCardStyle" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="8" />
-                <Setter Property="Padding" Value="20" />
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+                <Setter Property="Padding" Value="16,12" />
+                <Setter Property="MinHeight" Value="68" />
+            </Style>
+            <Style x:Key="SettingsExpanderStyle" TargetType="Expander">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="MinHeight" Value="68" />
+                <Setter Property="Padding" Value="0" />
+            </Style>
+            <Style x:Key="SettingsRowStyle" TargetType="Border">
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="0,1,0,0" />
+                <Setter Property="Padding" Value="56,12,60,12" />
+                <Setter Property="MinHeight" Value="56" />
+            </Style>
+            <Style x:Key="CardTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="CardDescriptionStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="SectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="Margin" Value="1,28,0,8" />
+            </Style>
+            <Style x:Key="FooterTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Margin" Value="1,8,0,0" />
+                <Setter Property="IsTextSelectionEnabled" Value="True" />
+            </Style>
+            <Style x:Key="CodeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="IsTextSelectionEnabled" Value="True" />
+            </Style>
+            <Style x:Key="IconTileStyle" TargetType="Border">
+                <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
+                <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>

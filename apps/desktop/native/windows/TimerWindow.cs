@@ -107,7 +107,7 @@ public sealed partial class TimerWindow : Window
                 ? UntilSeconds((date.Date ?? throw new ArgumentException("Choose a date.")).Date + time.Time, DateTimeOffset.Now)
                 : DurationSeconds(minutes.Value);
             pending = true; start.IsEnabled = false; error.IsOpen = false;
-            await bridge.SendSessionAsync(awake, seconds);
+            await bridge.SendCommandAsync(awake ? "awake" : "timer", new JsonObject { ["seconds"] = seconds });
         }
         catch (Exception failure) { ShowError(failure.Message); }
     }

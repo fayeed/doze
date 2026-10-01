@@ -20,6 +20,11 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <Content Include="../../src-tauri/icons/icon.ico" Link="Assets/Doze.ico"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Shown on the About page and title bar; loaded from disk, never from the network. -->
+    <Content Include="../../src-tauri/icons/128x128@2x.png" Link="Assets/Doze.png"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../src-tauri/icons/clypy.png" Link="Assets/Clypy.png"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="PublishNativeXamlResources" AfterTargets="Publish">
     <ItemGroup>

@@ -175,7 +175,7 @@ public sealed partial class MainWindow
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         var entries = new List<(string Label, string? Action, bool Allowed)>
         { ("Keep awake", null, client["keepAwake"]?.GetValue<bool>() == true) };
-        entries.AddRange(Actions.Select(action => (ActionNames[action], (string?)action,
+        entries.AddRange(Actions.Select(action => (Labels.Action(action), (string?)action,
             client["actions"]!.AsArray().Any(a => a!.GetValue<string>() == action))));
         for (var index = 0; index < entries.Count; index++)
         {
