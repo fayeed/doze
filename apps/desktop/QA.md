@@ -234,3 +234,24 @@ stop, and verification fails on duplicate names.
 - An interactive cmd.exe prompt does not wait for GUI programs; `cmd /c` scripts do. Plain
   `doze.exe run` therefore still returns early at an interactive prompt, which is why
   Advanced and the README point to `doze-cli.exe`.
+
+## Sleep under Away Mode — 2 October 2026
+
+A Sleep from Doze at 01:15 the night before left the desktop unlocked: the System log
+showed `doze.exe` calling `SetSuspendState`, then "The system is entering Away Mode", and
+Windows Update and time-sync events all night with no sleep or resume. `powercfg /requests`
+(administrator) listed Logitech G HUB's `lghub_agent.exe` under AWAYMODE ("G HUB is shutting
+down"), and the Balanced plan's "Allow Away Mode Policy" is on when plugged in.
+
+Requests made with `PowerSetRequest`, like G HUB's, and `SetThreadExecutionState` Away Mode
+requests were both reproduced and neither appears in `CallNtPowerInformation`'s system
+execution state, so Doze now watches `GUID_SYSTEM_AWAYMODE` during a Sleep request instead,
+and locks the workstation before Sleep or Hibernate.
+
+Live check with the reinstalled build: a test process held an Away Mode request the way G HUB
+does, the warning was set to 15 seconds and a 1-minute Sleep timer started. The lock screen
+appeared at 08:43:56, Kernel-Power 187 (caller `doze.exe`) and 59 "entering Away Mode" followed
+at 08:43:57, and after the user signed in at 08:44:10 Overview's last event read "Windows
+stayed on in Away Mode instead of sleeping because another app requested it (powercfg
+/requests names it) · desktop locked". The test request was released and the 5-minute warning
+restored.
