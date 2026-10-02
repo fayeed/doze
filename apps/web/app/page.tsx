@@ -159,9 +159,16 @@ export default function Home() {
             <Wordmark height={30} />
           </a>
           <PlatformToggle />
-          <a className="button small" href="#download">
-            Download
-          </a>
+          <div className="nav-actions">
+            <a className="nav-clypy" href="https://clypy.app" aria-label="Check out Clypy">
+              <Image src="/brand/clypy.png" alt="" width={28} height={28} unoptimized />
+              <span><span className="nav-clypy-prefix">Check out </span>Clypy</span>
+              <span className="nav-clypy-arrow" aria-hidden="true">↗</span>
+            </a>
+            <a className="button small" href="#download">
+              Download
+            </a>
+          </div>
         </div>
       </header>
 
@@ -375,19 +382,6 @@ export default function Home() {
           <h2>{brand.tagline}</h2>
           <DownloadButton />
         </section>
-        <aside className="clypy-promo" aria-labelledby="clypy-title">
-          <div className="clypy-card">
-            <Image src="/brand/clypy.png" alt="" width={80} height={80} unoptimized />
-            <div className="clypy-copy">
-              <p className="tag">Also from the maker of Doze</p>
-              <h2 id="clypy-title">Meet Clypy.</h2>
-              <p>A clipboard manager for Mac, Windows, Linux and phones.</p>
-            </div>
-            <a className="button primary" href="https://clypy.app">
-              Check out Clypy <span aria-hidden="true">↗</span>
-            </a>
-          </div>
-        </aside>
       </main>
 
       <footer className="footer">

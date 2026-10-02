@@ -175,8 +175,26 @@ html:not([data-platform="windows"]) .only-win {
   justify-self: center;
 }
 
-.nav-inner > .button {
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
   justify-self: end;
+}
+
+.nav-clypy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.nav-clypy:hover {
+  color: var(--accent);
 }
 
 /* Hero */
@@ -757,53 +775,18 @@ html[data-platform="windows"] .download-card.win .button {
   color: var(--soft);
 }
 
-.clypy-promo {
-  max-width: var(--max);
-  margin: 0 auto;
-  padding: 0 24px 80px;
-}
-
-.clypy-card {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  padding: 36px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
-}
-
-.clypy-card > img {
-  flex-shrink: 0;
-}
-
-.clypy-copy {
-  flex: 1;
-}
-
-.clypy-copy h2 {
-  margin: 6px 0 8px;
-  font-size: 32px;
-  line-height: 1.15;
-  letter-spacing: -0.04em;
-}
-
-.clypy-copy > p:last-child {
-  color: var(--muted);
-  font-size: 16px;
-}
-
-.clypy-card .button {
-  flex-shrink: 0;
-}
-
 @media (max-width: 860px) {
-  .clypy-card {
-    flex-wrap: wrap;
+  .nav-clypy-prefix,
+  .nav-clypy-arrow {
+    display: none;
   }
 
-  .clypy-copy {
-    flex-basis: calc(100% - 108px);
+  .nav-actions {
+    gap: 8px;
+  }
+
+  .nav-actions .button.small {
+    padding: 0 12px;
   }
 
   .evening-steps {
@@ -839,20 +822,9 @@ html[data-platform="windows"] .download-card.win .button {
     grid-row: 2;
   }
 
-  .nav-inner > .button {
+  .nav-actions {
     grid-column: 2;
     grid-row: 1;
-  }
-
-  .clypy-promo {
-    padding: 0 16px 64px;
-  }
-
-  .clypy-card {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 20px;
-    padding: 28px;
   }
 
   .evening {
