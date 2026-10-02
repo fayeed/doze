@@ -2,30 +2,54 @@
 
 import { useId, type CSSProperties, type ReactNode } from "react";
 import type { Platform } from "@/lib/platform";
+import macosWallpaper from "./wallpapers/macos.svg";
+import windowsWallpaper from "./wallpapers/windows.svg";
 
 export const STAGE = { width: 960, height: 600 };
+
+const wallpapers: Record<Platform, string> = { macos: macosWallpaper.src, windows: windowsWallpaper.src };
 
 /** Where the Doze status item sits: menu bar on macOS, notification area on Windows. */
 export const trayIcon = (platform: Platform) =>
   platform === "macos" ? { x: 704, y: 13 } : { x: 752, y: 576 };
 
-/** Doze's status glyph, as drawn by the tray module: a moon, with a badge while awake or counting down. */
+/**
+ * Doze's status glyph, as drawn by tray::image from the brand glyphs: a ring while normal
+ * sleep is allowed, a filled sun while awake, the striped setting sun during a countdown.
+ * macOS renders it as a template; Windows paints active states in the sunset gradient.
+ */
 export function TrayGlyph({ platform, state }: { platform: Platform; state: 0 | 1 | 2 }) {
   const id = useId();
-  const moon = platform === "macos" ? "#1d1d1f" : "#5d5e6b";
-  const badge = platform === "macos" ? "#1d1d1f" : state === 2 ? "#eeae4a" : "#9b8bef";
+  const template = platform === "macos";
+  // The menu bar sits over a dark wallpaper, so the template glyph draws light.
+  const fill = template ? "#fff" : `url(#${id}-sun)`;
   return (
-    <svg className="sc-glyph" viewBox="0 0 32 32" aria-hidden="true">
-      <mask id={id}>
-        <rect width="32" height="32" fill="#fff" />
-        <circle cx="19" cy="10" r="10" fill="#000" />
-        {state ? <circle cx="25" cy="25" r="6" fill="#000" /> : null}
-      </mask>
-      <circle cx="14" cy="15" r="11" fill={moon} mask={`url(#${id})`} />
-      {state === 1 ? <circle cx="25" cy="25" r="4" fill={badge} /> : null}
-      {state === 2 ? <circle cx="25" cy="25" r="3.1" fill="none" stroke={badge} strokeWidth="1.8" /> : null}
+    <svg className="sc-glyph" viewBox="0 0 16 16" aria-hidden="true">
+      <defs>
+        <linearGradient id={`${id}-sun`} x1="0" y1="1.5" x2="0" y2="14.5" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#F6B25E" />
+          <stop offset="1" stopColor="#DE5F5A" />
+        </linearGradient>
+      </defs>
+      {state === 0 ? (
+        <circle cx="8" cy="8" r="5.75" fill="none" stroke={template ? "#fff" : "#5d5e6b"} strokeWidth="1.5" />
+      ) : state === 1 ? (
+        <circle cx="8" cy="8" r="6.5" fill={fill} />
+      ) : (
+        <path
+          fill={fill}
+          d="M1.68 9.5A6.5 6.5 0 1 1 14.32 9.5Z M2 10.5L14 10.5A6.5 6.5 0 0 1 13.12 12L2.88 12A6.5 6.5 0 0 1 2 10.5Z M12.15 13A6.5 6.5 0 0 1 3.85 13Z"
+        />
+      )}
     </svg>
   );
+}
+
+/** Doze's app icon: the rounded tile on macOS, the freestanding mark on Windows. */
+export function AppIcon({ platform, size }: { platform: Platform; size: number }) {
+  const file = platform === "macos" ? "doze-icon-macos" : "doze-icon-windows";
+  // eslint-disable-next-line @next/next/no-img-element -- recorded scenes, never shipped
+  return <img src={`/brand/${file}${size <= 32 ? "-16-32" : ""}.svg`} width={size} height={size} alt="" />;
 }
 
 const MAC_ICONS: Record<string, ReactNode> = {
@@ -165,7 +189,7 @@ export function Desktop({
 }) {
   return (
     <div className={`sc-stage sc-${platform}`} style={{ width: STAGE.width, height: STAGE.height }}>
-      <div className="sc-wallpaper" />
+      <div className="sc-wallpaper" style={{ backgroundImage: `url(${wallpapers[platform]})` }} />
       {dim > 0 ? <div className="sc-dim" style={{ opacity: dim }} /> : null}
       {platform === "macos" ? (
         <div className="sc-menubar">
@@ -198,7 +222,11 @@ export function Desktop({
             <span style={{ background: "linear-gradient(135deg,#ffd36b,#f5a524)" }} />
             <span style={{ background: "linear-gradient(135deg,#6fb3ff,#2b74e8)" }} />
             <span style={{ background: "linear-gradient(135deg,#3b3b44,#16161c)" }} />
-            <span style={{ background: "linear-gradient(135deg,#8f7cff,#4a36d1)" }} />
+            {frontApp === "Doze" ? (
+              <i className="sc-app-doze">
+                <AppIcon platform="windows" size={24} />
+              </i>
+            ) : null}
           </div>
           <span className="sc-fluent sc-chevron-up">{""}</span>
           <div className="sc-tray" style={{ left: trayIcon("windows").x - 14 }}>
@@ -345,7 +373,7 @@ export function Notice({ platform, title, body, opacity }: { platform: Platform;
       style={{ opacity, transform: platform === "macos" ? `translateX(${offset}px)` : `translateY(${offset}px)` }}
     >
       <span className="sc-notice-icon">
-        <TrayGlyph platform={platform} state={0} />
+        <AppIcon platform={platform} size={32} />
       </span>
       <div>
         <strong>{title}</strong>

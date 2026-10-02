@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1200" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#161735"/>
+      <stop offset="0.3" stop-color="#2f2a5c"/>
+      <stop offset="0.52" stop-color="#7d4a78"/>
+      <stop offset="0.66" stop-color="#d4736f"/>
+      <stop offset="0.76" stop-color="#f39a6b"/>
+      <stop offset="0.84" stop-color="#f8c48c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.6" cy="0.72" r="0.5">
+      <stop offset="0" stop-color="#ffe2ad" stop-opacity="0.95"/>
+      <stop offset="0.25" stop-color="#ffb37e" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ff8f7a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff0cf"/>
+      <stop offset="1" stop-color="#ffbe7d"/>
+    </linearGradient>
+    <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc79a" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#ffc79a" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#ffc79a" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="h1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d77a7c"/><stop offset="1" stop-color="#b9637a"/></linearGradient>
+    <linearGradient id="h2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a5577a"/><stop offset="1" stop-color="#7f456e"/></linearGradient>
+    <linearGradient id="h3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6e3d6c"/><stop offset="1" stop-color="#4c2e5c"/></linearGradient>
+    <linearGradient id="h4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f2b57"/><stop offset="1" stop-color="#2a2045"/></linearGradient>
+    <linearGradient id="h5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#211b3c"/><stop offset="1" stop-color="#14122a"/></linearGradient>
+    <filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1920" height="1200"><feGaussianBlur stdDeviation="28"/></filter>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" stitchTiles="stitch"/>
+      <feColorMatrix values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.09 0"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1200" fill="url(#sky)"/>
+  <rect width="1920" height="1200" fill="url(#glow)"/>
+  <g fill="#fff">
+    <circle cx="220" cy="120" r="1.6" opacity="0.7"/><circle cx="410" cy="210" r="1.2" opacity="0.5"/>
+    <circle cx="640" cy="90" r="1.8" opacity="0.8"/><circle cx="880" cy="170" r="1.1" opacity="0.5"/>
+    <circle cx="1320" cy="110" r="1.5" opacity="0.6"/><circle cx="1560" cy="190" r="1.2" opacity="0.5"/>
+    <circle cx="1780" cy="80" r="1.7" opacity="0.7"/><circle cx="1090" cy="60" r="1.2" opacity="0.5"/>
+  </g>
+  <circle cx="1150" cy="770" r="230" fill="#ffd59a" opacity="0.5" filter="url(#soft)"/>
+  <circle cx="1150" cy="790" r="120" fill="url(#sun)"/>
+  <path d="M0 812 C 240 730 460 800 700 776 S 1120 700 1400 736 S 1760 806 1920 760 V1200 H0Z" fill="url(#h1)"/>
+  <rect y="720" width="1920" height="300" fill="url(#haze)"/>
+  <path d="M0 872 C 220 830 420 900 690 868 S 1080 808 1330 846 S 1700 902 1920 860 V1200 H0Z" fill="url(#h2)"/>
+  <rect y="820" width="1920" height="240" fill="url(#haze)" opacity="0.55"/>
+  <path d="M0 958 C 300 900 520 990 820 950 S 1260 900 1540 948 S 1820 990 1920 960 V1200 H0Z" fill="url(#h3)"/>
+  <path d="M0 1040 C 260 1000 560 1068 900 1030 S 1420 990 1700 1036 S 1880 1060 1920 1050 V1200 H0Z" fill="url(#h4)"/>
+  <path d="M0 1112 C 340 1076 700 1140 1040 1108 S 1600 1080 1920 1116 V1200 H0Z" fill="url(#h5)"/>
+  <rect width="1920" height="1200" filter="url(#grain)"/>
+</svg>

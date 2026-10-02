@@ -47,7 +47,7 @@ pnpm dev:desktop
 
 - `apps/desktop` — native tray menus, WinUI 3 settings, Tauri 2, and Rust
 - `apps/web` — Next.js App Router landing page, with separate macOS and Windows clips recorded from `components/scenes` (see [its README](apps/web/components/README.md))
-- `packages/brand` — shared product name, domain, tagline and icon artwork (`icon.svg` for Windows and the web, `icon-macos.svg` for the macOS app icon)
+- `packages/brand` — shared product name, domain, tagline and palette; the brand artwork (app icons, tray glyphs, wordmarks) lives in `apps/web/public/brand`
 - `packages/config` — shared TypeScript compiler options
 
 See [the desktop README](apps/desktop/README.md) for native API choices, verification commands, and remaining hardware validation, and [QA.md](apps/desktop/QA.md) for the latest Windows and macOS QA runs.

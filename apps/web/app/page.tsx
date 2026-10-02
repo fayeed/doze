@@ -1,5 +1,5 @@
 import { brand } from "@doze/brand";
-import { Logo, OS } from "@/components/os";
+import { Mark, OS, Wordmark } from "@/components/os";
 import { PlatformToggle, PlatformVideo } from "@/components/platform";
 
 const releases = `${brand.repository}/releases/latest`;
@@ -117,10 +117,6 @@ const faqs = [
     q: "Does it phone home?",
     a: "No account, no cloud, no telemetry, no ads. Preferences and optional diagnostics stay on your computer.",
   },
-  {
-    q: "How much does it cost?",
-    a: "Nothing. Doze is free to download from GitHub Releases, and its source is public.",
-  },
 ];
 
 function DownloadButton({ className = "button primary" }: { className?: string }) {
@@ -151,16 +147,15 @@ export default function Home() {
       <header className="nav">
         <div className="nav-inner">
           <a className="brand" href="#top" aria-label={`${brand.name} home`}>
-            <Logo />
-            {brand.name}
+            <Wordmark height={30} />
           </a>
           <nav aria-label="Primary">
             <a href="#features">Features</a>
             <a href="#agents">Agents</a>
+            <a href="#privacy">Privacy</a>
             <a href="#faq">FAQ</a>
-            <a href={brand.repository}>GitHub</a>
           </nav>
-          <a className="button small" href={releases}>
+          <a className="button small" href="#download">
             Download
           </a>
         </div>
@@ -186,7 +181,7 @@ export default function Home() {
           <ul className="specs">
             <li>
               <Check />
-              Free and open source
+              No account needed
             </li>
             <li>
               <Check />
@@ -230,7 +225,7 @@ export default function Home() {
                 <figure className="promise">
                   <blockquote>{promises[index === 1 ? 0 : 1].quote}</blockquote>
                   <figcaption>
-                    <Logo size={22} />
+                    <Mark size={22} />
                     {promises[index === 1 ? 0 : 1].who}
                   </figcaption>
                 </figure>
@@ -274,7 +269,7 @@ export default function Home() {
           </ul>
         </section>
 
-        <section className="privacy" aria-labelledby="privacy-title">
+        <section className="privacy" id="privacy" aria-labelledby="privacy-title">
           <h2 id="privacy-title">Quiet by design</h2>
           <dl>
             <div>
@@ -293,8 +288,8 @@ export default function Home() {
         </section>
 
         <section className="download" id="download" aria-labelledby="download-title">
-          <h2 id="download-title">Free. For Mac and PC.</h2>
-          <p>No subscription, no account, no catch. Download it and put your computer on a sensible bedtime.</p>
+          <h2 id="download-title">Get Doze for Mac and PC</h2>
+          <p>No account, no cloud, no telemetry. Download it and put your computer on a sensible bedtime.</p>
           <div className="download-cards">
             <article className="download-card mac">
               <h3>macOS</h3>
@@ -346,7 +341,7 @@ export default function Home() {
         </section>
 
         <section className="closing">
-          <Logo size={64} />
+          <Mark size={72} />
           <h2>{brand.tagline}</h2>
           <DownloadButton />
         </section>
@@ -354,15 +349,13 @@ export default function Home() {
 
       <footer className="footer">
         <div className="footer-inner">
-          <p className="brand">
-            <Logo size={22} />
-            {brand.name}
-          </p>
+          <Wordmark height={26} />
           <nav aria-label="Footer">
-            <a href={releases}>Download</a>
-            <a href={brand.repository}>Source</a>
-            <a href={`${brand.repository}/blob/main/apps/desktop/README.md#agents-and-mcp`}>MCP guide</a>
-            <a href={`${brand.repository}/blob/main/apps/desktop/README.md#command-line-jobs`}>Command line</a>
+            <a href="#features">Features</a>
+            <a href="#agents">Agents</a>
+            <a href="#privacy">Privacy</a>
+            <a href="#faq">FAQ</a>
+            <a href="#download">Download</a>
           </nav>
           <p className="footer-note">Made by Fayeed Pawaskar · No telemetry, ever.</p>
         </div>

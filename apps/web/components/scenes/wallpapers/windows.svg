@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1200" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="bg" cx="0.6" cy="0.56" r="0.9">
+      <stop offset="0" stop-color="#3b2958"/>
+      <stop offset="0.42" stop-color="#1e1a3f"/>
+      <stop offset="1" stop-color="#0a0b1d"/>
+    </radialGradient>
+    <radialGradient id="aura" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffb46f" stop-opacity="0.7"/>
+      <stop offset="0.45" stop-color="#e2607a" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#e2607a" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Across the petal: lit edge to shaded fold, so each petal reads as a curved ribbon. -->
+    <linearGradient id="fold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe7bf"/>
+      <stop offset="0.45" stop-color="#f7a965"/>
+      <stop offset="1" stop-color="#c94a68"/>
+    </linearGradient>
+    <linearGradient id="foldDeep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7b072"/>
+      <stop offset="0.5" stop-color="#de5f5a"/>
+      <stop offset="1" stop-color="#6a2c74"/>
+    </linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="0.7" stop-color="#fff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="tip" maskContentUnits="objectBoundingBox"><rect width="1" height="1" fill="url(#fade)"/></mask>
+    <filter id="blur" filterUnits="userSpaceOnUse" x="0" y="0" width="1920" height="1200"><feGaussianBlur stdDeviation="70"/></filter>
+    <filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1920" height="1200"><feGaussianBlur stdDeviation="22"/></filter>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="3" stitchTiles="stitch"/>
+      <feColorMatrix values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.06 0"/>
+    </filter>
+    <path id="p" d="M0 0 C 170 -170 500 -190 690 -50 C 560 60 230 100 0 0 Z"/>
+    <g id="bloom">
+      <use href="#p" fill="url(#foldDeep)" transform="rotate(-160) scale(1.0)"/>
+      <use href="#p" fill="url(#foldDeep)" transform="rotate(-112) scale(0.9)"/>
+      <use href="#p" fill="url(#foldDeep)" transform="rotate(158) scale(1.08)"/>
+      <use href="#p" fill="url(#fold)" transform="rotate(-62) scale(1.12)"/>
+      <use href="#p" fill="url(#fold)" transform="rotate(-14) scale(1.18)"/>
+      <use href="#p" fill="url(#fold)" transform="rotate(36) scale(1.06)"/>
+      <use href="#p" fill="url(#fold)" transform="rotate(88) scale(0.96)"/>
+      <use href="#p" fill="url(#foldDeep)" transform="rotate(-210) scale(0.86)"/>
+    </g>
+  </defs>
+  <rect width="1920" height="1200" fill="url(#bg)"/>
+  <circle cx="1140" cy="640" r="640" fill="url(#aura)" filter="url(#blur)"/>
+  <use href="#bloom" transform="translate(1140 650)" filter="url(#glow)" opacity="0.7"/>
+  <g transform="translate(1140 650)" opacity="0.82" style="isolation:isolate">
+    <use href="#p" fill="url(#foldDeep)" transform="rotate(-160) scale(1.0)" style="mix-blend-mode:screen"/>
+    <use href="#p" fill="url(#foldDeep)" transform="rotate(-112) scale(0.9)" style="mix-blend-mode:screen"/>
+    <use href="#p" fill="url(#foldDeep)" transform="rotate(158) scale(1.08)" style="mix-blend-mode:screen"/>
+    <use href="#p" fill="url(#fold)" transform="rotate(-62) scale(1.12)" style="mix-blend-mode:screen"/>
+    <use href="#p" fill="url(#fold)" transform="rotate(-14) scale(1.18)" style="mix-blend-mode:screen"/>
+    <use href="#p" fill="url(#fold)" transform="rotate(36) scale(1.06)" style="mix-blend-mode:screen"/>
+    <use href="#p" fill="url(#fold)" transform="rotate(88) scale(0.96)" style="mix-blend-mode:screen"/>
+    <use href="#p" fill="url(#foldDeep)" transform="rotate(-210) scale(0.86)" style="mix-blend-mode:screen"/>
+  </g>
+  <circle cx="1140" cy="650" r="90" fill="#fff3da" opacity="0.6" filter="url(#glow)"/>
+  <rect width="1920" height="1200" filter="url(#grain)"/>
+</svg>

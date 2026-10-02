@@ -44,18 +44,9 @@ body:has(.sc-stage) {
   inset: 0;
 }
 
-.sc-macos .sc-wallpaper {
-  background:
-    radial-gradient(70% 60% at 18% 8%, #9c8cf5 0%, transparent 60%),
-    radial-gradient(80% 70% at 100% 100%, #f7b28c 0%, transparent 58%),
-    linear-gradient(160deg, #3f3596 0%, #a46cb4 55%, #f1b996 100%);
-}
-
-.sc-windows .sc-wallpaper {
-  background:
-    radial-gradient(42% 55% at 64% 58%, #cfe2ff 0%, #6aa4ff 30%, transparent 62%),
-    radial-gradient(60% 70% at 30% 90%, #4a63e8 0%, transparent 60%),
-    linear-gradient(180deg, #0d2a7a 0%, #1f55d8 58%, #6c9cf4 100%);
+.sc-wallpaper {
+  background-size: cover;
+  background-position: center;
 }
 
 .sc-dim {
@@ -79,8 +70,10 @@ body:has(.sc-stage) {
   align-items: center;
   gap: 18px;
   padding: 0 14px;
-  background: rgb(255 255 255 / 0.42);
+  /* Over a dark wallpaper the menu bar is translucent with light text, as on macOS. */
+  background: rgb(18 16 40 / 0.22);
   backdrop-filter: blur(24px) saturate(1.6);
+  color: #fff;
   font-weight: 500;
 }
 
@@ -109,7 +102,7 @@ body:has(.sc-stage) {
   top: 6px;
   height: 14px;
   fill: none;
-  stroke: #1d1d1f;
+  stroke: #fff;
   stroke-width: 1.7;
   stroke-linecap: round;
 }
@@ -126,7 +119,7 @@ body:has(.sc-stage) {
 }
 
 .sc-sys .fill {
-  fill: #1d1d1f;
+  fill: #fff;
   stroke: none;
 }
 
@@ -169,6 +162,15 @@ body:has(.sc-stage) {
   top: 8px;
   display: flex;
   gap: 8px;
+}
+
+.sc-app-doze {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.6);
 }
 
 .sc-apps span {
@@ -1137,7 +1139,7 @@ body:has(.sc-stage) {
   width: 30px;
   height: 30px;
   fill: none;
-  stroke: #6b55e6;
+  stroke: #2c6fe8;
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1234,14 +1236,8 @@ body:has(.sc-stage) {
   flex: none;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #4a3fc4, #231e6b);
-}
-
-.sc-notice-icon .sc-glyph circle {
-  fill: #fdf1d6;
+  width: 32px;
+  height: 32px;
 }
 
 .sc-notice strong {
@@ -1345,7 +1341,7 @@ body:has(.sc-stage) {
 .sc-meter i {
   width: 3px;
   border-radius: 1px;
-  background: #9b8bef;
+  background: #f6b25e;
 }
 
 /* Terminal */
@@ -1365,7 +1361,7 @@ body:has(.sc-stage) {
 }
 
 .sc-prompt {
-  color: #a898ff;
+  color: #f6b25e;
 }
 
 .sc-caret {

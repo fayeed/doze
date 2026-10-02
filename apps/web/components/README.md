@@ -1,8 +1,8 @@
 # Web components
 
 - `platform.tsx` — the macOS / Windows toggle and `PlatformVideo`, which plays the clip recorded for the platform being shown. `lib/platform.ts` picks the platform before first paint (a `?platform=` link, then the visitor's last choice, then their OS) and stores it on `<html data-platform>`.
-- `os.tsx` — `OS` for copy that differs by platform, and the logo mark.
-- `scenes/` — recreations of Doze's menus, Settings, timer and countdown windows on each platform. They are the source of every clip in `public/media/{macos,windows}`.
+- `os.tsx` — `OS` for copy that differs by platform, plus the brand mark and wordmark from `public/brand`.
+- `scenes/` — recreations of Doze's menus, Settings, timer and countdown windows on each platform. They are the source of every clip in `public/media/{macos,windows}`. Each platform has its own original wallpaper in `scenes/wallpapers` (dusk hills for macOS, a sunset bloom for Windows), and the tray glyphs and app icons come from `public/brand`.
 
 ## Re-recording the clips
 

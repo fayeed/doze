@@ -12,11 +12,13 @@
     "lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features --locked -- -D warnings && cargo clippy --manifest-path native/cli/Cargo.toml --all-targets --locked -- -D warnings",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --locked && node --test scripts/runtime-lease.test.mjs",
     "mcp:test": "node scripts/test-mcp.mjs",
-    "native:render": "node scripts/render-native.mjs"
+    "native:render": "node scripts/render-native.mjs",
+    "icons": "node scripts/render-icons.mjs"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@tauri-apps/cli": "^2.8.4",
-    "prettier": "^3.9.9"
+    "prettier": "^3.9.9",
+    "puppeteer-core": "^25.12.0"
   }
 }

@@ -32,6 +32,9 @@ importers:
       prettier:
         specifier: ^3.9.9
         version: 3.9.9
+      puppeteer-core:
+        specifier: ^25.12.0
+        version: 25.12.0
 
   apps/web:
     dependencies:

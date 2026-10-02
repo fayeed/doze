@@ -464,39 +464,42 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
         let _ = tray.set_title(menu_bar_title(snapshot));
     }
 }
-// Native template images ignore color, so countdown uses a ring and awake a filled dot.
+// The brand glyphs (apps/web/public/brand/doze-glyph-*.svg) at 32 px: a ring while normal
+// sleep is allowed, a filled sun while awake, and the striped setting sun during a countdown.
+// Native template images ignore color, so the states differ in shape; Windows also paints the
+// active states in the brand's amber-to-coral gradient.
 pub(crate) fn image(status: u8) -> tauri::image::Image<'static> {
+    const TOP: [f64; 3] = [246.0, 178.0, 94.0];
+    const BOTTOM: [f64; 3] = [222.0, 95.0, 90.0];
     let mut pixels = vec![0u8; 32 * 32 * 4];
     for y in 0..32 {
         for x in 0..32 {
-            let mut moon_samples = 0;
-            let mut badge_samples = 0;
+            let mut coverage = 0;
             for sy in 0..4 {
                 for sx in 0..4 {
                     let px = x as f64 + (sx as f64 + 0.5) / 4.0;
                     let py = y as f64 + (sy as f64 + 0.5) / 4.0;
-                    let moon =
-                        (px - 14.0).hypot(py - 15.0) < 11.0 && (px - 19.0).hypot(py - 10.0) > 10.0;
-                    let radius = (px - 25.0).hypot(py - 25.0);
-                    let badge = status > 0 && radius < 4.0 && (status != 2 || radius > 2.2);
-                    if badge {
-                        badge_samples += 1;
-                    } else if moon {
-                        moon_samples += 1;
-                    }
+                    let radius = (px - 16.0).hypot(py - 16.0);
+                    let covered = match status {
+                        0 => (radius - 11.5).abs() <= 1.5,
+                        1 => radius <= 13.0,
+                        // Two gaps cut the lower half into horizon stripes.
+                        _ => {
+                            radius <= 13.0
+                                && !(19.0..21.0).contains(&py)
+                                && !(24.0..26.0).contains(&py)
+                        }
+                    };
+                    coverage += u32::from(covered);
                 }
             }
-            let coverage = moon_samples + badge_samples;
             if coverage > 0 {
                 let i = (y * 32 + x) * 4;
-                let color = if badge_samples > moon_samples {
-                    if status == 2 {
-                        [238, 174, 74]
-                    } else {
-                        [155, 139, 239]
-                    }
-                } else {
+                let color = if status == 0 {
                     [165, 166, 180]
+                } else {
+                    let t = ((y as f64 + 0.5 - 3.0) / 26.0).clamp(0.0, 1.0);
+                    [0, 1, 2].map(|c| (TOP[c] + (BOTTOM[c] - TOP[c]) * t).round() as u8)
                 };
                 pixels[i..i + 3].copy_from_slice(&color);
                 pixels[i + 3] = (coverage * 255 / 16) as u8;
@@ -698,9 +701,14 @@ mod tests {
         assert!(old.menu_bar_time);
     }
     #[test]
-    fn template_badges_distinguish_awake_from_countdown_without_color() {
-        let center_alpha = (25 * 32 + 25) * 4 + 3;
-        assert_eq!(super::image(1).rgba()[center_alpha], 255);
-        assert_eq!(super::image(2).rgba()[center_alpha], 0);
+    fn template_glyphs_distinguish_states_without_color() {
+        let alpha = |status, x: usize, y: usize| super::image(status).rgba()[(y * 32 + x) * 4 + 3];
+        // The ring is hollow; the sun and the setting sun are filled at the center.
+        assert_eq!(alpha(0, 16, 16), 0);
+        assert_eq!(alpha(1, 16, 16), 255);
+        assert_eq!(alpha(2, 16, 16), 255);
+        // Only the setting sun has horizon gaps.
+        assert_eq!(alpha(1, 16, 19), 255);
+        assert_eq!(alpha(2, 16, 19), 0);
     }
 }

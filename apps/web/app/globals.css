@@ -1,14 +1,16 @@
 :root {
   color-scheme: light;
-  --bg: #ffffff;
-  --ink: #0b0b0f;
-  --muted: #7b828e;
-  --soft: #a7adb7;
-  --card: #f6f6f7;
-  --card-strong: #efeff1;
-  --line: #e7e7ea;
-  --accent: #5a45e0;
-  --accent-soft: #efecff;
+  /* Brand palette: setting sun on warm paper (apps/web/public/brand). */
+  --bg: #fbf8f3;
+  --ink: #17182b;
+  --muted: #6c6773;
+  --soft: #b4aca3;
+  --card: #f4eee5;
+  --card-strong: #ece3d6;
+  --line: #e6ddd0;
+  --accent: #c64f4a;
+  --accent-soft: #fbe4d8;
+  --sun: linear-gradient(180deg, #f6b25e 0%, #de5f5a 100%);
   --radius: 28px;
   --max: 1120px;
 }
@@ -98,7 +100,7 @@ html:not([data-platform="windows"]) .only-win {
 
 .button:hover {
   transform: translateY(-1px);
-  background: #e6e6e9;
+  background: #e4d9ca;
 }
 
 .button.primary {
@@ -107,7 +109,7 @@ html:not([data-platform="windows"]) .only-win {
 }
 
 .button.primary:hover {
-  background: #26262d;
+  background: #2a2b42;
 }
 
 .button.small {
@@ -133,7 +135,7 @@ html:not([data-platform="windows"]) .only-win {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgb(255 255 255 / 0.82);
+  background: rgb(251 248 243 / 0.84);
   backdrop-filter: saturate(1.6) blur(16px);
   -webkit-backdrop-filter: saturate(1.6) blur(16px);
   border-bottom: 1px solid rgb(0 0 0 / 0.04);
@@ -147,6 +149,11 @@ html:not([data-platform="windows"]) .only-win {
   height: 64px;
   margin: 0 auto;
   padding: 0 24px;
+}
+
+::selection {
+  background: #f8cfa6;
+  color: var(--ink);
 }
 
 .brand {
@@ -243,7 +250,7 @@ html:not([data-platform="windows"]) .only-win {
 
 html:not([data-platform="windows"]) .toggle [data-value="macos"],
 html[data-platform="windows"] .toggle [data-value="windows"] {
-  background: #fff;
+  background: #fffdf9;
   color: var(--ink);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 2px 8px rgb(0 0 0 / 0.04);
 }
@@ -330,7 +337,10 @@ html[data-platform="windows"] .toggle [data-value="windows"] {
 }
 
 .intro h2 span {
-  color: var(--accent);
+  background: var(--sun);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .intro > p,
@@ -439,17 +449,17 @@ html[data-platform="windows"] .toggle [data-value="windows"] {
   overflow-x: auto;
   padding: 28px 30px;
   border-radius: var(--radius);
-  background: #111117;
-  color: #f2f2f5;
+  background: var(--ink);
+  color: #fbf8f3;
   font: 400 14.5px/1.75 var(--font-mono), ui-monospace, monospace;
 }
 
 .terminal .dim {
-  color: #7f8494;
+  color: #8a8ba3;
 }
 
 .terminal .prompt {
-  color: #a898ff;
+  color: #f6b25e;
 }
 
 /* Audiences */
@@ -530,7 +540,7 @@ html[data-platform="windows"] .toggle [data-value="windows"] {
 html:not([data-platform="windows"]) .download-card.mac,
 html[data-platform="windows"] .download-card.win {
   border-color: var(--ink);
-  background: #fff;
+  background: #fffdf9;
 }
 
 html[data-platform="windows"] .download-card.win {
