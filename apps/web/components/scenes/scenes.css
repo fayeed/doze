@@ -1,0 +1,1392 @@
+/* Stage-sized recreations of Doze on macOS and Windows, recorded into the site's videos. */
+body:has(.sc-stage) {
+  margin: 0;
+  background: #000;
+}
+
+.sc-stage {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  color: #1d1d1f;
+  font-size: 13px;
+  line-height: 1.3;
+  user-select: none;
+}
+
+.sc-macos {
+  font-family: var(--font-sans), -apple-system, system-ui, sans-serif;
+  letter-spacing: -0.005em;
+}
+
+.sc-windows {
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: #1b1b1b;
+}
+
+.sc-stage p,
+.sc-stage h2,
+.sc-stage h3 {
+  margin: 0;
+}
+
+.sc-fluent,
+.sc-windows .sc-icon,
+.sc-windows .sc-chevron,
+.sc-captions span {
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  font-style: normal;
+}
+
+.sc-wallpaper,
+.sc-dim {
+  position: absolute;
+  inset: 0;
+}
+
+.sc-macos .sc-wallpaper {
+  background:
+    radial-gradient(70% 60% at 18% 8%, #9c8cf5 0%, transparent 60%),
+    radial-gradient(80% 70% at 100% 100%, #f7b28c 0%, transparent 58%),
+    linear-gradient(160deg, #3f3596 0%, #a46cb4 55%, #f1b996 100%);
+}
+
+.sc-windows .sc-wallpaper {
+  background:
+    radial-gradient(42% 55% at 64% 58%, #cfe2ff 0%, #6aa4ff 30%, transparent 62%),
+    radial-gradient(60% 70% at 30% 90%, #4a63e8 0%, transparent 60%),
+    linear-gradient(180deg, #0d2a7a 0%, #1f55d8 58%, #6c9cf4 100%);
+}
+
+.sc-dim {
+  background: #000;
+  z-index: 1;
+}
+
+.sc-glyph {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+/* macOS menu bar */
+.sc-menubar {
+  position: absolute;
+  z-index: 5;
+  inset: 0 0 auto;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 14px;
+  background: rgb(255 255 255 / 0.42);
+  backdrop-filter: blur(24px) saturate(1.6);
+  font-weight: 500;
+}
+
+.sc-menubar strong {
+  font-weight: 700;
+}
+
+.sc-status {
+  position: absolute;
+  top: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border-radius: 6px;
+}
+
+.sc-title {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.sc-sys {
+  position: absolute;
+  top: 6px;
+  height: 14px;
+  fill: none;
+  stroke: #1d1d1f;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.sc-sys.wifi {
+  left: 784px;
+  width: 18px;
+}
+
+.sc-sys.battery {
+  left: 810px;
+  width: 26px;
+  stroke-width: 1.2;
+}
+
+.sc-sys .fill {
+  fill: #1d1d1f;
+  stroke: none;
+}
+
+.sc-menubar .sc-clock {
+  position: absolute;
+  right: 14px;
+}
+
+/* Windows taskbar */
+.sc-taskbar {
+  position: absolute;
+  z-index: 5;
+  inset: auto 0 0;
+  height: 48px;
+  background: rgb(238 240 246 / 0.86);
+  backdrop-filter: blur(30px) saturate(1.4);
+  border-top: 1px solid rgb(255 255 255 / 0.6);
+}
+
+.sc-search {
+  position: absolute;
+  left: 290px;
+  top: 8px;
+  width: 170px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.75);
+  border: 1px solid rgb(0 0 0 / 0.06);
+  color: #5d5d66;
+  font-size: 13px;
+}
+
+.sc-apps {
+  position: absolute;
+  left: 474px;
+  top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.sc-apps span {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25);
+}
+
+.sc-chevron-up {
+  position: absolute;
+  left: 712px;
+  top: 17px;
+  font-size: 12px;
+  color: #333;
+}
+
+.sc-tray {
+  position: absolute;
+  top: 10px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+}
+
+.sc-tray-sys {
+  position: absolute;
+  left: 784px;
+  top: 10px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  font-size: 14px;
+  color: #222;
+}
+
+.sc-taskbar .sc-clock {
+  position: absolute;
+  right: 12px;
+  top: 7px;
+  display: grid;
+  justify-items: end;
+  font-size: 12px;
+  line-height: 17px;
+}
+
+/* Menus */
+.sc-menu {
+  position: absolute;
+  z-index: 20;
+  box-sizing: border-box;
+}
+
+.sc-macos .sc-menu {
+  padding: 5px;
+  border-radius: 10px;
+  background: rgb(244 244 246 / 0.78);
+  backdrop-filter: blur(30px) saturate(1.8);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.18), 0 12px 32px rgb(0 0 0 / 0.26), inset 0 0 0 0.5px rgb(255 255 255 / 0.6);
+}
+
+.sc-windows .sc-menu {
+  padding: 4px;
+  border-radius: 8px;
+  background: rgb(249 249 249 / 0.96);
+  border: 1px solid rgb(0 0 0 / 0.1);
+  box-shadow: 0 8px 18px rgb(0 0 0 / 0.16);
+}
+
+.sc-item {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.sc-macos .sc-item {
+  height: 22px;
+  padding: 0 8px 0 2px;
+  border-radius: 5px;
+}
+
+.sc-windows .sc-item {
+  height: 28px;
+  padding: 0 10px 0 4px;
+  border-radius: 4px;
+  font-size: 12.5px;
+}
+
+.sc-item.disabled {
+  color: rgb(0 0 0 / 0.32);
+}
+
+.sc-macos .sc-item.active {
+  background: #2c6fe8;
+  color: #fff;
+}
+
+.sc-windows .sc-item.active {
+  background: rgb(0 0 0 / 0.06);
+}
+
+.sc-check {
+  width: 16px;
+  flex: none;
+  text-align: center;
+  font-size: 11px;
+}
+
+.sc-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 7px;
+  flex: none;
+}
+
+.sc-macos svg.sc-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sc-windows .sc-icon {
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+
+.sc-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-macos .sc-chevron {
+  font-size: 17px;
+  line-height: 1;
+  opacity: 0.6;
+}
+
+.sc-windows .sc-chevron {
+  font-size: 9px;
+}
+
+.sc-macos .sc-separator {
+  height: 1px;
+  margin: 5px 9px;
+  background: rgb(0 0 0 / 0.1);
+}
+
+.sc-windows .sc-separator {
+  height: 1px;
+  margin: 4px -4px;
+  background: rgb(0 0 0 / 0.08);
+}
+
+/* Cursor */
+.sc-cursor {
+  position: absolute;
+  z-index: 40;
+  width: 24px;
+  height: 24px;
+  transform-origin: 4px 2px;
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.35));
+}
+
+/* Windows */
+.sc-window {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform-origin: center;
+}
+
+.sc-macos .sc-window {
+  border-radius: 14px;
+  background: #fbfbfd;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25), 0 22px 60px rgb(0 0 0 / 0.35);
+}
+
+.sc-windows .sc-window {
+  border-radius: 8px;
+  background: #f3f1f6;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.32);
+}
+
+.sc-titlebar {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.sc-macos .sc-titlebar {
+  height: 30px;
+  justify-content: center;
+}
+
+.sc-windows .sc-titlebar {
+  height: 32px;
+  padding-left: 14px;
+  font-size: 12px;
+}
+
+.sc-lights {
+  position: absolute;
+  left: 13px;
+  top: 9px;
+  display: flex;
+  gap: 8px;
+}
+
+.sc-lights i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15);
+}
+
+.sc-lights i:nth-child(2) {
+  background: #febc2e;
+}
+
+.sc-lights i:nth-child(3) {
+  background: #28c840;
+}
+
+.sc-macos .sc-window-title {
+  font-weight: 600;
+  color: #4a4a4f;
+}
+
+.sc-captions {
+  margin-left: auto;
+  display: flex;
+}
+
+.sc-captions span {
+  width: 46px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+}
+
+.sc-window-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.sc-window.dark {
+  background: #121216;
+  color: #e9e9ee;
+}
+
+.sc-windows .sc-window.dark {
+  background: #1c1c1f;
+  border-color: rgb(255 255 255 / 0.08);
+}
+
+.sc-window.dark .sc-window-title {
+  color: #c9c9cf;
+}
+
+/* Buttons and controls */
+.sc-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.sc-macos .sc-button {
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.18), 0 1px 1.5px rgb(0 0 0 / 0.1);
+  font-weight: 500;
+}
+
+.sc-windows .sc-button {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.85);
+  border: 1px solid rgb(0 0 0 / 0.08);
+  border-bottom-color: rgb(0 0 0 / 0.16);
+  font-size: 13px;
+}
+
+.sc-button.small {
+  height: 22px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.sc-windows .sc-button.small {
+  height: 28px;
+}
+
+.sc-macos .sc-button.accent {
+  background: #2c6fe8;
+  color: #fff;
+  box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.18);
+}
+
+.sc-windows .sc-button.accent {
+  background: #005fb8;
+  border-color: #0a6cc6;
+  color: #fff;
+}
+
+.sc-macos .sc-button.active {
+  filter: brightness(0.88);
+}
+
+.sc-windows .sc-button.active {
+  background: rgb(245 245 245 / 0.9);
+  color: rgb(0 0 0 / 0.6);
+}
+
+.sc-windows .sc-button.accent.active {
+  background: #1a6fbd;
+  color: rgb(255 255 255 / 0.8);
+}
+
+.sc-switch {
+  --on: 0;
+  position: relative;
+  display: inline-block;
+  flex: none;
+}
+
+.sc-macos .sc-switch {
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: color-mix(in srgb, #2c6fe8 calc(var(--on) * 100%), #e2e2e6);
+}
+
+.sc-macos .sc-switch i {
+  position: absolute;
+  top: 2px;
+  left: calc(2px + var(--on) * 16px);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+
+.sc-windows .sc-switch {
+  width: 40px;
+  height: 20px;
+  border-radius: 10px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, #005fb8 calc(var(--on) * 100%), #8a8a8a);
+  background: color-mix(in srgb, #005fb8 calc(var(--on) * 100%), transparent);
+}
+
+.sc-windows .sc-switch i {
+  position: absolute;
+  top: 3px;
+  left: calc(4px + var(--on) * 20px);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #fff calc(var(--on) * 100%), #5d5d5d);
+}
+
+.sc-switch-label {
+  font-size: 13px;
+  margin-right: 10px;
+}
+
+.sc-select,
+.sc-popup,
+.sc-combo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sc-macos .sc-select,
+.sc-macos .sc-popup {
+  gap: 18px;
+  height: 22px;
+  padding: 0 8px 0 10px;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.18), 0 1px 1.5px rgb(0 0 0 / 0.1);
+}
+
+.sc-macos .sc-select::after,
+.sc-macos .sc-popup::after {
+  content: "⌃⌄";
+  font-size: 8px;
+  letter-spacing: -1px;
+  writing-mode: vertical-rl;
+  color: #fff;
+  background: #2c6fe8;
+  border-radius: 4px;
+  padding: 1px 2px;
+}
+
+.sc-windows .sc-select,
+.sc-windows .sc-combo {
+  height: 32px;
+  min-width: 130px;
+  padding: 0 12px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.85);
+  border: 1px solid rgb(0 0 0 / 0.08);
+  border-bottom-color: rgb(0 0 0 / 0.2);
+  box-sizing: border-box;
+}
+
+.sc-windows .sc-select::after,
+.sc-windows .sc-combo::after {
+  content: "\E70D";
+  font-family: "Segoe Fluent Icons";
+  font-size: 11px;
+  margin-left: 16px;
+}
+
+.sc-muted {
+  color: #86868b;
+}
+
+.sc-windows .sc-muted {
+  color: #616161;
+}
+
+/* Settings */
+.sc-settings .sc-window-body {
+  background: transparent;
+}
+
+.sc-macos .sc-settings {
+  background: #f5f5f7;
+}
+
+.sc-macos .sc-settings .sc-titlebar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+}
+
+.sc-sidebar {
+  flex: none;
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sc-macos .sc-sidebar {
+  margin: 8px 0 8px 8px;
+  padding: 36px 10px 10px;
+  border-radius: 12px;
+  background: rgb(232 230 240 / 0.7);
+  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.9), 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 6px 18px rgb(0 0 0 / 0.06);
+}
+
+.sc-macos .sc-sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 8px;
+  width: 210px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.1));
+  pointer-events: none;
+}
+
+.sc-windows .sc-sidebar {
+  padding: 4px 6px;
+}
+
+.sc-search-field {
+  position: relative;
+  height: 26px;
+  margin-bottom: 8px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: rgb(0 0 0 / 0.05);
+  color: #8a8a8e;
+  line-height: 26px;
+}
+
+.sc-nav {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.sc-macos .sc-nav {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
+}
+
+.sc-macos .sc-nav.selected {
+  background: rgb(0 0 0 / 0.08);
+  font-weight: 600;
+}
+
+.sc-nav-tile {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.1);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.22), transparent) !important;
+}
+
+.sc-nav-gap {
+  height: 10px;
+}
+
+.sc-windows .sc-nav {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 4px;
+  font-size: 13.5px;
+}
+
+.sc-windows .sc-nav.selected {
+  background: rgb(0 0 0 / 0.05);
+}
+
+.sc-windows .sc-nav.selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: #005fb8;
+}
+
+.sc-nav-glyph {
+  width: 18px;
+  font-size: 15px;
+}
+
+.sc-nav-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgb(0 0 0 / 0.08);
+}
+
+.sc-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sc-macos .sc-content {
+  padding: 40px 24px 0;
+}
+
+.sc-windows .sc-content {
+  padding: 8px 28px 0 24px;
+}
+
+.sc-page-title {
+  font-weight: 600;
+}
+
+.sc-macos .sc-page-title {
+  position: absolute;
+  top: 7px;
+  left: 236px;
+  z-index: 3;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sc-windows .sc-page-title {
+  margin: 4px 0 18px;
+  font-size: 28px;
+  font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif;
+}
+
+.sc-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.sc-macos .sc-card {
+  min-height: 46px;
+  padding: 8px 12px;
+}
+
+.sc-macos .sc-group,
+.sc-macos .sc-status-card {
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08);
+}
+
+.sc-macos .sc-group .sc-card + .sc-card {
+  border-top: 1px solid rgb(0 0 0 / 0.07);
+}
+
+.sc-windows .sc-card {
+  min-height: 66px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.72);
+  border: 1px solid rgb(0 0 0 / 0.06);
+  box-sizing: border-box;
+}
+
+.sc-windows .sc-group {
+  display: grid;
+  gap: 4px;
+}
+
+.sc-card-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.sc-card-text strong,
+.sc-status-card strong {
+  font-weight: 500;
+}
+
+.sc-card-text span,
+.sc-status-card span {
+  color: #86868b;
+  font-size: 12px;
+}
+
+.sc-windows .sc-card-text span,
+.sc-windows .sc-status-card span {
+  color: #616161;
+}
+
+.sc-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-status-card {
+  margin-bottom: 4px;
+}
+
+.sc-macos .sc-status-card {
+  padding: 12px;
+}
+
+.sc-status-card > div {
+  display: grid;
+  gap: 3px;
+}
+
+.sc-status-card strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sc-windows .sc-status-card strong {
+  font-size: 18px;
+  font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif;
+}
+
+.sc-status-tile {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #f08c1a;
+  color: #fff;
+  font-size: 20px;
+}
+
+.sc-status-tile svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.sc-windows .sc-status-tile {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  font-size: 24px;
+}
+
+.sc-section {
+  font-weight: 600;
+}
+
+.sc-macos .sc-section {
+  margin: 18px 0 8px 4px;
+  font-size: 13px;
+}
+
+.sc-windows .sc-section {
+  margin: 22px 0 8px 2px;
+  font-size: 14px;
+}
+
+/* Timer */
+.sc-timer .sc-window-body {
+  flex-direction: column;
+}
+
+.sc-macos .sc-timer {
+  background: rgb(246 245 250 / 0.92);
+  backdrop-filter: blur(24px);
+}
+
+.sc-timer-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sc-macos .sc-timer-form {
+  padding: 4px 24px 0;
+}
+
+.sc-windows .sc-timer-form {
+  flex: 1;
+  padding: 8px 24px 0;
+}
+
+.sc-timer-heading {
+  font-weight: 700;
+  font-size: 20px;
+}
+
+.sc-windows .sc-timer-heading {
+  font-weight: 600;
+  font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif;
+}
+
+.sc-help {
+  margin-top: 4px !important;
+  color: #86868b;
+}
+
+.sc-windows .sc-help {
+  color: #616161;
+  font-size: 14px;
+}
+
+.sc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sc-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sc-field {
+  width: 70px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25);
+  text-align: right;
+  line-height: 22px;
+  box-sizing: border-box;
+}
+
+.sc-stepper {
+  width: 13px;
+  height: 22px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.2);
+}
+
+.sc-header-field {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.sc-header-field .sc-combo {
+  width: 100%;
+}
+
+.sc-number {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.85);
+  border: 1px solid rgb(0 0 0 / 0.08);
+  border-bottom: 2px solid #005fb8;
+  box-sizing: border-box;
+}
+
+.sc-number .sc-fluent {
+  font-size: 11px;
+  white-space: pre;
+}
+
+.sc-presets {
+  display: flex;
+  gap: 6px;
+}
+
+.sc-ends {
+  font-size: 12px;
+}
+
+.sc-timer-footer {
+  display: flex;
+  gap: 8px;
+}
+
+.sc-macos .sc-timer-footer {
+  justify-content: space-between;
+  padding: 18px 24px 20px;
+  margin-top: auto;
+}
+
+.sc-windows .sc-timer-footer {
+  padding: 24px;
+  background: #f9f9f9;
+  border-top: 1px solid rgb(0 0 0 / 0.06);
+}
+
+.sc-windows .sc-timer-footer .sc-button {
+  flex: 1;
+}
+
+.sc-list {
+  position: absolute;
+  z-index: 5;
+  padding: 5px;
+}
+
+.sc-list.mac {
+  left: 288px;
+  top: 76px;
+  width: 160px;
+  border-radius: 8px;
+  background: rgb(244 244 246 / 0.92);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.18), 0 10px 26px rgb(0 0 0 / 0.22);
+}
+
+.sc-list.win {
+  left: 23px;
+  top: 158px;
+  width: 412px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #f9f9f9;
+  border: 1px solid rgb(0 0 0 / 0.1);
+  box-shadow: 0 8px 18px rgb(0 0 0 / 0.16);
+  box-sizing: border-box;
+}
+
+.sc-list-item {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+}
+
+.sc-list.mac .sc-list-item {
+  height: 22px;
+}
+
+.sc-list.mac .sc-list-item.active {
+  background: #2c6fe8;
+  color: #fff;
+}
+
+.sc-list.win .sc-list-item {
+  height: 34px;
+  padding-left: 6px;
+  border-radius: 4px;
+}
+
+.sc-list.win .sc-list-item.active {
+  background: rgb(0 0 0 / 0.05);
+}
+
+.sc-list.win .sc-check {
+  display: none;
+}
+
+/* Countdown */
+.sc-countdown {
+  position: absolute;
+  z-index: 25;
+  width: 380px;
+  overflow: hidden;
+  transform-origin: center;
+  text-align: center;
+}
+
+.sc-macos .sc-countdown {
+  border-radius: 22px;
+  background: rgb(250 249 255 / 0.74);
+  backdrop-filter: blur(30px) saturate(1.8);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.7), 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 24px 60px rgb(0 0 0 / 0.3);
+}
+
+.sc-windows .sc-countdown {
+  border-radius: 8px;
+  background: #f3f1f6;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.32);
+}
+
+.sc-countdown-title {
+  height: 32px;
+  padding-left: 14px;
+  text-align: left;
+  font-size: 12px;
+  line-height: 32px;
+}
+
+.sc-countdown-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px;
+}
+
+.sc-windows .sc-countdown-body {
+  gap: 6px;
+  padding: 8px 24px 24px;
+}
+
+.sc-countdown-icon {
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke: #6b55e6;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sc-countdown-action {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.sc-countdown-clock {
+  font-size: 66px;
+  line-height: 1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-macos .sc-countdown-clock {
+  font-family: ui-rounded, var(--font-sans), sans-serif;
+}
+
+.sc-windows .sc-countdown-clock {
+  font-size: 72px;
+  font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif;
+}
+
+.sc-countdown-hint {
+  color: #6e6e73;
+}
+
+.sc-windows .sc-countdown-hint {
+  color: #616161;
+  margin-bottom: 10px !important;
+}
+
+.sc-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.sc-buttons.glass {
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.45);
+  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.9), 0 0 0 0.5px rgb(0 0 0 / 0.08);
+}
+
+.sc-buttons.split {
+  width: 100%;
+}
+
+.sc-buttons.split .sc-button {
+  flex: 1;
+  height: 40px;
+}
+
+.sc-windows .sc-buttons + .sc-buttons {
+  margin-top: 6px;
+}
+
+/* Notices */
+.sc-notice {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  gap: 10px;
+  width: 330px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+}
+
+.sc-macos .sc-notice {
+  top: 36px;
+  right: 12px;
+  border-radius: 16px;
+  background: rgb(246 246 248 / 0.82);
+  backdrop-filter: blur(30px);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 10px 30px rgb(0 0 0 / 0.2);
+}
+
+.sc-windows .sc-notice {
+  right: 12px;
+  bottom: 60px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f5f3f8;
+  border: 1px solid rgb(0 0 0 / 0.1);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.25);
+}
+
+.sc-notice-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #4a3fc4, #231e6b);
+}
+
+.sc-notice-icon .sc-glyph circle {
+  fill: #fdf1d6;
+}
+
+.sc-notice strong {
+  font-weight: 600;
+}
+
+.sc-notice p {
+  margin-top: 2px !important;
+  color: #4a4a50;
+  font-size: 12.5px;
+}
+
+.sc-tooltip {
+  position: absolute;
+  z-index: 30;
+  right: 120px;
+  bottom: 56px;
+  display: grid;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #f9f9f9;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 0.18);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Player */
+.sc-player .sc-window-body {
+  flex-direction: column;
+}
+
+.sc-film {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background:
+    radial-gradient(70% 90% at 50% 120%, #2a1d4d 0%, transparent 70%),
+    linear-gradient(180deg, #050509 0%, #0d0b18 100%);
+}
+
+.sc-credits {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 120px;
+  text-align: center;
+  font-size: 17px;
+  line-height: 1.7;
+  color: #f2f0ff;
+}
+
+.sc-credits .role {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #9d97b8;
+}
+
+.sc-controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 52px;
+  padding: 0 18px;
+  background: #18171f;
+  color: #e7e6ef;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-play {
+  width: 16px;
+  font-size: 13px;
+}
+
+.sc-progress {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.18);
+}
+
+.sc-progress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.sc-meter {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 18px;
+  width: 22px;
+}
+
+.sc-meter i {
+  width: 3px;
+  border-radius: 1px;
+  background: #9b8bef;
+}
+
+/* Terminal */
+.sc-terminal .sc-window-body {
+  background: #101014;
+}
+
+.sc-windows .sc-terminal .sc-window-body {
+  background: #0c0c0c;
+}
+
+.sc-term {
+  padding: 14px 18px;
+  font: 13px/1.65 var(--font-mono), "Cascadia Mono", Consolas, monospace;
+  color: #e8e8ee;
+  white-space: pre-wrap;
+}
+
+.sc-prompt {
+  color: #a898ff;
+}
+
+.sc-caret {
+  display: inline-block;
+  width: 8px;
+  height: 15px;
+  margin-left: 2px;
+  vertical-align: -3px;
+  background: #e8e8ee;
+}
+
+.sc-tool {
+  margin-top: 8px !important;
+  color: #fff;
+  font-weight: 500;
+}
+
+.sc-wait {
+  color: #eeae4a;
+}
+
+.sc-ok {
+  color: #6fd29a;
+}

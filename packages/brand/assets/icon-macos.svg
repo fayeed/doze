@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a3fc4"/>
+      <stop offset="1" stop-color="#231e6b"/>
+    </linearGradient>
+    <mask id="crescent">
+      <circle cx="512" cy="518" r="250" fill="#fff"/>
+      <circle cx="635" cy="428" r="208" fill="#000"/>
+    </mask>
+    <filter id="shadow" filterUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)" filter="url(#shadow)"/>
+  <rect width="1024" height="1024" fill="#fdf1d6" mask="url(#crescent)"/>
+</svg>

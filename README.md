@@ -41,12 +41,13 @@ pnpm dev:desktop
 | `pnpm build:desktop` | Build the desktop app and native bundle |
 | `pnpm lint` | Lint website TypeScript and desktop Rust |
 | `pnpm test` | Run workspace tests, including the desktop Rust engine |
+| `pnpm --filter @doze/web media` | Re-record the website's macOS and Windows clips (dev server running) |
 
 ## Workspace
 
 - `apps/desktop` — native tray menus, WinUI 3 settings, Tauri 2, and Rust
-- `apps/web` — Next.js App Router landing page
-- `packages/brand` — shared product name, domain, and tagline
+- `apps/web` — Next.js App Router landing page, with separate macOS and Windows clips recorded from `components/scenes` (see [its README](apps/web/components/README.md))
+- `packages/brand` — shared product name, domain, tagline and icon artwork (`icon.svg` for Windows and the web, `icon-macos.svg` for the macOS app icon)
 - `packages/config` — shared TypeScript compiler options
 
 See [the desktop README](apps/desktop/README.md) for native API choices, verification commands, and remaining hardware validation, and [QA.md](apps/desktop/QA.md) for the latest Windows and macOS QA runs.

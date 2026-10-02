@@ -96,6 +96,8 @@ macOS uses native SwiftUI/AppKit windows: sidebar preferences, About, custom dur
 
 Build macOS on a Mac with Xcode and a macOS 26 or newer SDK selected through `xcode-select`. `pnpm --filter @doze/desktop native:build` compiles a universal Swift companion for Apple Silicon and Intel; `native:test` constructs the native pages in light/dark without saving preferences or performing power actions; `native:render [folder]` draws every page and window offscreen to PNG files for visual review (screen capture would need Screen Recording permission). `pnpm build:desktop` produces `Doze.app` and a DMG with the companion in `Contents/Resources/macos-ui` and an `Info.plist` that hides the Dock icon (`LSUIElement`) and declares Apple Events use for Shut down. Bundles are ad-hoc signed development artifacts. Use the newest available Xcode SDK for the latest system appearance.
 
+The app icon follows each system's convention: a freestanding Fluent-style crescent on Windows (`packages/brand/assets/icon.svg`, used for `icon.ico` and the PNGs) and a crescent inside Apple's padded 824 px rounded-rectangle grid on macOS (`icon-macos.svg`, used for `icon.icns`). To regenerate, export each SVG to a 1024 px PNG, run `pnpm --filter @doze/desktop exec tauri icon <png> -o <folder>` for both, then copy `icon.icns` from the macOS output and the `.ico` and PNG sizes listed in `tauri.conf.json` from the Windows output into `src-tauri/icons`.
+
 ## Native macOS APIs
 
 | Feature | API |
