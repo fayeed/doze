@@ -357,9 +357,16 @@ pub(super) fn worker(
             }
         }
         if let Some(action) = action {
-            if let Err(e) = power.execute(action) {
-                errors.report(e, snapshot.engine.now);
-                snapshot.engine.message = Some("Power action failed".into());
+            match power.execute(action) {
+                Ok(()) => {
+                    if let Some(notice) = power.take_notice() {
+                        snapshot.engine.message = Some(notice);
+                    }
+                }
+                Err(e) => {
+                    errors.report(e, snapshot.engine.now);
+                    snapshot.engine.message = Some("Power action failed".into());
+                }
             }
         }
         snapshot.error = errors.current(snapshot.engine.now, snapshot.settings.agents.enabled);

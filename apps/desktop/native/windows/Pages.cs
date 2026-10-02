@@ -34,7 +34,7 @@ public sealed partial class MainWindow
         Footer("A timer keeps the computer awake until its final warning. " + ActionGuide);
     }
 
-    private const string ActionGuide = "Sleep keeps your session in memory, Hibernate saves it to disk, Shut down closes Windows (apps with unsaved work can stop it), Lock secures your session, and Turn display off switches off the screen.";
+    private const string ActionGuide = "Doze locks the desktop before Sleep or Hibernate. Sleep keeps your session in memory, Hibernate saves it to disk, Shut down closes Windows (apps with unsaved work can stop it), Lock secures your session, and Turn display off switches off the screen.";
 
     private void AfterPlayback()
     {

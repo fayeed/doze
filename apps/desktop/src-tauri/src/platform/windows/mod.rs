@@ -17,6 +17,10 @@ mod tests {
             NativePower::new().supported_actions()
         );
         println!("User idle: {} seconds", NativeIdle.observe()?.seconds);
+        println!(
+            "Away Mode notifications available: {}",
+            super::power::AwayModeWatch::start().is_some()
+        );
         let mut audio = NativeAudio::new()?;
         // The initial endpoint rebuild deliberately invalidates playback history.
         println!("Initial audio observation: {:?}", audio.sample());

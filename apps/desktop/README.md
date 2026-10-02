@@ -72,7 +72,7 @@ One channel-driven worker owns sessions, COM interfaces, and power requests. Nat
 | Countdown | WinUI 3, matching Mica and theme resources; native always-on-top presenter |
 | Custom timers | WinUI 3 Mica, action picker, number/date/time pickers, presets, live end-time preview, inline validation, and theme resources |
 | Keep Awake | `SetThreadExecutionState` with a continuous system requirement and optional display requirement; released on the same worker thread |
-| Sleep / Hibernate | `GetPwrCapabilities`, `SetSuspendState` |
+| Sleep / Hibernate | `GetPwrCapabilities`, `LockWorkStation` first, then `SetSuspendState`; a `GUID_SYSTEM_AWAYMODE` notification detects Away Mode |
 | Shutdown | `InitiateSystemShutdownExW`; temporary `SeShutdownPrivilege`, restored after execution; no forced app closure |
 | Lock | `LockWorkStation` |
 | Display off | `WM_SYSCOMMAND / SC_MONITORPOWER` with bounded `SendMessageTimeoutW` |
@@ -81,6 +81,8 @@ One channel-driven worker owns sessions, COM interfaces, and power requests. Nat
 | Notifications | Tauri's native notification plugin |
 | Startup | Quoted executable path in current-user `Software\Microsoft\Windows\CurrentVersion\Run` |
 | Suspend/resume | `PowerRegisterSuspendResumeNotification` with an owned callback context |
+
+Before Sleep or Hibernate, Doze locks the desktop, so you return to the lock screen even when Windows doesn't require sign-in after sleep. When any app holds an Away Mode request and the power plan's "Allow Away Mode Policy" is on (the default for Balanced on many desktops), Windows turns a sleep request into Away Mode: the screen goes dark and sound mutes but the computer keeps running. Doze watches for that and records it as the last event ("Windows stayed on in Away Mode instead of sleeping…"). `powercfg /requests` in an administrator terminal lists the app under AWAYMODE; Logitech G HUB is a known example. Turning the policy off (`powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP AWAYMODE 0`, then `powercfg /setactive SCHEME_CURRENT`) makes sleep real again. Requests made with `PowerSetRequest` do not appear in the system execution state, so Doze cannot predict Away Mode before asking to sleep.
 
 Audio meters observe all active render endpoints, including non-default devices. Peak output above -60 dBFS after endpoint mute/volume checks counts as meaningful. Silent sessions do not count. Muted playback cannot arm a fresh rule; muting previously detected playback is treated as silence. No media content is recorded or inspected.
 

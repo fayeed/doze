@@ -4,6 +4,11 @@ pub trait PowerManager {
     fn supported_actions(&self) -> Vec<PowerAction>;
     fn set_awake(&mut self, active: bool, allow_display_sleep: bool) -> Result<(), String>;
     fn execute(&mut self, action: PowerAction) -> Result<(), String>;
+    /// A note on how the last successful action went, such as Windows using Away Mode
+    /// instead of sleep. The engine shows it as the last event.
+    fn take_notice(&mut self) -> Option<String> {
+        None
+    }
 }
 pub mod countdown;
 #[cfg(windows)]
