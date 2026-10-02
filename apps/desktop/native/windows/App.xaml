@@ -10,7 +10,7 @@
             <!-- Icon colours for navigation and guide rows, tuned for contrast in each theme. -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="DozeIndigoBrush" Color="#5B4BC4" />
+                    <SolidColorBrush x:Key="DozeAccentBrush" Color="#C2453F" />
                     <SolidColorBrush x:Key="DozeGrayBrush" Color="#5C5C66" />
                     <SolidColorBrush x:Key="DozeOrangeBrush" Color="#C75100" />
                     <SolidColorBrush x:Key="DozePinkBrush" Color="#C2185B" />
@@ -22,7 +22,7 @@
                     <SolidColorBrush x:Key="DozePurpleBrush" Color="#8E3AC4" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="DozeIndigoBrush" Color="#A59BFF" />
+                    <SolidColorBrush x:Key="DozeAccentBrush" Color="#F7A37A" />
                     <SolidColorBrush x:Key="DozeGrayBrush" Color="#C5C5CC" />
                     <SolidColorBrush x:Key="DozeOrangeBrush" Color="#FFA24D" />
                     <SolidColorBrush x:Key="DozePinkBrush" Color="#FF7AB0" />
@@ -34,7 +34,7 @@
                     <SolidColorBrush x:Key="DozePurpleBrush" Color="#D29BFF" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
-                    <SolidColorBrush x:Key="DozeIndigoBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozeAccentBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="DozeGrayBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="DozeOrangeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="DozePinkBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
@@ -46,6 +46,16 @@
                     <SolidColorBrush x:Key="DozePurpleBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+            <!-- Brand accent: the setting sun's coral replaces the system accent for toggles, accent
+                 buttons, links and selection. Light themes put white text on Dark1 and dark themes
+                 black text on Light2, so both keep at least 4.5:1. High Contrast keeps system colours. -->
+            <Color x:Key="SystemAccentColor">#DE5F5A</Color>
+            <Color x:Key="SystemAccentColorLight1">#E8806A</Color>
+            <Color x:Key="SystemAccentColorLight2">#F2A27A</Color>
+            <Color x:Key="SystemAccentColorLight3">#F8C79C</Color>
+            <Color x:Key="SystemAccentColorDark1">#B8433E</Color>
+            <Color x:Key="SystemAccentColorDark2">#963432</Color>
+            <Color x:Key="SystemAccentColorDark3">#702626</Color>
             <!-- The Windows 11 Settings card: 4 px corners, 16 px padding, at least 68 px tall. -->
             <Style x:Key="SettingsCardStyle" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />

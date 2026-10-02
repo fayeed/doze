@@ -16,7 +16,7 @@ public sealed partial class MainWindow
         ["Agents"] = "mcp codex claude code agent lease heartbeat permissions skill connection keep alive connected sessions command line job",
         ["Advanced"] = "logging diagnostics log reset defaults data folder preferences file command line terminal powershell cli run watch job doze.exe",
         ["Menu guide"] = "menu guide help explain tray quick settings unavailable dimmed",
-        ["About Doze"] = "version privacy about acknowledgements source code github clypy developer licenses"
+        ["About Doze"] = "version privacy about acknowledgements data folder clypy developer licenses"
     };
 
     internal static bool Matches(string page, string query) =>

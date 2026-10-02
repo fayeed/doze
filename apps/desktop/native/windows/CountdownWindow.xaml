@@ -9,7 +9,7 @@
         </Grid.RowDefinitions>
         <Grid x:Name="TitleBar" Margin="20,0,100,0">
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                <FontIcon Glyph="&#xE708;" FontSize="18" />
+                <Image x:Name="TitleIcon" Width="16" Height="16" AutomationProperties.AccessibilityView="Raw" />
                 <TextBlock Text="Doze · Countdown" FontSize="12" />
             </StackPanel>
         </Grid>

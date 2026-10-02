@@ -114,6 +114,10 @@ const faqs = [
     a: "Windows, and macOS 13 Ventura or later. Liquid Glass appears on macOS 26 and later; earlier releases use native materials.",
   },
   {
+    q: "How much does it cost?",
+    a: "Nothing. Doze is completely free: no subscription, no ads and no in-app purchases.",
+  },
+  {
     q: "Does it phone home?",
     a: "No account, no cloud, no telemetry, no ads. Preferences and optional diagnostics stay on your computer.",
   },
@@ -181,7 +185,7 @@ export default function Home() {
           <ul className="specs">
             <li>
               <Check />
-              No account needed
+              Free, no account needed
             </li>
             <li>
               <Check />
@@ -288,8 +292,8 @@ export default function Home() {
         </section>
 
         <section className="download" id="download" aria-labelledby="download-title">
-          <h2 id="download-title">Get Doze for Mac and PC</h2>
-          <p>No account, no cloud, no telemetry. Download it and put your computer on a sensible bedtime.</p>
+          <h2 id="download-title">Free. For Mac and PC.</h2>
+          <p>No price, no subscription, no account. Download it and put your computer on a sensible bedtime.</p>
           <div className="download-cards">
             <article className="download-card mac">
               <h3>macOS</h3>

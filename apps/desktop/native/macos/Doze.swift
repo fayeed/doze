@@ -1,6 +1,16 @@
 import AppKit
 import SwiftUI
 
+extension Color {
+    /// Brand accent: the coral end of the setting-sun gradient, darker in light appearances and
+    /// lighter in dark ones so tinted controls and text stay readable.
+    static let dozeAccent = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.969, green: 0.639, blue: 0.478, alpha: 1)
+            : NSColor(srgbRed: 0.761, green: 0.271, blue: 0.247, alpha: 1)
+    })
+}
+
 struct Preferences: Codable, Equatable {
     var theme = "system"
     var launchAtStartup = false
@@ -263,7 +273,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             for selected in Page.allCases {
                 page = selected
-                let host = NSHostingView(rootView: SettingsView(model: self))
+                let host = NSHostingView(rootView: SettingsView(model: self).tint(.dozeAccent))
                 host.appearance = NSAppearance(named: appearance)
                 host.frame = NSRect(x: 0, y: 0, width: 940, height: 720)
                 host.layoutSubtreeIfNeeded()
@@ -325,7 +335,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
                                   styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: appearance)
             window.titlebarAppearsTransparent = true
-            let host = NSHostingView(rootView: view)
+            let host = NSHostingView(rootView: view.tint(.dozeAccent))
             window.contentView = host
             window.orderFrontRegardless()
             for _ in 0..<3 { RunLoop.main.run(until: Date().addingTimeInterval(0.15)) }
@@ -469,7 +479,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: content)
+        window.contentView = NSHostingView(rootView: content.tint(.dozeAccent))
         window.center()
         return window
     }
@@ -776,12 +786,8 @@ struct SettingsView: View {
                     Text("Version \(model.snapshot?.version ?? "0.1.0")").foregroundStyle(.secondary)
                     Text("Your computer knows when it’s bedtime.").padding(.top, 2)
                     Text("Made by Fayeed Pawaskar").font(.callout).foregroundStyle(.secondary)
-                    HStack {
-                        Link("Source Code", destination: URL(string: "https://github.com/fayeed/doze")!)
-                        Text("·").foregroundStyle(.tertiary)
-                        Button("Show Local Data", action: model.openData).buttonStyle(.link)
-                    }
-                    .font(.callout).padding(.top, 6)
+                    Button("Show Local Data", action: model.openData).buttonStyle(.link)
+                        .font(.callout).padding(.top, 6)
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 14)
             }
@@ -1099,7 +1105,7 @@ struct SettingsView: View {
         Toggle(isOn: binding) { described(title, detail) }
     }
 
-    private func explanation(_ title: String, _ detail: String, _ symbol: String, _ color: Color = .accentColor) -> some View {
+    private func explanation(_ title: String, _ detail: String, _ symbol: String, _ color: Color = .dozeAccent) -> some View {
         HStack(alignment: .top, spacing: 12) {
             SettingsIcon(symbol: symbol, color: color, size: 26)
             described(title, detail)

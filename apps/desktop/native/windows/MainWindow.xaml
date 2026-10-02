@@ -28,7 +28,7 @@
                                 QuerySubmitted="SearchSubmitted" />
             </NavigationView.AutoSuggestBox>
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Overview" Tag="Overview"><NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" Foreground="{ThemeResource DozeIndigoBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Overview" Tag="Overview"><NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" Foreground="{ThemeResource DozeAccentBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItemSeparator />
                 <NavigationViewItem Content="General" Tag="General"><NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" Foreground="{ThemeResource DozeGrayBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="Session defaults" Tag="Session defaults"><NavigationViewItem.Icon><FontIcon Glyph="&#xE706;" Foreground="{ThemeResource DozeOrangeBrush}" /></NavigationViewItem.Icon></NavigationViewItem>

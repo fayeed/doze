@@ -129,7 +129,7 @@ const Hero: Scene = ({ platform }) => {
 
 /* Keep Awake: Overview in Settings, extend the session and turn on audio. */
 const sidebar = [
-  { label: "Overview", color: "#5a45e0", glyph: "\uE80F" },
+  { label: "Overview", color: "#c2453f", glyph: "\uE80F" },
   { label: "General", color: "#8a8a8e", glyph: "\uE713" },
   { label: "Session defaults", color: "#f08c1a", glyph: "\uE706" },
   { label: "After playback", color: "#e5487b", glyph: "\uE995" },

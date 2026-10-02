@@ -243,7 +243,7 @@ public sealed partial class MainWindow : Window
         VerifyText();
         VerifyControlCenter();
         SelectPage("About Doze");
-        if (Descendants(Cards).OfType<Image>().Count() != 2 || !Shows("Visit Clypy") || !Shows("Source Code") || !Shows("Open data folder") || !Shows("Made by Fayeed Pawaskar"))
+        if (Descendants(Cards).OfType<Image>().Count() != 2 || !Shows("Visit Clypy") || !Shows("Open data folder") || !Shows("Made by Fayeed Pawaskar"))
             throw new InvalidOperationException("About is missing Doze's or Clypy's icon, or a link.");
         SelectPage("Advanced");
         if (!Shows("Reset preferences") || ResetDialog().PrimaryButtonText != "Reset" || ResetDialog().DefaultButton != ContentDialogButton.Close)

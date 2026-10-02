@@ -123,7 +123,7 @@ public sealed partial class MainWindow
     private void MenuGuide()
     {
         Section("In the tray");
-        Card("Normal sleep allowed", "No Doze session is holding the computer awake, so your Windows power settings apply.", Tinted("", "DozeIndigoBrush"));
+        Card("Normal sleep allowed", "No Doze session is holding the computer awake, so your Windows power settings apply.", Tinted("", "DozeAccentBrush"));
         Card("Keep Awake", "Choose a duration, an end time or indefinitely. Stop releases Doze's power request; Extend adds 15 minutes to a timed session.", Tinted("", "DozeOrangeBrush"));
         Card("Power Timer", "Choose an action and a duration. A final warning lets you cancel or snooze before the action runs.", Tinted("", "DozeBlueBrush"));
         Card("Keep awake while audio plays", "Holds the computer awake while sound is playing, through the silence grace period. Muted output counts as silence.", Tinted("", "DozePinkBrush"));
@@ -152,7 +152,6 @@ public sealed partial class MainWindow
         text.Children.Add(new TextBlock { Text = "Your computer knows when it's bedtime.", Style = Style("CardTitleStyle"), Margin = new Thickness(0, 8, 0, 0) });
         text.Children.Add(new TextBlock { Text = "Made by Fayeed Pawaskar", Style = Style("CardDescriptionStyle") });
         var links = new WrapPanel { Spacing = 4, Margin = new Thickness(-12, 6, 0, 0) };
-        links.Children.Add(Link("Source Code", () => OpenLink("https://github.com/fayeed/doze")));
         links.Children.Add(Link("Open data folder", OpenData));
         text.Children.Add(links);
         Grid.SetColumn(text, 1);

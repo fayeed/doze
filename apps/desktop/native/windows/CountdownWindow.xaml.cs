@@ -34,6 +34,8 @@ public sealed partial class CountdownWindow : Window
         SetTitleBar(TitleBar);
         SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Doze.ico"));
+        var titleIcon = Path.Combine(AppContext.BaseDirectory, "Assets", "Doze.png");
+        if (File.Exists(titleIcon)) TitleIcon.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(titleIcon)) { DecodePixelWidth = 32 };
         AppWindow.IsShownInSwitchers = true;
         ResizeWarning();
         Notice.RegisterPropertyChangedCallback(InfoBar.IsOpenProperty, (_, _) =>

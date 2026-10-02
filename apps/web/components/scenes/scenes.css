@@ -484,14 +484,14 @@ body:has(.sc-stage) {
 }
 
 .sc-macos .sc-button.accent {
-  background: #2c6fe8;
+  background: #c2453f;
   color: #fff;
   box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.18);
 }
 
 .sc-windows .sc-button.accent {
-  background: #005fb8;
-  border-color: #0a6cc6;
+  background: #b8433e;
+  border-color: #a63c37;
   color: #fff;
 }
 
@@ -505,7 +505,7 @@ body:has(.sc-stage) {
 }
 
 .sc-windows .sc-button.accent.active {
-  background: #1a6fbd;
+  background: #c4544e;
   color: rgb(255 255 255 / 0.8);
 }
 
@@ -520,7 +520,7 @@ body:has(.sc-stage) {
   width: 38px;
   height: 22px;
   border-radius: 11px;
-  background: color-mix(in srgb, #2c6fe8 calc(var(--on) * 100%), #e2e2e6);
+  background: color-mix(in srgb, #c2453f calc(var(--on) * 100%), #e2e2e6);
 }
 
 .sc-macos .sc-switch i {
@@ -539,8 +539,8 @@ body:has(.sc-stage) {
   height: 20px;
   border-radius: 10px;
   box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, #005fb8 calc(var(--on) * 100%), #8a8a8a);
-  background: color-mix(in srgb, #005fb8 calc(var(--on) * 100%), transparent);
+  border: 1px solid color-mix(in srgb, #b8433e calc(var(--on) * 100%), #8a8a8a);
+  background: color-mix(in srgb, #b8433e calc(var(--on) * 100%), transparent);
 }
 
 .sc-windows .sc-switch i {
@@ -583,7 +583,7 @@ body:has(.sc-stage) {
   letter-spacing: -1px;
   writing-mode: vertical-rl;
   color: #fff;
-  background: #2c6fe8;
+  background: #c2453f;
   border-radius: 4px;
   padding: 1px 2px;
 }
@@ -720,7 +720,7 @@ body:has(.sc-stage) {
   width: 3px;
   height: 16px;
   border-radius: 2px;
-  background: #005fb8;
+  background: #b8433e;
 }
 
 .sc-nav-glyph {
@@ -994,7 +994,7 @@ body:has(.sc-stage) {
   border-radius: 4px;
   background: rgb(255 255 255 / 0.85);
   border: 1px solid rgb(0 0 0 / 0.08);
-  border-bottom: 2px solid #005fb8;
+  border-bottom: 2px solid #b8433e;
   box-sizing: border-box;
 }
 
@@ -1139,7 +1139,7 @@ body:has(.sc-stage) {
   width: 30px;
   height: 30px;
   fill: none;
-  stroke: #2c6fe8;
+  stroke: #c2453f;
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;

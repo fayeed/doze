@@ -134,7 +134,7 @@ public sealed partial class MainWindow
         var session = Session;
         var holding = Flag(session["holdingAwake"]) || session["countdown"] is JsonObject;
         var tile = (Border)XamlReader.Load("<Border xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Width=\"56\" Height=\"56\" CornerRadius=\"8\" Background=\"{ThemeResource SubtleFillColorSecondaryBrush}\" />");
-        tile.Child = Tinted(session["countdown"] is JsonObject ? "" : holding ? "" : "", holding ? "DozeOrangeBrush" : "DozeIndigoBrush", 28);
+        tile.Child = Tinted(session["countdown"] is JsonObject ? "" : holding ? "" : "", holding ? "DozeOrangeBrush" : "DozeAccentBrush", 28);
         ((FrameworkElement)tile.Child).HorizontalAlignment = HorizontalAlignment.Center;
         overviewStatus = new TextBlock { Text = Text(snapshot["status"]) ?? "Normal sleep allowed", Style = Style("SubtitleTextBlockStyle"), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
         overviewTimer = new TextBlock { Text = TimerText(), Style = Style("CardDescriptionStyle"), FontSize = 14 };

@@ -10,7 +10,7 @@ const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500"], variab
 export const metadata: Metadata = {
   title: `${brand.name} · ${brand.tagline}`,
   description:
-    "Doze keeps your Mac or PC awake while it matters, then lets it sleep: keep-awake sessions, power timers, sleep after playback, and wake leases for coding agents. Local and private.",
+    "Doze keeps your Mac or PC awake while it matters, then lets it sleep: keep-awake sessions, power timers, sleep after playback, and wake leases for coding agents. Free, local and private.",
   metadataBase: new URL(`https://${brand.domain}`),
   openGraph: { title: brand.name, description: brand.tagline, type: "website" },
 };
