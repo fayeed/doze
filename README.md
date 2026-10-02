@@ -6,7 +6,7 @@ Doze is a lightweight desktop utility for keeping your computer awake when it sh
 
 ## Requirements
 
-- Node.js 20.19 or newer
+- Node.js 22 or newer
 - pnpm 10 or newer
 - Rust 1.88 or newer and Cargo
 - Tauri desktop prerequisites for your operating system
@@ -39,6 +39,9 @@ pnpm dev:desktop
 | `pnpm build` | Build all workspace apps |
 | `pnpm build:web` | Build the website |
 | `pnpm build:desktop` | Build the desktop app and native bundle |
+| `pnpm release` | Build this OS's installer and publish its Cloudflare download ([setup](docs/releases.md)) |
+| `pnpm release --dry-run` | Preview release configuration without building or uploading |
+| `pnpm release:test` | Verify release artifact selection and publishing behavior |
 | `pnpm lint` | Lint website TypeScript and desktop Rust |
 | `pnpm test` | Run workspace tests, including the desktop Rust engine |
 | `pnpm --filter @doze/web media` | Re-record the website's macOS and Windows clips (dev server running) |

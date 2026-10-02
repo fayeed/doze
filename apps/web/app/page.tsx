@@ -1,8 +1,9 @@
 import { brand } from "@doze/brand";
+import Image from "next/image";
 import { Mark, OS, Wordmark } from "@/components/os";
 import { PlatformToggle, PlatformVideo } from "@/components/platform";
 
-const releases = `${brand.repository}/releases/latest`;
+import { downloads } from "@/lib/downloads";
 
 const chips = [
   "Keep Awake",
@@ -125,12 +126,16 @@ const faqs = [
 
 function DownloadButton({ className = "button primary" }: { className?: string }) {
   return (
-    <a className={className} href={releases}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" />
-      </svg>
-      <OS mac="Download for macOS" win="Download for Windows" />
-    </a>
+    <>
+      {(["macos", "windows"] as const).map((platform) => (
+        <a key={platform} className={`${className} only-${platform === "macos" ? "mac" : "win"}`} href={downloads[platform]}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" />
+          </svg>
+          Download for {platform === "macos" ? "macOS" : "Windows"}
+        </a>
+      ))}
+    </>
   );
 }
 
@@ -153,12 +158,7 @@ export default function Home() {
           <a className="brand" href="#top" aria-label={`${brand.name} home`}>
             <Wordmark height={30} />
           </a>
-          <nav aria-label="Primary">
-            <a href="#features">Features</a>
-            <a href="#agents">Agents</a>
-            <a href="#privacy">Privacy</a>
-            <a href="#faq">FAQ</a>
-          </nav>
+          <PlatformToggle />
           <a className="button small" href="#download">
             Download
           </a>
@@ -168,7 +168,8 @@ export default function Home() {
       <main id="main">
         <section className="hero" id="top">
           <p className="eyebrow">
-            <OS mac="Menu bar app for macOS" win="System tray app for Windows" />
+            <Mark size={16} />
+            <span>Menu bar and tray utility for Mac and PC</span>
           </p>
           <h1>
             Awake when it matters.
@@ -180,22 +181,10 @@ export default function Home() {
           </p>
           <div className="hero-actions">
             <DownloadButton />
-            <PlatformToggle />
           </div>
-          <ul className="specs">
-            <li>
-              <Check />
-              Free, no account needed
-            </li>
-            <li>
-              <Check />
-              Local and private
-            </li>
-            <li>
-              <Check />
-              <OS mac="macOS 13 Ventura or later" win="Native WinUI 3 on Windows" />
-            </li>
-          </ul>
+          <p className="specs">
+            Free · No account · No telemetry · <OS mac="macOS 13+" win="Windows 11" />
+          </p>
           <div className="hero-media">
             <PlatformVideo name="hero" label="Starting a two-hour Keep Awake session from Doze’s menu" priority />
           </div>
@@ -214,6 +203,43 @@ export default function Home() {
               <li key={chip}>{chip}</li>
             ))}
           </ul>
+        </section>
+
+        <section className="evening" aria-labelledby="evening-title">
+          <div className="evening-heading">
+            <h2 id="evening-title">One evening with Doze</h2>
+            <p>Friday · 21:40 → 00:57</p>
+          </div>
+          <ol className="evening-steps">
+            <li>
+              <div className="evening-time">
+                <time dateTime="21:40">21:40</time>
+                <span className="evening-dot" aria-hidden="true" />
+              </div>
+              <p>Start an export. <strong>Keep Awake · 2 hours.</strong></p>
+            </li>
+            <li>
+              <div className="evening-time">
+                <time dateTime="23:05">23:05</time>
+                <span className="evening-dot" aria-hidden="true" />
+              </div>
+              <p>A film in bed, with <strong>Sleep after playback stops</strong> on.</p>
+            </li>
+            <li>
+              <div className="evening-time">
+                <time dateTime="00:52">00:52</time>
+                <Mark size={16} />
+              </div>
+              <p>Credits end. The <strong>five-minute warning</strong> appears.</p>
+            </li>
+            <li className="evening-asleep">
+              <div className="evening-time">
+                <time dateTime="00:57">00:57</time>
+                <span className="evening-dot" aria-hidden="true" />
+              </div>
+              <p><strong>Sleep.</strong> Nobody had to get up.</p>
+            </li>
+          </ol>
         </section>
 
         <div id="features">
@@ -308,7 +334,7 @@ export default function Home() {
                   Liquid Glass on macOS 26
                 </li>
               </ul>
-              <a className="button" href={releases}>
+              <a className="button" href={downloads.macos}>
                 Download for macOS
               </a>
             </article>
@@ -325,7 +351,7 @@ export default function Home() {
                   Native tray menu and countdown
                 </li>
               </ul>
-              <a className="button" href={releases}>
+              <a className="button" href={downloads.windows}>
                 Download for Windows
               </a>
             </article>
@@ -349,6 +375,19 @@ export default function Home() {
           <h2>{brand.tagline}</h2>
           <DownloadButton />
         </section>
+        <aside className="clypy-promo" aria-labelledby="clypy-title">
+          <div className="clypy-card">
+            <Image src="/brand/clypy.png" alt="" width={80} height={80} unoptimized />
+            <div className="clypy-copy">
+              <p className="tag">Also from the maker of Doze</p>
+              <h2 id="clypy-title">Meet Clypy.</h2>
+              <p>A clipboard manager for Mac, Windows, Linux and phones.</p>
+            </div>
+            <a className="button primary" href="https://clypy.app">
+              Check out Clypy <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </aside>
       </main>
 
       <footer className="footer">
