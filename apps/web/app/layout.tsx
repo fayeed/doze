@@ -3,17 +3,32 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { brand } from "@doze/brand";
 import { platformScript } from "@/lib/platform";
+import { seoDescription, seoTitle, siteUrl } from "@/lib/seo";
 import "./globals.css";
 
 const sans = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: `${brand.name} · ${brand.tagline}`,
-  description:
-    "Doze keeps your Mac or PC awake while it matters, then lets it sleep: keep-awake sessions, power timers, sleep after playback, and wake leases for coding agents. Free, local and private.",
-  metadataBase: new URL(`https://${brand.domain}`),
-  openGraph: { title: brand.name, description: brand.tagline, type: "website" },
+  title: seoTitle,
+  description: seoDescription,
+  metadataBase: new URL(siteUrl),
+  applicationName: brand.name,
+  openGraph: {
+    title: seoTitle,
+    description: seoDescription,
+    siteName: brand.name,
+    url: siteUrl,
+    locale: "en_US",
+    type: "website",
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: brand.tagline }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: seoTitle,
+    description: seoDescription,
+    images: [{ url: "/opengraph-image", alt: brand.tagline }],
+  },
 };
 
 export const viewport: Viewport = { themeColor: brand.colors.paperText };

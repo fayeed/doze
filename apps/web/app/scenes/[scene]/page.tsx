@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { ScenePlayer } from "@/components/scenes/player";
+
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 // Source scenes for the site's videos. They exist only in development, where
 // scripts/render-media.mjs records them; the published site ships the encoded clips.

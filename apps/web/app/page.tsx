@@ -1,9 +1,41 @@
 import { brand } from "@doze/brand";
+import type { Metadata } from "next";
 import Image from "next/image";
 import { Mark, OS, Wordmark } from "@/components/os";
 import { PlatformToggle, PlatformVideo } from "@/components/platform";
 
 import { downloads } from "@/lib/downloads";
+import { seoDescription, siteUrl } from "@/lib/seo";
+
+export const metadata: Metadata = {
+  alternates: { canonical: siteUrl },
+};
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${siteUrl}/#website`,
+      name: brand.name,
+      url: siteUrl,
+      inLanguage: "en",
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${siteUrl}/#app`,
+      name: brand.name,
+      url: siteUrl,
+      description: seoDescription,
+      applicationCategory: "UtilitiesApplication",
+      operatingSystem: "macOS 13 or later, Windows",
+      isAccessibleForFree: true,
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      downloadUrl: [downloads.macos, downloads.windows],
+      author: { "@type": "Person", name: "Fayeed Pawaskar" },
+    },
+  ],
+};
 
 const chips = [
   "Keep Awake",
@@ -150,6 +182,10 @@ function Check() {
 export default function Home() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }}
+      />
       <a className="skip" href="#main">
         Skip to content
       </a>
