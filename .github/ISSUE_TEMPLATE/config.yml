@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/fayeed/doze/security/advisories/new
+    about: Please do not post security vulnerabilities in public issues.
+  - name: Product website and downloads
+    url: https://getdoze.app
+    about: Read about Doze and download the latest release.

@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest a focused improvement to Doze.
+title: "Feature: "
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What would you like to do?
+      description: Describe the problem or situation this would help with.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would a good solution look like?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+    validations:
+      required: false

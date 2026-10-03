@@ -1,0 +1,32 @@
+changelog:
+  categories:
+    - title: Breaking changes
+      labels:
+        - breaking-change
+        - breaking
+    - title: What's new
+      labels:
+        - enhancement
+        - feature
+    - title: Fixes
+      labels:
+        - bug
+        - bugfix
+    - title: Documentation
+      labels:
+        - documentation
+        - docs
+    - title: Maintenance
+      labels:
+        - dependencies
+        - maintenance
+        - chore
+    - title: Other changes
+      labels:
+        - "*"
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - wontfix
+      - skip-changelog

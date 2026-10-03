@@ -1,66 +1,124 @@
-# Doze
+<p align="center">
+  <img src="apps/web/public/brand/doze-wordmark.svg" alt="Doze" width="180" />
+</p>
 
-Doze is a lightweight desktop utility for keeping your computer awake when it should be awake, and letting it sleep when it should sleep. The Windows tray and macOS menu bar app lives in `apps/desktop`; the landing page lives in `apps/web`.
+<h1 align="center">Your computer knows when it's bedtime.</h1>
 
-> Your computer knows when it's bedtime.
+<p align="center">
+  Keep your Mac or PC awake while the important things finish. Then let it sleep, with a warning you can cancel.
+</p>
 
-## Requirements
+<p align="center">
+  <a href="https://getdoze.app">Website</a> ·
+  <a href="https://github.com/fayeed/doze/releases/latest">Latest release</a> ·
+  <a href="https://github.com/fayeed/doze/issues">Report an issue</a> ·
+  <a href="LICENSE.md">MIT License</a>
+</p>
 
-- Node.js 22 or newer
-- pnpm 10 or newer
+<p align="center">
+  <a href="https://github.com/fayeed/doze/releases/latest/download/Doze-macos-universal.dmg">Download for macOS</a> ·
+  <a href="https://github.com/fayeed/doze/releases/latest/download/Doze-windows-x64-setup.exe">Download for Windows</a>
+</p>
+
+<p align="center">
+  <a href="apps/web/public/media/macos/hero.mp4"><img src="apps/web/public/media/macos/hero.webp" alt="Doze's macOS menu bar app with Keep Awake and Power Timer controls" width="49%" /></a>
+  <a href="apps/web/public/media/windows/hero.mp4"><img src="apps/web/public/media/windows/hero.webp" alt="Doze's Windows system tray menu with Keep Awake and Power Timer controls" width="49%" /></a>
+</p>
+
+<p align="center"><em>At home in your menu bar or system tray. Click either preview to watch the short demo.</em></p>
+
+<p align="center">
+  <a href="apps/web/public/media/macos/hero.mp4">Watch the macOS demo</a> ·
+  <a href="apps/web/public/media/windows/hero.mp4">Watch the Windows demo</a>
+</p>
+
+## A calmer way to manage power
+
+Doze gives you a simple, visible way to decide when your computer stays awake and when it can rest. Start a session for a render, download, presentation or coding agent, and Doze releases its wake request as soon as the session ends.
+
+- **Keep Awake:** choose a duration, set an end time, or stay awake indefinitely.
+- **Power Timer:** schedule Sleep, Shut down, Hibernate, Lock or Display Off.
+- **After Playback:** arm it before watching; after playback ends, Doze waits for silence and inactivity before showing the final warning.
+- **A warning you control:** every power action has a countdown you can cancel, snooze or dismiss with Stay Awake.
+- **For coding agents:** connect an MCP client or use the command line to keep the computer awake while work runs.
+- **Native on both platforms:** a macOS menu bar app and a Windows tray app, with native settings and countdown windows.
+
+<p align="center">
+  <a href="apps/web/public/media/macos/after-playback.mp4"><img src="apps/web/public/media/macos/after-playback.webp" alt="Watch Doze After Playback on macOS" width="49%" /></a>
+  <a href="apps/web/public/media/windows/final-warning.mp4"><img src="apps/web/public/media/windows/final-warning.webp" alt="Watch the cancelable final warning on Windows" width="49%" /></a>
+</p>
+
+<p align="center"><em>After Playback waits for a quiet, idle computer. The final warning always gives you a chance to stay awake.</em></p>
+
+## Private by design
+
+Doze works locally. It has no account, telemetry or ads. Playback monitoring checks system audio activity; it never records or sends audio. Preferences and optional diagnostic logs stay on your computer.
+
+## Clypy, from the same maker
+
+<p>
+  <img src="apps/web/public/brand/clypy.png" alt="Clypy app icon" width="64" align="left" />
+  <strong>Your clipboard, with a memory.</strong><br />
+  Clypy keeps your copied text, links, code, images and more easy to find across Mac, Windows, Linux, iPhone and Android. Search your history, capture clips from your phone, and sync paired devices with end-to-end encryption.
+</p>
+
+<p><a href="https://clypy.app">Meet Clypy →</a></p>
+
+## Install
+
+Download the latest release for your computer:
+
+- [macOS 13 Ventura or later · Universal for Apple Silicon and Intel](https://github.com/fayeed/doze/releases/latest/download/Doze-macos-universal.dmg)
+- [Windows 11 · x64 installer](https://github.com/fayeed/doze/releases/latest/download/Doze-windows-x64-setup.exe)
+
+New releases are built for Windows and macOS and published together from a version tag. See [the release guide](docs/releases.md) for the workflow and macOS signing setup.
+
+## For developers
+
+### Requirements
+
+- Node.js 22 or newer and pnpm 10 or newer
 - Rust 1.88 or newer and Cargo
-- Tauri desktop prerequisites for your operating system
+- Windows: Microsoft C++ Build Tools with **Desktop development with C++**, plus .NET 8
+- macOS: Xcode with the macOS 26 SDK
 
-For Windows, install the Microsoft C++ Build Tools with the **Desktop development with C++** workload. For macOS, install Xcode with a macOS 26 or newer SDK for the native SwiftUI/AppKit companion and current Liquid Glass appearance. The desktop currently targets Windows and macOS.
-
-## Get started
+### Run locally
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-This starts the Next.js site and the Tauri desktop app. Open the website at the URL printed by Next.js. Desktop development starts a tray (Windows) or menu bar (macOS) app and requires the platform prerequisites above. Click the Doze icon to open its native system menu. The first launch also opens Settings, whose Overview page doubles as a control center. Settings, About and custom timers use native WinUI 3 with Mica on Windows and SwiftUI/AppKit on macOS, with Liquid Glass on macOS 26+ and native material on older releases.
+This starts the website and the desktop app. Run only one with `pnpm dev:web` or `pnpm dev:desktop`.
 
-To run one app at a time:
-
-```sh
-pnpm dev:web
-pnpm dev:desktop
-```
-
-## Commands
-
-| Command | Description |
+| Command | What it does |
 | --- | --- |
-| `pnpm dev` | Start website and desktop app |
-| `pnpm dev:web` | Start the Next.js development server |
-| `pnpm dev:desktop` | Start the Tauri desktop development app |
-| `pnpm build` | Build all workspace apps |
-| `pnpm build:web` | Build the website |
-| `pnpm build:desktop` | Build the desktop app and native bundle |
-| `pnpm release --build-only` | Build this OS's installer without publishing |
-| `pnpm release v0.1.0` | Upload this OS's installer to an existing GitHub Release |
-| `pnpm release:test` | Verify release planning and installer selection |
+| `pnpm build` | Build the website and desktop workspace |
+| `pnpm lint` | Check the website and Rust code |
+| `pnpm test` | Run workspace tests |
+| `pnpm release --build-only` | Build a local installer without publishing |
+| `pnpm release:test` | Check release planning and installer selection |
 
-Push a matching `vVERSION` tag to build Windows and macOS installers and publish them together on GitHub. See the [release guide](docs/releases.md) for setup and signing secrets.
-| `pnpm lint` | Lint website TypeScript and desktop Rust |
-| `pnpm test` | Run workspace tests, including the desktop Rust engine |
-| `pnpm --filter @doze/web media` | Re-record the website's macOS and Windows clips (dev server running) |
+### Workspace
 
-## Workspace
+- `apps/desktop` — Tauri desktop app, Rust engine, and native Windows/macOS interfaces
+- `apps/web` — product website and platform-specific demo scenes
+- `packages/brand` — shared visual identity and product details
+- `packages/config` — shared TypeScript configuration
+- `skills/doze` — companion skill for authorized Doze sessions from coding agents
 
-- `apps/desktop` — native tray menus, WinUI 3 settings, Tauri 2, and Rust
-- `apps/web` — Next.js App Router landing page, with separate macOS and Windows clips recorded from `components/scenes` (see [its README](apps/web/components/README.md))
-- `packages/brand` — shared product name, domain, tagline and palette; the brand artwork (app icons, tray glyphs, wordmarks) lives in `apps/web/public/brand`
-- `packages/config` — shared TypeScript compiler options
+For MCP setup, command-line jobs, platform details and verification notes, see the [desktop guide](apps/desktop/README.md). See [QA notes](apps/desktop/QA.md) for current platform validation.
 
-See [the desktop README](apps/desktop/README.md) for native API choices, verification commands, and remaining hardware validation, and [QA.md](apps/desktop/QA.md) for the latest Windows and macOS QA runs.
+## Community and security
 
-## Coding agents
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Report bugs and suggest improvements through the [issue tracker](https://github.com/fayeed/doze/issues). Never post security vulnerabilities publicly; follow [SECURITY.md](SECURITY.md) to report them privately.
 
-Doze supports local MCP clients through its existing session engine. Open **Agents** in Doze to enable MCP, connect Codex/Claude Code, and grant per-agent wake and completion permissions. Agents renew leases and explicitly report completion; lost connections keep the computer awake for up to 30 minutes, then release without a completion action. See the [desktop MCP connection guide](apps/desktop/README.md#agents-and-mcp) for configuration, lifecycle, security and safe integration tests.
+Doze is released under the [MIT License](LICENSE.md).
 
-For jobs without an agent, `doze run --then sleep -- COMMAND` keeps the computer awake until the command succeeds and then sleeps after the final warning; `doze watch --pid PID` follows a process that is already running. See [command-line jobs](apps/desktop/README.md#command-line-jobs).
+---
 
-The portable [Doze skill](skills/doze/SKILL.md) teaches agents authorization, heartbeat renewal, success, failure, cancellation, and overlapping sessions. See [skill installation](apps/desktop/README.md#install-the-companion-skill) for Codex and Claude Code. The skill and MCP connection are installed separately; runtime heartbeat and cancellation hooks require a provider integration.
+<p align="center">
+  Made with care by <a href="https://github.com/fayeed">Fayeed Pawaskar</a> ·
+  <a href="https://getdoze.app">getdoze.app</a> ·
+  <a href="https://clypy.app">clypy.app</a>
+</p>
