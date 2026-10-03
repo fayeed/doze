@@ -429,6 +429,7 @@ export default function Home() {
             <a href="#privacy">Privacy</a>
             <a href="#faq">FAQ</a>
             <a href="#download">Download</a>
+            <a href={brand.repository} target="_blank" rel="noreferrer">GitHub</a>
           </nav>
           <p className="footer-note">Made by Fayeed Pawaskar · No telemetry, ever.</p>
         </div>

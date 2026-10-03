@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -15,13 +14,7 @@ export function releasePlan(platform, version) {
     return {
       platform: "windows",
       filename: "Doze-windows-x64-setup.exe",
-      buildArgs: [
-        "build",
-        "--bundles",
-        "nsis",
-        "--target",
-        "x86_64-pc-windows-msvc",
-      ],
+      buildArgs: ["build", "--bundles", "nsis", "--target", "x86_64-pc-windows-msvc"],
       bundleDir: "x86_64-pc-windows-msvc/release/bundle/nsis",
       extension: ".exe",
       version,
@@ -30,13 +23,7 @@ export function releasePlan(platform, version) {
     return {
       platform: "macos",
       filename: "Doze-macos-universal.dmg",
-      buildArgs: [
-        "build",
-        "--bundles",
-        "app,dmg",
-        "--target",
-        "universal-apple-darwin",
-      ],
+      buildArgs: ["build", "--bundles", "app,dmg", "--target", "universal-apple-darwin"],
       bundleDir: "universal-apple-darwin/release/bundle/dmg",
       extension: ".dmg",
       version,
@@ -44,35 +31,9 @@ export function releasePlan(platform, version) {
   throw new Error("Run releases on Windows or macOS.");
 }
 
-export function releaseSettings(config, env = process.env) {
-  const bucket = env.DOZE_R2_BUCKET || config.bucket;
-  const base = env.DOZE_DOWNLOAD_BASE_URL || config.publicBaseUrl;
-  if (!bucket || !base)
-    throw new Error(
-      "Set bucket and publicBaseUrl in release.config.json (or DOZE_R2_BUCKET and DOZE_DOWNLOAD_BASE_URL).",
-    );
-  if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket))
-    throw new Error("Invalid R2 bucket name.");
-  const url = new URL(base);
-  if (
-    url.protocol !== "https:" ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    url.pathname !== "/"
-  ) {
-    throw new Error(
-      "publicBaseUrl must be the HTTPS root of your public R2 bucket, without credentials, a path, query or fragment.",
-    );
-  }
-  return { bucket, base: url.origin };
-}
-
 export async function findInstaller(folder, plan, startedAt) {
   const names = (await readdir(folder)).filter(
-    (name) =>
-      name.endsWith(plan.extension) && name.includes(`_${plan.version}_`),
+    (name) => name.endsWith(plan.extension) && name.includes(`_${plan.version}_`),
   );
   const candidates = [];
   for (const name of names) {
@@ -82,196 +43,76 @@ export async function findInstaller(folder, plan, startedAt) {
       candidates.push(file);
   }
   if (candidates.length !== 1)
-    throw new Error(
-      `Expected one freshly built ${plan.extension} for ${plan.version} in ${folder}; found ${candidates.length}. Nothing uploaded.`,
-    );
+    throw new Error(`Expected one freshly built ${plan.extension} for ${plan.version}; found ${candidates.length}.`);
   return candidates[0];
-}
-
-export function objectKeys(plan, hash) {
-  return [
-    `releases/${plan.version}/${plan.platform}/${hash}/${plan.filename}`,
-    `releases/latest/${plan.filename}`,
-  ];
 }
 
 function run(command, args, cwd = root, capture = false) {
   const result = spawnSync(command, args, {
     cwd,
-    env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
+    env: process.env,
     stdio: capture ? "pipe" : "inherit",
     encoding: "utf8",
   });
   if (result.error) throw result.error;
   if (result.status !== 0)
-    throw new Error(
-      `${path.basename(command)} failed (${result.status}). ${capture ? result.stderr : "See output above."}`,
-    );
+    throw new Error(`${path.basename(command)} failed (${result.status}). ${capture ? result.stderr : "See output above."}`);
   return result.stdout;
-}
-
-export async function publishInstaller({
-  plan,
-  file,
-  settings,
-  upload,
-  verify,
-}) {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(file)) hash.update(chunk);
-  const digest = hash.digest("hex");
-  const [archive, latest] = objectKeys(plan, digest);
-  // Verify the archived download before replacing the public latest installer.
-  await upload(archive, "public, max-age=31536000, immutable");
-  await verify(`${settings.base}/${archive}`, digest);
-  await upload(latest, "no-store");
-  await verify(`${settings.base}/${latest}`, digest);
-  return { url: `${settings.base}/${latest}`, sha256: digest };
-}
-
-async function verifyDownload(url, expected) {
-  const response = await fetch(url, {
-    cache: "no-store",
-    signal: AbortSignal.timeout(300_000),
-  });
-  if (!response.ok || !response.body)
-    throw new Error(
-      `Public download verification failed (${response.status}): ${url}`,
-    );
-  const hash = createHash("sha256");
-  for await (const chunk of response.body) hash.update(chunk);
-  if (hash.digest("hex") !== expected)
-    throw new Error(
-      `Downloaded file does not match the build: ${url}. Check public access and Cloudflare cache rules.`,
-    );
 }
 
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes("--help")) {
-    console.log(
-      "pnpm release [--dry-run]\nBuild and publish this OS to Cloudflare R2. Configure release.config.json; use wrangler login or CLOUDFLARE_API_TOKEN. Optional secrets: .env.release (ignored by Git).",
-    );
+    console.log("pnpm release [vVERSION] [--build-only]\nBuild this OS's installer. Supply a GitHub release tag to upload it with gh; tag pushes in GitHub Actions build and publish both platforms together.");
     return;
   }
-  if (args.some((arg) => arg !== "--dry-run"))
-    throw new Error("Unknown option. Use --help.");
+  const buildOnly = args.includes("--build-only");
+  const rest = args.filter((arg) => arg !== "--build-only");
+  if (rest.length > 1) throw new Error("Usage: pnpm release [vVERSION] [--build-only].");
   const envFile = path.join(root, ".env.release");
   if (existsSync(envFile)) process.loadEnvFile(envFile);
   if (process.env.CARGO_TARGET_DIR || process.env.CARGO_BUILD_TARGET)
-    throw new Error(
-      "Unset CARGO_TARGET_DIR and CARGO_BUILD_TARGET for release builds; native companions use the repository's standard output paths.",
-    );
-  const config = JSON.parse(
-    await readFile(path.join(root, "release.config.json"), "utf8"),
-  );
-  const settings = releaseSettings(config);
-  const { version } = JSON.parse(
-    await readFile(path.join(desktop, "src-tauri/tauri.conf.json"), "utf8"),
-  );
+    throw new Error("Unset CARGO_TARGET_DIR and CARGO_BUILD_TARGET for release builds.");
+  const { version } = JSON.parse(await readFile(path.join(desktop, "src-tauri/tauri.conf.json"), "utf8"));
   const plan = releasePlan(process.platform, version);
-  if (process.platform === "darwin" && !args.includes("--dry-run")) {
-    const hasApiCredentials =
-      process.env.APPLE_API_ISSUER &&
-      process.env.APPLE_API_KEY &&
-      process.env.APPLE_API_KEY_PATH;
-    const hasAppleIdCredentials =
-      process.env.APPLE_ID &&
-      process.env.APPLE_PASSWORD &&
-      process.env.APPLE_TEAM_ID;
-    if (
-      !process.env.APPLE_SIGNING_IDENTITY ||
-      (!hasApiCredentials && !hasAppleIdCredentials)
-    ) {
-      throw new Error(
-        "macOS releases require APPLE_SIGNING_IDENTITY and Apple notarization credentials. See docs/releases.md.",
-      );
-    }
+  const tag = rest[0];
+  if (process.env.GITHUB_REF_NAME && process.env.GITHUB_REF_NAME !== `v${version}`)
+    throw new Error(`Git tag ${process.env.GITHUB_REF_NAME} does not match app version v${version}.`);
+  if (tag && tag !== `v${version}`)
+    throw new Error(`Release tag ${tag} does not match app version v${version}.`);
+  if (!buildOnly && !tag)
+    throw new Error(`Supply the GitHub release tag v${version}, or use --build-only.`);
+  if (process.platform === "darwin" && !buildOnly) {
+    const hasApi = process.env.APPLE_API_ISSUER && process.env.APPLE_API_KEY && process.env.APPLE_API_KEY_PATH;
+    const hasAppleId = process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID;
+    if (!process.env.APPLE_SIGNING_IDENTITY || (!hasApi && !hasAppleId))
+      throw new Error("macOS releases require signing and Apple notarization credentials. See docs/releases.md.");
   }
-  console.log(
-    `Release ${version}: ${plan.platform}\nBuild: tauri ${plan.buildArgs.join(" ")}\nBucket: ${settings.bucket}\nDownload: ${settings.base}/releases/latest/${plan.filename}`,
-  );
-  if (args.includes("--dry-run")) return;
-  const wrangler = path.join(root, "node_modules/wrangler/bin/wrangler.js");
-  // Check authentication and bucket access before spending time on the build.
-  run(process.execPath, [wrangler, "r2", "bucket", "info", settings.bucket]);
+  if (!buildOnly) run("gh", ["release", "view", tag]);
+  console.log(`Release ${tag || `v${version}`}: ${plan.platform}\nBuild: tauri ${plan.buildArgs.join(" ")}`);
+  const buildStartedAt = Date.now();
   if (process.platform === "darwin")
-    run("rustup", [
-      "target",
-      "add",
-      "aarch64-apple-darwin",
-      "x86_64-apple-darwin",
-    ]);
+    run(process.execPath, [path.join(desktop, "scripts/build-macos-release.mjs"), ...plan.buildArgs.slice(3)], desktop);
   else {
     const rustInfo = run("rustc", ["-vV"], desktop, true);
     if (!rustInfo.includes("host: x86_64-pc-windows-msvc"))
-      throw new Error(
-        "Windows releases require the x86_64-pc-windows-msvc Rust toolchain (including the native CLI companion).",
-      );
+      throw new Error("Windows releases require the x86_64-pc-windows-msvc Rust toolchain.");
+    run(process.execPath, [path.join(desktop, "node_modules/@tauri-apps/cli/tauri.js"), ...plan.buildArgs], desktop);
   }
-  const startedAt = Date.now();
-  if (process.platform === "darwin")
-    run(
-      process.execPath,
-      [
-        path.join(desktop, "scripts/build-macos-release.mjs"),
-        ...plan.buildArgs.slice(3),
-      ],
-      desktop,
-    );
-  else
-    run(
-      process.execPath,
-      [
-        path.join(desktop, "node_modules/@tauri-apps/cli/tauri.js"),
-        ...plan.buildArgs,
-      ],
-      desktop,
-    );
-  const file = await findInstaller(
-    path.join(desktop, "src-tauri/target", plan.bundleDir),
-    plan,
-    startedAt,
-  );
-  // Wrangler's object upload limit is 315 MB.
-  if ((await stat(file)).size > 315_000_000)
-    throw new Error(
-      "Installer exceeds Wrangler's 315 MB upload limit; use R2 multipart upload for this release.",
-    );
-  const result = await publishInstaller({
-    plan,
-    file,
-    settings,
-    verify: verifyDownload,
-    upload: (key, cacheControl) =>
-      run(process.execPath, [
-        wrangler,
-        "r2",
-        "object",
-        "put",
-        `${settings.bucket}/${key}`,
-        "--remote",
-        "--file",
-        file,
-        "--content-type",
-        "application/octet-stream",
-        "--content-disposition",
-        `attachment; filename="${plan.filename}"`,
-        "--cache-control",
-        cacheControl,
-      ]),
-  });
-  console.log(
-    `Published and verified: ${result.url}\nSHA-256: ${result.sha256}`,
-  );
+  const file = await findInstaller(path.join(desktop, "src-tauri/target", plan.bundleDir), plan, buildStartedAt);
+  const publishedFile = path.join(path.dirname(file), plan.filename);
+  const { copyFile } = await import("node:fs/promises");
+  await copyFile(file, publishedFile);
+  if (buildOnly) {
+    console.log(`Built: ${publishedFile}`);
+    return;
+  }
+  run("gh", ["release", "upload", tag, publishedFile, "--clobber"]);
+  console.log(`Uploaded ${plan.filename} to ${tag}.`);
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
-) {
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)
   main().catch((error) => {
     console.error(error.message);
     process.exitCode = 1;
   });
-}

@@ -39,9 +39,11 @@ pnpm dev:desktop
 | `pnpm build` | Build all workspace apps |
 | `pnpm build:web` | Build the website |
 | `pnpm build:desktop` | Build the desktop app and native bundle |
-| `pnpm release` | Build this OS's installer and publish its Cloudflare download ([setup](docs/releases.md)) |
-| `pnpm release --dry-run` | Preview release configuration without building or uploading |
-| `pnpm release:test` | Verify release artifact selection and publishing behavior |
+| `pnpm release --build-only` | Build this OS's installer without publishing |
+| `pnpm release v0.1.0` | Upload this OS's installer to an existing GitHub Release |
+| `pnpm release:test` | Verify release planning and installer selection |
+
+Push a matching `vVERSION` tag to build Windows and macOS installers and publish them together on GitHub. See the [release guide](docs/releases.md) for setup and signing secrets.
 | `pnpm lint` | Lint website TypeScript and desktop Rust |
 | `pnpm test` | Run workspace tests, including the desktop Rust engine |
 | `pnpm --filter @doze/web media` | Re-record the website's macOS and Windows clips (dev server running) |
