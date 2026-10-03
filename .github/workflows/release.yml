@@ -9,6 +9,19 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft and generated release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --draft --generate-notes
+          fi
+
   build:
     name: Build ${{ matrix.platform }}
     strategy:
@@ -23,6 +36,7 @@ jobs:
             os: macos-26
             artifact: Doze-macos-universal.dmg
             artifact_path: apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/Doze-macos-universal.dmg
+    needs: create-release
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -70,20 +84,18 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish GitHub release
-    needs: build
+    name: Upload installers and publish release
+    needs: [create-release, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: installers
           merge-multiple: true
-      - name: Create or update release with both installers
+      - name: Upload both installers and publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --generate-notes
-          fi
           gh release upload "$TAG" installers/Doze-windows-x64-setup.exe installers/Doze-macos-universal.dmg --clobber
+          gh release edit "$TAG" --draft=false

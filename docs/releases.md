@@ -1,6 +1,6 @@
 # Publish desktop downloads to GitHub
 
-Push a version tag such as `v0.1.0` to start the GitHub Actions release workflow. It builds the Windows x64 installer and signed, notarized universal macOS DMG on separate hosted runners, then publishes both files together as one GitHub Release. Website download buttons point to the assets on the latest GitHub Release.
+Push a version tag such as `v0.1.0` to start the GitHub Actions release workflow. It immediately creates a draft GitHub Release with auto-generated notes, builds the Windows x64 installer and signed, notarized universal macOS DMG on separate hosted runners, uploads both assets, then publishes the release. If either build fails, the release stays as a draft. Website download buttons point to the assets on the latest published release.
 
 ## Prepare a release
 
@@ -13,7 +13,7 @@ Push a version tag such as `v0.1.0` to start the GitHub Actions release workflow
    git push origin v0.1.0
    ```
 
-Use the version you set in `tauri.conf.json` in place of `0.1.0`. The workflow rejects a tag that does not match the app version. Do not separately run release builds on different computers for the same tag: one tag push starts both platform builds, and the release job waits for both before publishing.
+Use the version you set in `tauri.conf.json` in place of `0.1.0`. The workflow rejects a tag that does not match the app version. Do not separately run release builds on different computers for the same tag: one tag push starts both platform builds, and the release job waits for both before publishing. If a build fails, add or fix its missing configuration and rerun the failed workflow; it will reuse the draft release and replace any same-named assets.
 
 ## GitHub repository secrets
 
