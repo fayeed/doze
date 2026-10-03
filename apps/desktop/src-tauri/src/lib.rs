@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Manager, State};
 mod cli;
 mod core;
 pub mod mcp;
@@ -7,6 +7,36 @@ mod platform;
 mod quick_settings;
 mod state;
 mod tray;
+
+#[tauri::command]
+fn panel_snapshot(state: State<'_, state::AppState>) -> Result<state::PanelSnapshot, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    state.sender.send(state::Request::PanelSnapshot(tx)).map_err(|e| e.to_string())?;
+    rx.recv_timeout(std::time::Duration::from_secs(2)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn panel_action(action: String, state: State<'_, state::AppState>) -> Result<(), String> {
+    let operation = match action.as_str() {
+        "awake15" => state::Operation::KeepAwake { seconds: Some(900) },
+        "awake30" => state::Operation::KeepAwake { seconds: Some(1800) },
+        "awake60" => state::Operation::KeepAwake { seconds: Some(3600) },
+        "awakeForever" => state::Operation::KeepAwake { seconds: None },
+        "stopAwake" => state::Operation::StopAwake,
+        "timer30" => state::Operation::ScheduleDefault,
+        "playback" => state::Operation::TogglePlayback,
+        "audio" => state::Operation::ToggleWhileAudio,
+        "settings" => state::Operation::OpenDialog { view: state::DialogView::Settings },
+        _ => return Err("Unknown panel action.".into()),
+    };
+    let (tx, _rx) = std::sync::mpsc::channel();
+    state.sender.send(state::Request::Operation(operation, tx)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn panel_close(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("panel") { let _ = window.hide(); }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +52,7 @@ pub fn run() {
         return;
     }
     let result = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![panel_snapshot, panel_action, panel_close])
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             tray::show(app)
         }))
@@ -55,6 +86,14 @@ pub fn run() {
                 )));
             }
             tray::setup(app)?;
+            if let Some(panel) = app.get_webview_window("panel") {
+                let panel_for_close = panel.clone();
+                panel.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::Focused(false)) {
+                        let _ = panel_for_close.hide();
+                    }
+                });
+            }
             if !start_minimized {
                 tray::show(app.handle());
             }

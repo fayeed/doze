@@ -94,6 +94,7 @@ pub enum DialogView {
     TimerTime,
 }
 pub enum Request {
+    PanelSnapshot(Sender<crate::state::PanelSnapshot>),
     Operation(Operation, Sender<Result<Snapshot, String>>),
     Mcp(
         crate::mcp::tools::Call,

@@ -22,6 +22,26 @@ pub struct AppState {
     pub sender: Sender<Request>,
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelSnapshot {
+    pub awake: bool,
+    pub awake_deadline: Option<u64>,
+    pub now: u64,
+    pub sessions: Vec<PanelSession>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelSession {
+    pub id: String,
+    pub provider: String,
+    pub task: String,
+    pub started_at: u64,
+    pub last_activity: u64,
+    pub status: String,
+}
+
 pub fn start(
     app: tauri::AppHandle,
     path: PathBuf,

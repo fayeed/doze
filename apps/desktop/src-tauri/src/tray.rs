@@ -6,8 +6,31 @@ use crate::{
 use tauri::{
     menu::{CheckMenuItem, IconMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Manager, WebviewUrl, WebviewWindowBuilder,
 };
+
+fn show_panel(app: &tauri::AppHandle, x: f64, y: f64) {
+    let Some(window) = app.get_webview_window("panel") else { return; };
+    let (width, height) = (390.0, 620.0);
+    let position = app.available_monitors().ok().and_then(|monitors| {
+        monitors.into_iter().find(|monitor| {
+            let p = monitor.position(); let s = monitor.size();
+            x >= p.x as f64 && x <= (p.x + s.width as i32) as f64
+                && y >= p.y as f64 && y <= (p.y + s.height as i32) as f64
+        }).map(|monitor| {
+            let p = monitor.position(); let s = monitor.size();
+            let scale = monitor.scale_factor();
+            let w = (width * scale) as i32; let h = (height * scale) as i32;
+            let left = (x - w as f64 + 8.0).clamp(p.x as f64, (p.x + s.width as i32 - w) as f64);
+            let top = if cfg!(target_os = "macos") { y + 8.0 } else { y - h as f64 - 8.0 }
+                .clamp(p.y as f64, (p.y + s.height as i32 - h) as f64);
+            (left, top)
+        })
+    }).unwrap_or((x - width, y - height));
+    let _ = window.set_position(tauri::PhysicalPosition::new(position.0, position.1));
+    let _ = window.show();
+    let _ = window.set_focus();
+}
 
 struct NativeMenu {
     agents: Submenu<tauri::Wry>,
@@ -48,6 +71,17 @@ fn item(app: &tauri::App, id: &str, text: &str) -> tauri::Result<MenuItem<tauri:
 }
 
 pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
+    if app.get_webview_window("panel").is_none() {
+        WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("index.html".into()))
+            .title("Doze")
+            .inner_size(390.0, 620.0)
+            .min_inner_size(340.0, 420.0)
+            .resizable(false)
+            .decorations(false)
+            .skip_taskbar(true)
+            .visible(false)
+            .build()?;
+    }
     let status = item(app, "status", "Normal sleep allowed")?;
     let timer = item(app, "timer_status", "No power timer")?;
     let awake = menu_icons::submenu(app, "awake_menu", "Keep Awake", Glyph::Awake)?;
@@ -186,7 +220,7 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         .icon(image(0))
         .tooltip("Doze · Normal sleep allowed")
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        .show_menu_on_left_click(false)
         .icon_as_template(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| {
             let id = event.id.as_ref();
@@ -258,8 +292,10 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
             dispatch(app, operation);
         })
         .on_tray_icon_event(|tray, event| {
-            if matches!(event, TrayIconEvent::Click { .. }) {
-                dispatch(tray.app_handle(), Operation::Refresh);
+            if let TrayIconEvent::Click { position, button: tauri::tray::MouseButton::Left, .. } = event {
+                let app = tray.app_handle();
+                dispatch(app, Operation::Refresh);
+                show_panel(app, position.x, position.y);
             }
         })
         .build(app)?;

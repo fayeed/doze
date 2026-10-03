@@ -188,6 +188,24 @@ pub(super) fn worker(
         let mut warning_failed = false;
         if let Some(request) = request {
             match request {
+                Request::PanelSnapshot(tx) => {
+                    let sessions = snapshot.engine.agents.items.iter()
+                        .filter(|session| !session.status.terminal())
+                        .map(|session| super::PanelSession {
+                            id: session.session_id.clone(),
+                            provider: session.client_name.clone(),
+                            task: session.reason.clone(),
+                            started_at: session.created_at,
+                            last_activity: session.last_heartbeat,
+                            status: format!("{:?}", session.status),
+                        }).collect();
+                    let _ = tx.send(super::PanelSnapshot {
+                        awake: snapshot.engine.awake || snapshot.engine.agents.holds_awake(),
+                        awake_deadline: snapshot.engine.awake_deadline,
+                        now: snapshot.engine.now,
+                        sessions,
+                    });
+                }
                 Request::Mcp(call, tx) => {
                     let request_authorization = call.name == "doze.start_session";
                     let result = crate::mcp::tools::call(
