@@ -29,8 +29,14 @@ jobs:
           node-version: 22
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v4
+        if: runner.os == 'Windows'
+        with:
+          dotnet-version: 8.0.x
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Build native companions
+        run: pnpm --filter @doze/desktop native:build
       - name: Lint
         run: pnpm lint
       - name: Test
