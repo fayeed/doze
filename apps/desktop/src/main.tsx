@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import "./style.css";
 
-type Session = { id: string; provider: string; task: string; startedAt: number; lastActivity: number; status: string };
+type Session = { id: string; provider: string; task: string; workspace: string | null; activity: string; workingSeconds: number; startedAt: number; lastActivity: number; status: string; title?: string };
 type Snapshot = { awake: boolean; awakeDeadline: number | null; now: number; sessions: Session[] };
 
 function duration(seconds: number) {
@@ -32,7 +32,7 @@ function App() {
   }, [refresh]);
   const action = async (name: string) => { await invoke("panel_action", { action: name }); await refresh(); };
   const sessions = snapshot?.sessions ?? [];
-  const working = 0;
+  const working = sessions.filter(s => s.activity === "Working").length;
   return <main>
     <header><div className="brand"><span className="brand-mark">z</span><div><strong>Doze</strong><small>Power, with a little more peace.</small></div></div><button className="icon-button" aria-label="Close panel" onClick={() => void invoke("panel_close")}>×</button></header>
     <section className="hero"><div className="eyebrow">RIGHT NOW</div><div className="headline"><span className={`pulse ${snapshot?.awake ? "on" : ""}`} />{snapshot?.awake ? "Keeping things awake" : "Normal sleep allowed"}</div><div className="subline">{working} working · {sessions.length} active Doze sessions</div></section>
@@ -40,10 +40,10 @@ function App() {
     {error && <p className="empty">{error}</p>}
     {!error && sessions.length === 0 && <div className="empty"><span className="empty-sun">✳</span><strong>All quiet here</strong><span>Connected agent sessions will show up here.</span></div>}
     <div className="sessions">{sessions.map(session => {
-      const waiting = session.status === "ConnectionLost" || session.status === "AwaitingAuthorization";
+      const waiting = session.activity === "Waiting" || session.status === "ConnectionLost" || session.status === "AwaitingAuthorization";
       return <article className="session" key={session.id}>
         <div className={`provider ${session.provider.toLowerCase().includes("claude") ? "claude" : "codex"}`} aria-hidden="true">{session.provider.toLowerCase().includes("claude") ? "✳" : "◈"}</div>
-        <div className="session-body"><div className="session-title"><strong>{session.provider}</strong><span className={`state ${waiting ? "waiting" : "working"}`}><i />{waiting ? (session.status === "ConnectionLost" ? "Connection lost" : "Waiting for approval") : "Doze session open"}</span></div><div className="task">{session.task}</div><div className="meta">{duration(Math.max(0, (snapshot?.now ?? 0) - session.startedAt))} in Doze · signal {duration(Math.max(0, (snapshot?.now ?? 0) - session.lastActivity))} ago</div></div>
+        <div className="session-body"><div className="session-title"><strong>{session.provider}</strong><span className={`state ${waiting ? "waiting" : session.activity === "Working" ? "working" : ""}`}><i />{session.status === "ConnectionLost" ? "Connection lost" : session.status === "AwaitingAuthorization" ? "Approval needed" : session.activity === "Unknown" ? "Session open" : session.activity}</span></div><div className="task">{session.title || session.task}{session.workspace ? ` · ${session.workspace}` : ""}</div><div className="meta">{duration(Math.max(0, (snapshot?.now ?? 0) - session.startedAt))} total · {duration(session.workingSeconds)} working · signal {duration(Math.max(0, (snapshot?.now ?? 0) - session.lastActivity))} ago</div></div>
       </article>;
     })}</div>
     <section className="section-head controls-head"><h2>Keep awake</h2></section>

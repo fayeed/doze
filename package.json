@@ -9,7 +9,7 @@
   },
   "scripts": {
     "release": "node scripts/release.mjs",
-    "release:test": "node --test scripts/release.test.mjs",
+    "release:test": "node --test scripts/release.test.mjs scripts/package-manifests.test.mjs",
     "dev": "turbo run dev",
     "dev:desktop": "pnpm --filter @doze/desktop dev",
     "dev:web": "pnpm --filter @doze/web dev",

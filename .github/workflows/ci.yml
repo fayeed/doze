@@ -6,7 +6,6 @@ on:
     branches:
       - main
       - v0.2.0
-      - v0.2.0
 
 permissions:
   contents: read
@@ -39,9 +38,17 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build native companions
         run: pnpm --filter @doze/desktop native:build
+      - name: Check app version declarations
+        run: node scripts/version-check.mjs
+      - name: Check tray panel types
+        run: pnpm --filter @doze/desktop panel:check
+      - name: Build tray panel
+        run: pnpm --filter @doze/desktop panel:build
       - name: Lint
         run: pnpm lint
       - name: Test
         run: pnpm test
       - name: Build website
         run: pnpm build:web
+      - name: Check release packaging metadata
+        run: pnpm release:test

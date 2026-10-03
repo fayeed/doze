@@ -28,6 +28,15 @@ Windows builds need no signing secrets. To sign and notarize macOS releases, add
 
 The workflow imports the certificate into its temporary runner keychain and writes the API key into the runner's temporary directory. Nothing is committed to the repository. If any signing or notarization secret is absent or invalid, the macOS build fails and the release is not published.
 
+## Package manager publishing
+
+After a stable release publishes both installers, two independent jobs update package indexes:
+
+- Homebrew updates `Casks/doze.rb` in `fayeed/homebrew-tap`. Configure the repository secret `HOMEBREW_TAP_TOKEN` with write access to that tap. Install with `brew install --cask fayeed/tap/doze`.
+- WinGet submits the versioned `Fayeed.Doze` manifest to Microsoft's community repository. Configure `WINGET_SUBMISSION_TOKEN` with permission to open submissions to `microsoft/winget-pkgs`. Microsoft validates and reviews submissions before users can install with `winget install --id Fayeed.Doze --exact`.
+
+Both manifests use checksums from the release artifacts and immutable tag URLs. Distribution jobs run independently after the GitHub Release publishes; rerun a failed package job without rebuilding installers. WinGet availability depends on Microsoft's review and catalog processing.
+
 ## Local builds and uploads
 
 On Windows or macOS, `pnpm release --build-only` builds that machine's installer without publishing it. To upload a build manually, authenticate the GitHub CLI with repository write access and run `pnpm release v0.1.0`; the matching GitHub Release must already exist. The automated tag workflow is recommended because it publishes both platform assets together.

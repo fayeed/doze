@@ -94,12 +94,21 @@ jobs:
     name: Upload installers and publish release
     needs: [create-release, build]
     runs-on: ubuntu-latest
+    outputs:
+      mac_sha256: ${{ steps.checksums.outputs.mac }}
+      windows_sha256: ${{ steps.checksums.outputs.windows }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: installers
           merge-multiple: true
+      - id: checksums
+        name: Calculate installer checksums
+        shell: bash
+        run: |
+          echo "mac=$(sha256sum installers/Doze-macos-universal.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "windows=$(sha256sum installers/Doze-windows-x64-setup.exe | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - name: Upload both installers and publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -107,3 +116,76 @@ jobs:
         run: |
           gh release upload "$TAG" installers/Doze-windows-x64-setup.exe installers/Doze-macos-universal.dmg --clobber
           gh release edit "$TAG" --draft=false
+
+  publish-homebrew:
+    name: Update Homebrew tap
+    needs: publish
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: fayeed/homebrew-tap
+          ref: main
+          path: homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Generate cask and update tap
+        env:
+          VERSION: ${{ github.ref_name }}
+          MAC_SHA256: ${{ needs.publish.outputs.mac_sha256 }}
+        shell: bash
+        run: |
+          VERSION="${VERSION#v}"
+          mkdir -p /tmp/doze-manifests
+          node scripts/package-manifests.mjs "$VERSION" "$MAC_SHA256" "${{ needs.publish.outputs.windows_sha256 }}" /tmp/doze-manifests
+          mkdir -p homebrew-tap/Casks
+          cp "/tmp/doze-manifests/$VERSION/doze.rb" homebrew-tap/Casks/doze.rb
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/doze.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "Update Doze to $VERSION"
+            git push origin main
+          fi
+
+  publish-winget:
+    name: Submit WinGet manifests
+    needs: publish
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Generate manifests
+        shell: pwsh
+        env:
+          VERSION: ${{ github.ref_name }}
+          MAC_SHA256: ${{ needs.publish.outputs.mac_sha256 }}
+          WINDOWS_SHA256: ${{ needs.publish.outputs.windows_sha256 }}
+        run: |
+          $version = $env:VERSION.TrimStart('v')
+          node scripts/package-manifests.mjs $version $env:MAC_SHA256 $env:WINDOWS_SHA256 "$env:RUNNER_TEMP/doze-manifests"
+          $manifest = "$env:RUNNER_TEMP/doze-manifests/$version"
+          $wingetPath = "$env:RUNNER_TEMP/winget/manifests/f/Fayeed/Doze/$version"
+          New-Item -ItemType Directory -Force -Path $wingetPath | Out-Null
+          Get-ChildItem $manifest -Filter 'Fayeed.Doze*.yaml' | Copy-Item -Destination $wingetPath
+      - name: Submit to the WinGet community repository
+        shell: pwsh
+        env:
+          WINGET_SUBMISSION_TOKEN: ${{ secrets.WINGET_SUBMISSION_TOKEN }}
+          GH_TOKEN: ${{ secrets.WINGET_SUBMISSION_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          if (-not $env:WINGET_SUBMISSION_TOKEN) { throw 'Configure WINGET_SUBMISSION_TOKEN to publish WinGet manifests.' }
+          $version = $env:VERSION.TrimStart('v')
+          $mergedPath = "repos/microsoft/winget-pkgs/contents/manifests/f/Fayeed/Doze/$version"
+          gh api $mergedPath *> $null
+          if ($LASTEXITCODE -eq 0) { Write-Host "WinGet $version is already published."; exit 0 }
+          $openPullRequests = gh pr list --repo microsoft/winget-pkgs --state open --limit 100 --search "Fayeed.Doze $version" --json number --jq 'length'
+          if ($openPullRequests -and [int]$openPullRequests -gt 0) { Write-Host "WinGet submission for $version is already open."; exit 0 }
+          winget install --id Microsoft.WingetCreate --exact --silent --accept-source-agreements --accept-package-agreements
+          wingetcreate submit --token $env:WINGET_SUBMISSION_TOKEN "$env:RUNNER_TEMP/winget/manifests/f/Fayeed/Doze"

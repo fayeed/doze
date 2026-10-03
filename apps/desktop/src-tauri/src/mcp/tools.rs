@@ -22,6 +22,10 @@ pub struct Call {
 #[serde(deny_unknown_fields)]
 struct Start {
     reason: String,
+    title: Option<String>,
+    workspace: Option<String>,
+    provider_session_id: Option<String>,
+    parent_session_id: Option<String>,
     completion_action: Option<String>,
     optional_timeout: Option<u64>,
 }
@@ -29,6 +33,16 @@ struct Start {
 #[serde(deny_unknown_fields)]
 struct Id {
     session_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UpdateSession {
+    session_id: String,
+    title: Option<String>,
+    workspace: Option<String>,
+    activity: Option<crate::mcp::sessions::Activity>,
+    parent_session_id: Option<String>,
+    provider_session_id: Option<String>,
 }
 fn parse_action(
     value: Option<&str>,
@@ -96,6 +110,31 @@ pub fn call(
         {
             return Err("Reason must be 1–512 bytes without control characters.".into());
         }
+        for value in [
+            &start.title,
+            &start.workspace,
+            &start.provider_session_id,
+            &start.parent_session_id,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if value.trim().is_empty() || value.len() > 512 || value.chars().any(char::is_control) {
+                return Err(
+                    "Optional session metadata must be 1–512 bytes without control characters."
+                        .into(),
+                );
+            }
+        }
+        if let Some(provider_id) = &start.provider_session_id {
+            if let Some(existing) = engine.agents.items.iter().find(|session| {
+                session.client_id == client.id
+                    && session.provider_session_id.as_ref() == Some(provider_id)
+                    && !session.status.terminal()
+            }) {
+                return Ok(json!(existing));
+            }
+        }
         if start
             .optional_timeout
             .is_some_and(|t| !(30..=604800).contains(&t))
@@ -128,6 +167,14 @@ pub fn call(
             client_id: client.id.clone(),
             client_name: client.name.clone(),
             reason: start.reason,
+            title: start.title,
+            workspace: start.workspace,
+            activity: crate::mcp::sessions::Activity::Unknown,
+            parent_session_id: start.parent_session_id,
+            provider_session_id: start.provider_session_id,
+            wake_released: false,
+            activity_changed_at: engine.now,
+            working_seconds: 0,
             created_at: engine.now,
             last_heartbeat: engine.now,
             lease_expires_at: engine
@@ -168,6 +215,52 @@ pub fn call(
             .iter()
             .filter(|s| s.client_id == client.id)
             .collect::<Vec<_>>()));
+    }
+    if call.name == "doze.update_session" {
+        let update: UpdateSession = decode(call.arguments)?;
+        let now = engine.now;
+        for value in [&update.title, &update.workspace].into_iter().flatten() {
+            if value.len() > 512 || value.chars().any(char::is_control) {
+                return Err("Session title and workspace must be under 512 bytes and contain no control characters.".into());
+            }
+        }
+        let session = engine
+            .agents
+            .items
+            .iter_mut()
+            .find(|session| {
+                session.session_id == update.session_id && session.client_id == client.id
+            })
+            .ok_or("Session not found for this client.")?;
+        if session.status.terminal() {
+            return Err("Session already ended.".into());
+        }
+        if let Some(title) = update.title {
+            session.title = Some(title);
+        }
+        if let Some(workspace) = update.workspace {
+            session.workspace = Some(workspace);
+        }
+        if let Some(parent_id) = update.parent_session_id {
+            session.parent_session_id = Some(parent_id);
+        }
+        if let Some(provider_id) = update.provider_session_id {
+            session.provider_session_id = Some(provider_id);
+        }
+        if let Some(activity) = update.activity {
+            if session.activity == crate::mcp::sessions::Activity::Working {
+                session.working_seconds = session
+                    .working_seconds
+                    .saturating_add(now.saturating_sub(session.activity_changed_at));
+            }
+            session.activity = activity;
+            session.activity_changed_at = now;
+            if activity == crate::mcp::sessions::Activity::Working {
+                session.wake_released = false;
+            }
+        }
+        session.last_heartbeat = now;
+        return Ok(json!(session));
     }
     if ![
         "doze.heartbeat",
@@ -345,10 +438,11 @@ pub fn definitions() -> Value {
         "shutdown"
     ]);
     let mut tools = vec![
-        json!({"name":"doze.start_session", "description":"Request a wake lease. Awaiting authorization means no wake assertion yet: ask the user to approve in Doze and poll get_session. Heartbeat before lease expiry. Finish only when work is actually complete; disconnect is not completion. Times are monotonic seconds since Doze started.", "inputSchema":{"type":"object", "properties":{"reason":{"type":"string","minLength":1,"maxLength":512}, "completion_action":{"type":"string","enum":actions}, "optional_timeout":{"type":"integer","minimum":30,"maximum":604800}}, "required":["reason"],"additionalProperties":false}, "annotations":{"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false}}),
+        json!({"name":"doze.start_session", "description":"Request a wake lease and optionally attach an explicit title, workspace, provider session identity and parent. Awaiting authorization means no wake assertion yet: ask the user to approve in Doze. Heartbeat before lease expiry. Finish only when work is actually complete; disconnect is not completion.", "inputSchema":{"type":"object", "properties":{"reason":{"type":"string","minLength":1,"maxLength":512}, "title":{"type":"string","maxLength":512}, "workspace":{"type":"string","maxLength":512}, "provider_session_id":{"type":"string","maxLength":512}, "parent_session_id":{"type":"string","maxLength":512}, "completion_action":{"type":"string","enum":actions}, "optional_timeout":{"type":"integer","minimum":30,"maximum":604800}}, "required":["reason"],"additionalProperties":false}, "annotations":{"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false}}),
     ];
     for (name, description, readonly) in [
         ("heartbeat", "Renew an authorized lease. Send at least every lease-duration/2 seconds.", false),
+        ("update_session", "Update explicitly supplied task title, workspace or provider-reported activity. Activity is informational and does not prove task completion.", false),
         ("finish_session", "Explicitly mark work complete. The core waits for all leases and starts a cancellable countdown; never sleeps directly.", false),
         ("fail_session", "Explicitly report definitive task failure, not disconnection or missing status. Release this authorized lease without executing its action. Successful peer sessions may still complete normally.", false),
         ("cancel_session", "Release your session without executing its completion action.", false),
@@ -357,6 +451,12 @@ pub fn definitions() -> Value {
         tools.push(json!({"name":format!("doze.{name}"),"description":description,"inputSchema":{"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"],"additionalProperties":false},"annotations":{"readOnlyHint":readonly,"destructiveHint":name == "finish_session","idempotentHint":true,"openWorldHint":false}}));
     }
     tools.push(json!({"name":"doze.list_sessions","description":"List sessions owned by this configured client.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true,"openWorldHint":false}}));
+    if let Some(tool) = tools
+        .iter_mut()
+        .find(|tool| tool["name"] == "doze.update_session")
+    {
+        tool["inputSchema"] = json!({"type":"object","properties":{"session_id":{"type":"string"},"title":{"type":"string","maxLength":512},"workspace":{"type":"string","maxLength":512},"activity":{"type":"string","enum":["unknown","working","waiting","idle"]},"parent_session_id":{"type":"string","maxLength":128},"provider_session_id":{"type":"string","maxLength":128}},"required":["session_id"],"additionalProperties":false});
+    }
     json!({"tools":tools})
 }
 

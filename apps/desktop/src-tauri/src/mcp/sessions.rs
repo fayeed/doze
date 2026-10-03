@@ -12,6 +12,15 @@ pub enum Status {
     Cancelled,
     Denied,
 }
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Activity {
+    #[default]
+    Unknown,
+    Working,
+    Waiting,
+    Idle,
+}
 impl Status {
     pub fn holds_awake(self) -> bool {
         matches!(self, Self::Active | Self::ConnectionLost)
@@ -29,6 +38,22 @@ pub struct Session {
     pub client_id: String,
     pub client_name: String,
     pub reason: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub workspace: Option<String>,
+    #[serde(default)]
+    pub activity: Activity,
+    #[serde(default)]
+    pub parent_session_id: Option<String>,
+    #[serde(default)]
+    pub provider_session_id: Option<String>,
+    #[serde(default)]
+    pub wake_released: bool,
+    #[serde(default)]
+    pub activity_changed_at: u64,
+    #[serde(default)]
+    pub working_seconds: u64,
     pub created_at: u64,
     pub last_heartbeat: u64,
     pub lease_expires_at: u64,
@@ -62,7 +87,9 @@ pub struct Sessions {
 }
 impl Sessions {
     pub fn holds_awake(&self) -> bool {
-        self.items.iter().any(|s| s.status.holds_awake())
+        self.items
+            .iter()
+            .any(|s| s.status.holds_awake() && !s.wake_released)
     }
     pub fn unsettled(&self) -> bool {
         self.items.iter().any(|s| !s.status.terminal())
@@ -72,15 +99,23 @@ impl Sessions {
             if session.status == Status::Active {
                 session.status = Status::ConnectionLost;
                 session.lost_at = Some(now);
+                session.wake_released = false;
             }
         }
     }
     pub fn expire(&mut self, now: u64) {
         for session in &mut self.items {
+            if matches!(session.activity, Activity::Waiting | Activity::Idle)
+                && session.status == Status::Active
+                && now.saturating_sub(session.activity_changed_at) >= 300
+            {
+                session.wake_released = true;
+            }
             if session.status == Status::Active
                 && (now >= session.lease_expires_at || session.timeout_at.is_some_and(|t| now >= t))
             {
                 session.status = Status::ConnectionLost;
+                session.wake_released = false;
                 // Leases never outlive their optional timeout, so this is when contact ended.
                 session.lost_at = Some(session.lease_expires_at.min(now));
             }

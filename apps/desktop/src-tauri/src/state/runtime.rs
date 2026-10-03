@@ -189,16 +189,35 @@ pub(super) fn worker(
         if let Some(request) = request {
             match request {
                 Request::PanelSnapshot(tx) => {
-                    let sessions = snapshot.engine.agents.items.iter()
+                    let sessions = snapshot
+                        .engine
+                        .agents
+                        .items
+                        .iter()
                         .filter(|session| !session.status.terminal())
                         .map(|session| super::PanelSession {
                             id: session.session_id.clone(),
                             provider: session.client_name.clone(),
                             task: session.reason.clone(),
+                            title: session.title.clone(),
+                            workspace: session.workspace.clone(),
+                            parent_session_id: session.parent_session_id.clone(),
+                            activity: format!("{:?}", session.activity),
+                            working_seconds: session.working_seconds.saturating_add(
+                                if session.activity == crate::mcp::sessions::Activity::Working {
+                                    snapshot
+                                        .engine
+                                        .now
+                                        .saturating_sub(session.activity_changed_at)
+                                } else {
+                                    0
+                                },
+                            ),
                             started_at: session.created_at,
                             last_activity: session.last_heartbeat,
                             status: format!("{:?}", session.status),
-                        }).collect();
+                        })
+                        .collect();
                     let _ = tx.send(super::PanelSnapshot {
                         awake: snapshot.engine.awake || snapshot.engine.agents.holds_awake(),
                         awake_deadline: snapshot.engine.awake_deadline,

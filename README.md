@@ -71,6 +71,8 @@ Download the latest release for your computer:
 - [macOS 13 Ventura or later · Universal for Apple Silicon and Intel](https://github.com/fayeed/doze/releases/latest/download/Doze-macos-universal.dmg)
 - [Windows 11 · x64 installer](https://github.com/fayeed/doze/releases/latest/download/Doze-windows-x64-setup.exe)
 
+After the v0.2.0 package submissions are accepted, install with `brew install --cask fayeed/tap/doze` on macOS or `winget install --id Fayeed.Doze --exact` on Windows.
+
 New releases are built for Windows and macOS and published together from a version tag. See [the release guide](docs/releases.md) for the workflow and macOS signing setup.
 
 ## For developers
