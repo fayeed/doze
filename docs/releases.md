@@ -1,6 +1,6 @@
 # Publish desktop downloads to Cloudflare
 
-Run `pnpm release` from the repository root on the OS you want to release. Windows builds an x64 NSIS installer including the native Settings and CLI companions. macOS builds a universal DMG for Apple Silicon and Intel. Both use the existing Tauri build hooks.
+Run `pnpm release` from the repository root on the OS you want to release. Windows builds an x64 NSIS installer including the native Settings and CLI companions. macOS builds a signed, notarized universal DMG for Apple Silicon and Intel. Both use the existing Tauri build hooks.
 
 ## One-time configuration
 
@@ -39,7 +39,7 @@ Latest downloads have `Cache-Control: no-store`. Do not configure Cloudflare cac
 
 ## Build prerequisites and signing
 
-Windows needs the x64 MSVC Rust toolchain, Microsoft C++ Build Tools, and .NET 8 (the repository-local SDK is supported). macOS needs Xcode with the macOS 26+ SDK; the script installs the two Rust architecture targets. Set up Tauri's signing and notarization credentials on each machine as appropriate; they pass through to the build unchanged. Uploading to R2 does not sign or notarize an app.
+Windows needs the x64 MSVC Rust toolchain, Microsoft C++ Build Tools, and .NET 8 (the repository-local SDK is supported). macOS needs Xcode with the macOS 26+ SDK, a **Developer ID Application** certificate installed in the keychain, and `APPLE_SIGNING_IDENTITY` set to its identity name; the script installs the two Rust architecture targets. Provide either App Store Connect API credentials (`APPLE_API_ISSUER`, `APPLE_API_KEY`, and `APPLE_API_KEY_PATH`) or Apple ID credentials (`APPLE_ID`, app-specific `APPLE_PASSWORD`, and `APPLE_TEAM_ID`). You can put these environment variables in the ignored root `.env.release` file or configure them as CI secrets. The release command stops before building if the Apple credentials are missing. The native Swift companion is signed with the Developer ID identity, secure timestamp, and hardened runtime before Tauri signs the app and notarizes/staples the DMG. Uploading to R2 does not sign or notarize an app.
 
 Unset `CARGO_TARGET_DIR` and `CARGO_BUILD_TARGET` for releases. The native companion hooks expect the repository's standard build paths. Run `pnpm release:test` to check artifact selection and publishing failure behavior without building or accessing Cloudflare.
 

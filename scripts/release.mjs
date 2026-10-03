@@ -33,7 +33,7 @@ export function releasePlan(platform, version) {
       buildArgs: [
         "build",
         "--bundles",
-        "dmg",
+        "app,dmg",
         "--target",
         "universal-apple-darwin",
       ],
@@ -170,6 +170,24 @@ async function main() {
     await readFile(path.join(desktop, "src-tauri/tauri.conf.json"), "utf8"),
   );
   const plan = releasePlan(process.platform, version);
+  if (process.platform === "darwin" && !args.includes("--dry-run")) {
+    const hasApiCredentials =
+      process.env.APPLE_API_ISSUER &&
+      process.env.APPLE_API_KEY &&
+      process.env.APPLE_API_KEY_PATH;
+    const hasAppleIdCredentials =
+      process.env.APPLE_ID &&
+      process.env.APPLE_PASSWORD &&
+      process.env.APPLE_TEAM_ID;
+    if (
+      !process.env.APPLE_SIGNING_IDENTITY ||
+      (!hasApiCredentials && !hasAppleIdCredentials)
+    ) {
+      throw new Error(
+        "macOS releases require APPLE_SIGNING_IDENTITY and Apple notarization credentials. See docs/releases.md.",
+      );
+    }
+  }
   console.log(
     `Release ${version}: ${plan.platform}\nBuild: tauri ${plan.buildArgs.join(" ")}\nBucket: ${settings.bucket}\nDownload: ${settings.base}/releases/latest/${plan.filename}`,
   );
@@ -192,14 +210,24 @@ async function main() {
       );
   }
   const startedAt = Date.now();
-  run(
-    process.execPath,
-    [
-      path.join(desktop, "node_modules/@tauri-apps/cli/tauri.js"),
-      ...plan.buildArgs,
-    ],
-    desktop,
-  );
+  if (process.platform === "darwin")
+    run(
+      process.execPath,
+      [
+        path.join(desktop, "scripts/build-macos-release.mjs"),
+        ...plan.buildArgs.slice(3),
+      ],
+      desktop,
+    );
+  else
+    run(
+      process.execPath,
+      [
+        path.join(desktop, "node_modules/@tauri-apps/cli/tauri.js"),
+        ...plan.buildArgs,
+      ],
+      desktop,
+    );
   const file = await findInstaller(
     path.join(desktop, "src-tauri/target", plan.bundleDir),
     plan,

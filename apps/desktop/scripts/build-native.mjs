@@ -46,10 +46,21 @@ if (process.platform === "darwin") {
     { stdio: "inherit" },
   );
   if (merged.status !== 0) process.exit(merged.status ?? 1);
-  // Developer builds need a valid local signature after combining the architecture slices.
-  const signed = spawnSync("codesign", ["--force", "--sign", "-", executable], {
-    stdio: "inherit",
-  });
+  // Sign nested code with the same identity and runtime settings as the outer
+  // app during release builds. An ad-hoc signature is only suitable locally.
+  const identity = process.env.APPLE_SIGNING_IDENTITY;
+  const signingArgs = identity
+    ? [
+        "--force",
+        "--options",
+        "runtime",
+        "--timestamp",
+        "--sign",
+        identity,
+        executable,
+      ]
+    : ["--force", "--sign", "-", executable];
+  const signed = spawnSync("codesign", signingArgs, { stdio: "inherit" });
   process.exit(signed.status ?? 1);
 }
 if (process.platform !== "win32") process.exit(0);
