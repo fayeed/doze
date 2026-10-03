@@ -421,7 +421,7 @@ fn json_rpc_lifecycle_and_tool_errors_are_compliant() {
             .as_array()
             .unwrap()
             .len(),
-        7
+        8
     );
     let tool = json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"doze.start_session","arguments":{"reason":"test"}}});
     assert_eq!(
@@ -706,6 +706,66 @@ fn bridge_keepalive_renews_without_finishing_and_respects_limits() {
     );
     assert_eq!(waiting.unwrap()["status"], "awaiting_authorization");
 }
+
+#[test]
+fn lifecycle_updates_track_work_waiting_and_stable_provider_identity() {
+    let mut settings = settings();
+    settings.agents.lease_seconds = 360;
+    let mut engine = Engine::default();
+    let start = call(
+        &mut engine,
+        &settings,
+        "codex",
+        "start_session",
+        json!({"reason":"Implement panel","title":"Tray panel","workspace":"doze","provider_session_id":"codex-123","completion_action":"sleep"}),
+    ).unwrap();
+    let id = start["session_id"].as_str().unwrap().to_string();
+    let duplicate = call(
+        &mut engine,
+        &settings,
+        "codex",
+        "start_session",
+        json!({"reason":"same provider session","provider_session_id":"codex-123","completion_action":"sleep"}),
+    ).unwrap();
+    assert_eq!(duplicate["session_id"], id);
+    assert_eq!(engine.agents.items.len(), 1);
+
+    engine.now = 10;
+    call(
+        &mut engine,
+        &settings,
+        "codex",
+        "update_session",
+        json!({"session_id":id,"activity":"working"}),
+    )
+    .unwrap();
+    engine.now = 20;
+    call(
+        &mut engine,
+        &settings,
+        "codex",
+        "update_session",
+        json!({"session_id":id,"activity":"waiting","title":"Approval needed"}),
+    )
+    .unwrap();
+    assert_eq!(engine.agents.items[0].working_seconds, 10);
+    assert!(engine.should_hold_awake());
+    engine.agents.expire(319);
+    assert!(engine.should_hold_awake());
+    engine.agents.expire(320);
+    assert!(!engine.should_hold_awake());
+    engine.now = 321;
+    call(
+        &mut engine,
+        &settings,
+        "codex",
+        "update_session",
+        json!({"session_id":id,"activity":"working"}),
+    )
+    .unwrap();
+    assert!(engine.should_hold_awake());
+}
+
 #[test]
 fn mcp_clients_cannot_reach_jobs_or_keepalive() {
     let mut initialized = true;

@@ -886,3 +886,4 @@ html[data-platform="windows"] .download-card.win .button {
     transition: none;
   }
 }
+.package-install{margin-top:12px;color:var(--muted,#69736c);font-size:12px;overflow-wrap:anywhere}.package-install code{font-size:11px}

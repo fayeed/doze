@@ -380,6 +380,7 @@ export default function Home() {
               <a className="button" href={downloads.macos}>
                 Download for macOS
               </a>
+              <p className="package-install">Or run <code>brew install --cask fayeed/tap/doze</code></p>
             </article>
             <article className="download-card win">
               <h3>Windows</h3>
@@ -397,6 +398,7 @@ export default function Home() {
               <a className="button" href={downloads.windows}>
                 Download for Windows
               </a>
+              <p className="package-install">Or run <code>winget install --id Fayeed.Doze --exact</code></p>
             </article>
           </div>
         </section>

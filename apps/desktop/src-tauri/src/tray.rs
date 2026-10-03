@@ -10,23 +10,42 @@ use tauri::{
 };
 
 fn show_panel(app: &tauri::AppHandle, x: f64, y: f64) {
-    let Some(window) = app.get_webview_window("panel") else { return; };
+    let Some(window) = app.get_webview_window("panel") else {
+        return;
+    };
     let (width, height) = (390.0, 620.0);
-    let position = app.available_monitors().ok().and_then(|monitors| {
-        monitors.into_iter().find(|monitor| {
-            let p = monitor.position(); let s = monitor.size();
-            x >= p.x as f64 && x <= (p.x + s.width as i32) as f64
-                && y >= p.y as f64 && y <= (p.y + s.height as i32) as f64
-        }).map(|monitor| {
-            let p = monitor.position(); let s = monitor.size();
-            let scale = monitor.scale_factor();
-            let w = (width * scale) as i32; let h = (height * scale) as i32;
-            let left = (x - w as f64 + 8.0).clamp(p.x as f64, (p.x + s.width as i32 - w) as f64);
-            let top = if cfg!(target_os = "macos") { y + 8.0 } else { y - h as f64 - 8.0 }
-                .clamp(p.y as f64, (p.y + s.height as i32 - h) as f64);
-            (left, top)
+    let position = app
+        .available_monitors()
+        .ok()
+        .and_then(|monitors| {
+            monitors
+                .into_iter()
+                .find(|monitor| {
+                    let p = monitor.position();
+                    let s = monitor.size();
+                    x >= p.x as f64
+                        && x <= (p.x + s.width as i32) as f64
+                        && y >= p.y as f64
+                        && y <= (p.y + s.height as i32) as f64
+                })
+                .map(|monitor| {
+                    let p = monitor.position();
+                    let s = monitor.size();
+                    let scale = monitor.scale_factor();
+                    let w = (width * scale) as i32;
+                    let h = (height * scale) as i32;
+                    let left =
+                        (x - w as f64 + 8.0).clamp(p.x as f64, (p.x + s.width as i32 - w) as f64);
+                    let top = if cfg!(target_os = "macos") {
+                        y + 8.0
+                    } else {
+                        y - h as f64 - 8.0
+                    }
+                    .clamp(p.y as f64, (p.y + s.height as i32 - h) as f64);
+                    (left, top)
+                })
         })
-    }).unwrap_or((x - width, y - height));
+        .unwrap_or((x - width, y - height));
     let _ = window.set_position(tauri::PhysicalPosition::new(position.0, position.1));
     let _ = window.show();
     let _ = window.set_focus();
@@ -292,7 +311,12 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
             dispatch(app, operation);
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { position, button: tauri::tray::MouseButton::Left, .. } = event {
+            if let TrayIconEvent::Click {
+                position,
+                button: tauri::tray::MouseButton::Left,
+                ..
+            } = event
+            {
                 let app = tray.app_handle();
                 dispatch(app, Operation::Refresh);
                 show_panel(app, position.x, position.y);
