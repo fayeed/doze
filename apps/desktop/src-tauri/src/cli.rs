@@ -19,6 +19,7 @@ const USAGE: &str = "Keep this computer awake while a job runs, then optionally 
 Usage:
   doze run [--then ACTION] [--reason TEXT] -- COMMAND [ARGS...]
   doze watch --pid PID [--then ACTION] [--reason TEXT]
+  doze agent-event --session ID [--activity STATE] [--title TEXT] [--workspace PATH]
 
 ACTION is nothing (default), sleep, display-off, lock, shutdown or hibernate.
 The action runs only after the job succeeds, following Doze's final warning, which you can
@@ -30,13 +31,22 @@ Doze must be running. Exit status: the command's own status, or 2 for usage erro
 pub fn requested(args: &[String]) -> bool {
     matches!(
         args.get(1).map(String::as_str),
-        Some("run" | "watch" | "help" | "--help")
+        Some("run" | "watch" | "agent-event" | "help" | "--help")
     )
 }
 
 pub fn main(args: &[String]) -> i32 {
     #[cfg(windows)]
     attach_console();
+    if args.get(1).is_some_and(|arg| arg == "agent-event") {
+        return match agent_event(&args[2..]) {
+            Ok(()) => 0,
+            Err(error) => {
+                eprintln!("doze: {error}");
+                1
+            }
+        };
+    }
     match parse(&args[1..]) {
         Ok(job) => match execute(job) {
             Ok(code) => code,
@@ -57,6 +67,52 @@ pub fn main(args: &[String]) -> i32 {
             }
         }
     }
+}
+
+fn agent_event(args: &[String]) -> Result<(), String> {
+    let mut session_id = None;
+    let mut activity = None;
+    let mut title = None;
+    let mut workspace = None;
+    let mut endpoint = None;
+    let mut provider_session_id = None;
+    let mut parent_session_id = None;
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        let value = args.next().ok_or_else(|| format!("{arg} needs a value."))?;
+        match arg.as_str() {
+            "--session" => session_id = Some(value.clone()),
+            "--activity" => {
+                if !["working", "waiting", "idle", "unknown"].contains(&value.as_str()) {
+                    return Err("--activity must be working, waiting, idle or unknown.".into());
+                }
+                activity = Some(value.clone());
+            }
+            "--title" => title = Some(value.clone()),
+            "--workspace" => workspace = Some(value.clone()),
+            "--provider-session" => provider_session_id = Some(value.clone()),
+            "--parent-session" => parent_session_id = Some(value.clone()),
+            "--endpoint" => endpoint = Some(PathBuf::from(value)),
+            "-h" | "--help" => return Err(USAGE.into()),
+            _ => return Err(format!("Unexpected argument \"{arg}\".")),
+        }
+    }
+    let key = std::env::var("DOZE_MCP_KEY")
+        .map_err(|_| "Set DOZE_MCP_KEY to the client key from Doze's Agents settings.")?;
+    let endpoint = endpoint.map(Ok).unwrap_or_else(default_endpoint)?;
+    let call = Call {
+        key,
+        name: "doze.update_session".into(),
+        arguments: json!({
+            "session_id": session_id.ok_or("--session is required.")?,
+            "activity": activity,
+            "title": title,
+            "workspace": workspace,
+            "provider_session_id": provider_session_id,
+            "parent_session_id": parent_session_id,
+        }),
+    };
+    forward(&endpoint, call).map(|_| ())
 }
 
 #[derive(Debug, PartialEq)]
