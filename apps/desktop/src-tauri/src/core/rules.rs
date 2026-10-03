@@ -147,8 +147,30 @@ impl Engine {
         if self.needs_audio() {
             match audio {
                 None => {
-                    self.cancel_playback();
-                    self.silence_since = None;
+                    // A transient device or idle-monitor error is not evidence that the
+                    // playback rule was cancelled. If playback had been heard, preserve
+                    // the armed state and require a fresh silence/inactivity interval.
+                    if self.playback_enabled {
+                        if self.playback_phase == Phase::Active {
+                            self.silence_since = None;
+                        } else if matches!(
+                            self.playback_phase,
+                            Phase::GracePeriod | Phase::Countdown
+                        ) {
+                            if self
+                                .countdown
+                                .as_ref()
+                                .is_some_and(|c| c.source == Source::Playback)
+                            {
+                                self.countdown = None;
+                            }
+                            self.playback_phase = Phase::GracePeriod;
+                            self.silence_since = Some(now);
+                        }
+                    } else {
+                        self.silence_since = None;
+                    }
+                    self.audio_streak = 0;
                 }
                 Some(true) => {
                     self.silence_since = None;
@@ -199,7 +221,19 @@ impl Engine {
                     || (user_active && self.playback_phase == Phase::Countdown))
                 && matches!(self.playback_phase, Phase::GracePeriod | Phase::Countdown)
             {
-                self.cancel_playback();
+                // Activity or an unavailable idle observation resets the inactivity wait,
+                // but playback has already been heard. Keep After Playback armed and start
+                // a fresh silence/idle interval instead of requiring new audio.
+                if self
+                    .countdown
+                    .as_ref()
+                    .is_some_and(|c| c.source == Source::Playback)
+                {
+                    self.countdown = None;
+                }
+                self.playback_phase = Phase::GracePeriod;
+                self.silence_since = Some(now);
+                self.audio_streak = 0;
             }
             // Pausing playback is itself input. During grace, input resets the platform's
             // idle duration; keep waiting instead of permanently disarming the rule.
