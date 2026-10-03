@@ -1,7 +1,7 @@
 {
   "name": "@doze/desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
@@ -19,7 +19,15 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@tauri-apps/cli": "^2.8.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "prettier": "^3.9.9",
-    "puppeteer-core": "^25.12.0"
+    "puppeteer-core": "^25.12.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.2"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   }
 }
