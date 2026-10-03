@@ -56,7 +56,7 @@ jobs:
         if: matrix.platform == 'windows'
         with:
           dotnet-version: 8.0.x
-      - uses: apple-actions/import-codesign-certs@v3
+      - uses: apple-actions/import-codesign-certs@v7
         if: matrix.platform == 'macos'
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12 }}
