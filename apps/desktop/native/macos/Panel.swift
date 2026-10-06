@@ -18,6 +18,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var host: NSHostingView<AnyView>?
     private var anchor: JSON?
     private var hiddenAt = Date.distantPast
+    private var closing = false
+    private var clicks: Any?
     static let width: CGFloat = 368
 
     var isOpen: Bool { window?.isVisible == true }
@@ -34,6 +36,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         window.contentView = host
         self.host = host
         refit()
+        // Like the system's menu bar extras: in place under the icon with a short fade.
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         window.alphaValue = reduceMotion ? 1 : 0
         window.makeKeyAndOrderFront(nil)
@@ -43,18 +46,51 @@ final class PanelController: NSObject, NSWindowDelegate {
                 window.animator().alphaValue = 1
             }
         }
+        watchClicks()
     }
 
+    /// Fades out the way a dismissed menu does, then hides; hidden, the panel keeps no SwiftUI
+    /// views alive.
     func close() {
-        guard let window, window.isVisible else { return }
-        window.orderOut(nil)
-        // Hidden, the panel keeps no SwiftUI views alive.
-        window.contentView = nil
-        host = nil
+        guard let window, window.isVisible, !closing else { return }
+        closing = true
         hiddenAt = Date()
+        stopWatchingClicks()
+        let hide: @MainActor () -> Void = { [weak self] in
+            window.orderOut(nil)
+            window.alphaValue = 1
+            window.contentView = nil
+            self?.host = nil
+            self?.closing = false
+        }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { hide(); return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.15
+            window.animator().alphaValue = 0
+        }, completionHandler: {
+            Task { @MainActor in hide() }
+        })
     }
 
     func windowDidResignKey(_ notification: Notification) { close() }
+
+    /// Like Control Center, the panel closes on any click outside it. Resigning key covers that
+    /// only while this app holds the key window, and it never activates, so while the panel is
+    /// open a global monitor also watches for presses in other apps (the engine's menu bar icon
+    /// included). Mouse monitoring needs no Accessibility permission.
+    private func watchClicks() {
+        guard clicks == nil else { return }
+        clicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.close() }
+        }
+    }
+
+    private func stopWatchingClicks() {
+        guard let clicks else { return }
+        NSEvent.removeMonitor(clicks)
+        self.clicks = nil
+    }
 
     private func makeWindow() -> PanelWindow {
         let window = PanelWindow(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 400),
@@ -75,7 +111,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     /// Sizes the panel to its content and keeps its top edge under the icon.
     func refit() {
-        guard let window, let host else { return }
+        guard let window, let host, !closing else { return }
         host.layoutSubtreeIfNeeded()
         let size = NSSize(width: Self.width, height: host.fittingSize.height)
         window.setFrame(NSRect(origin: origin(for: size), size: size), display: true)

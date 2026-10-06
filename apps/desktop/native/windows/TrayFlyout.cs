@@ -18,7 +18,7 @@ namespace Doze.SettingsUi;
 
 /// The tray flyout, modelled on Windows 11 Quick Settings: a status line, approval requests,
 /// a grid of tiles whose › half opens a page inside the flyout, the working agents, and a
-/// footer. It opens above the tray icon, closes when it loses focus or on Esc, and keeps
+/// footer. It opens above the tray icon, closes on a click outside it or on Esc, and keeps
 /// nothing rendered while hidden.
 public sealed partial class TrayFlyout : Window
 {
@@ -57,7 +57,7 @@ public sealed partial class TrayFlyout : Window
             presenter.IsMinimizable = false;
             presenter.IsAlwaysOnTop = true;
         }
-        Rounded();
+        Frameless();
         Activated += (_, args) =>
         {
             if (args.WindowActivationState == WindowActivationState.Deactivated && AppWindow.IsVisible && !verification) Dismiss();
@@ -97,10 +97,14 @@ public sealed partial class TrayFlyout : Window
         subpage = "";
         ApplyTheme(theme);
         Render();
+        Frameless();
         Place();
         PrepareEntrance();
         AppWindow.Show(true);
+        Frameless(); // Showing can bring the frame back.
         Activate();
+        _ = SetForegroundWindow(Handle);
+        WatchClicks();
         Slide(entering: true);
         FocusFirst();
         clock.Start();
@@ -151,6 +155,7 @@ public sealed partial class TrayFlyout : Window
         dismissing = true;
         hiddenAt = DateTime.UtcNow;
         clock.Stop();
+        StopWatchingClicks();
         Slide(entering: false, done: () =>
         {
             AppWindow.Hide();
@@ -930,14 +935,93 @@ public sealed partial class TrayFlyout : Window
 
     private nint Handle => WinRT.Interop.WindowNative.GetWindowHandle(this);
 
-    /// Windows 11 rounds borderless windows only when asked: 8 px corners, like Quick Settings,
-    /// and without the system's light outline.
-    private void Rounded()
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern nint GetWindowLongPtr(nint window, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern nint SetWindowLongPtr(nint window, int index, nint value);
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
+
+    /// Windows 11 rounds borderless windows only when asked: 8 px corners, like Quick Settings.
+    /// A presenter without border or title bar still leaves a dialog frame, the 3 px light edge
+    /// around the window, and the system outline; both go.
+    private void Frameless()
     {
+        const long frame = 0x00C00000 | 0x00040000 | 0x00080000; // WS_CAPTION (border and dialog frame), WS_THICKFRAME, WS_SYSMENU
+        const long edges = 0x1 | 0x100 | 0x200 | 0x20000; // WS_EX_DLGMODALFRAME, _WINDOWEDGE, _CLIENTEDGE, _STATICEDGE
+        long style = GetWindowLongPtr(Handle, -16), extended = GetWindowLongPtr(Handle, -20);
+        if ((style & frame) != 0 || (extended & edges) != 0)
+        {
+            _ = SetWindowLongPtr(Handle, -16, (nint)(style & ~frame));
+            _ = SetWindowLongPtr(Handle, -20, (nint)(extended & ~edges));
+            // SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOOWNERZORDER
+            _ = SetWindowPos(Handle, 0, 0, 0, 0, 0, 0x1 | 0x2 | 0x4 | 0x10 | 0x20 | 0x200);
+        }
         var round = 2; // DWMWCP_ROUND
         _ = DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));
         var none = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
         _ = DwmSetWindowAttribute(Handle, 34, ref none, sizeof(int)); // DWMWA_BORDER_COLOR
+    }
+
+    private delegate nint MouseHook(int code, nint message, nint data);
+    [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW")]
+    private static extern nint SetWindowsHookEx(int kind, MouseHook hook, nint module, uint thread);
+    [DllImport("user32.dll")]
+    private static extern bool UnhookWindowsHookEx(nint hook);
+    [DllImport("user32.dll")]
+    private static extern nint CallNextHookEx(nint hook, int code, nint message, nint data);
+    [DllImport("kernel32.dll", EntryPoint = "GetModuleHandleW", CharSet = CharSet.Unicode)]
+    private static extern nint GetModuleHandle(string? name);
+    [DllImport("user32.dll")]
+    private static extern nint WindowFromPoint(PointInt32 point);
+    [DllImport("user32.dll")]
+    private static extern nint GetAncestor(nint window, uint flags);
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(nint window, out uint process);
+    [DllImport("user32.dll", EntryPoint = "GetClassNameW", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(nint window, System.Text.StringBuilder name, int size);
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(nint window);
+
+    private nint clicks;
+    private MouseHook? onClick;
+
+    /// Quick Settings closes on any click outside it. Losing focus covers that only when
+    /// Windows let the flyout take the foreground, so while it is open a low-level mouse hook
+    /// also watches for presses elsewhere.
+    private void WatchClicks()
+    {
+        if (verification || clicks != 0) return;
+        onClick ??= (code, message, data) =>
+        {
+            // WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN; MSLLHOOKSTRUCT starts with the point.
+            if (code >= 0 && (int)message is 0x201 or 0x204 or 0x207 or 0x20B
+                && !Inside(new PointInt32(Marshal.ReadInt32(data), Marshal.ReadInt32(data, 4))))
+                DispatcherQueue.TryEnqueue(Dismiss);
+            return CallNextHookEx(clicks, code, message, data);
+        };
+        clicks = SetWindowsHookEx(14, onClick, GetModuleHandle(null), 0); // WH_MOUSE_LL
+    }
+
+    private void StopWatchingClicks()
+    {
+        if (clicks == 0) return;
+        _ = UnhookWindowsHookEx(clicks);
+        clicks = 0;
+    }
+
+    /// The flyout, or one of its own pop-ups (an open list is a separate window in this process).
+    /// Another Doze window, such as Settings, counts as outside.
+    private bool Inside(PointInt32 point)
+    {
+        var under = WindowFromPoint(point);
+        var top = GetAncestor(under, 3); // GA_ROOTOWNER
+        if (top == Handle) return true;
+        _ = GetWindowThreadProcessId(under, out var process);
+        if (process != Environment.ProcessId) return false;
+        var name = new System.Text.StringBuilder(64);
+        _ = GetClassName(top, name, name.Capacity);
+        return name.ToString() != "WinUIDesktopWin32WindowClass";
     }
 
     /// Clips the window to the part above the taskbar, so it seems to slide out from behind

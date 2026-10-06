@@ -419,6 +419,9 @@ fn icon_path() -> Option<std::path::PathBuf> {
 
 pub(super) fn show(snapshot: Snapshot, requests: Sender<Request>) -> Result<(), String> {
     if snapshot.view == DialogView::Panel {
+        // Before the message, so the right is in place when the companion activates the
+        // flyout; again after it, for a companion this call has just started.
+        allow_foreground();
         send(
             json!({
                 "type": "panel",
