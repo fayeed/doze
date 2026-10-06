@@ -866,11 +866,15 @@ public sealed partial class TrayFlyout : Window
         _ = DwmSetWindowAttribute(WinRT.Interop.WindowNative.GetWindowHandle(this), 33, ref round, sizeof(int));
     }
 
+    private static double Pixels(JsonNode? node) =>
+        node is JsonValue value && double.TryParse(value.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pixels) ? pixels : 0;
+
     private (PointInt32 Point, double Scale) AnchorPoint()
     {
-        var x = (int)(Number(anchor?["x"]) ?? 0);
-        var y = (int)(Number(anchor?["y"]) ?? 0);
-        var center = new PointInt32(x + (int)((Number(anchor?["width"]) ?? 0) / 2), y + (int)((Number(anchor?["height"]) ?? 0) / 2));
+        // The engine sends the icon's rectangle as physical pixels with fractions ("2213.0").
+        var x = Pixels(anchor?["x"]);
+        var y = Pixels(anchor?["y"]);
+        var center = new PointInt32((int)(x + Pixels(anchor?["width"]) / 2), (int)(y + Pixels(anchor?["height"]) / 2));
         if (anchor is null)
         {
             var primary = DisplayArea.Primary.WorkArea;
@@ -982,6 +986,11 @@ public sealed partial class TrayFlyout : Window
         foreach (var name in new[] { "Keep awake", "Awake while audio plays", "Sleep after playback", "Power timer", "Agents", "Countdown" })
             if (!tiles.Contains(name)) throw new InvalidOperationException($"Flyout is missing the {name} tile.");
         if (ContentHeight() < 200) throw new InvalidOperationException("Flyout content did not lay out.");
+        // The engine sends fractional physical pixels; the flyout must anchor to them, not to 0,0.
+        anchor = JsonNode.Parse("""{"x":2213.0,"y":1400.0,"width":24.0,"height":24.0,"scale":1.5}""")!.AsObject();
+        if (AnchorPoint().Point is { X: 2225, Y: 1412 } is false)
+            throw new InvalidOperationException($"Flyout anchors to {AnchorPoint().Point.X},{AnchorPoint().Point.Y} instead of the tray icon.");
+        anchor = null;
     }
 
     public async Task RenderVerificationAsync(string directory, JsonObject sample)
