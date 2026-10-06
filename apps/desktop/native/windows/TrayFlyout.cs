@@ -101,7 +101,7 @@ public sealed partial class TrayFlyout : Window
         PrepareEntrance();
         AppWindow.Show(true);
         Activate();
-        Animate();
+        Slide(entering: true);
         FocusFirst();
         clock.Start();
     }
@@ -142,15 +142,23 @@ public sealed partial class TrayFlyout : Window
         return copy.ToJsonString();
     }
 
+    private bool dismissing;
+
+    /// Closes by sliding back behind the taskbar, then hides; nothing stays alive in the tree.
     private void Dismiss()
     {
-        if (!AppWindow.IsVisible) return;
+        if (!AppWindow.IsVisible || dismissing) return;
+        dismissing = true;
         hiddenAt = DateTime.UtcNow;
         clock.Stop();
-        AppWindow.Hide();
-        // Hidden, nothing stays alive in the tree.
-        body.Content = null;
-        workingPills.Clear();
+        Slide(entering: false, done: () =>
+        {
+            AppWindow.Hide();
+            Clip(null);
+            body.Content = null;
+            workingPills.Clear();
+            dismissing = false;
+        });
     }
 
     // ---------- Data ----------
@@ -187,6 +195,7 @@ public sealed partial class TrayFlyout : Window
             "timer" => TimerPage(),
             "agents" => AgentsPage(),
             "countdown" => CountdownPage(),
+            "quick" => QuickPage(),
             _ => MainPage(),
         };
     }
@@ -207,6 +216,7 @@ public sealed partial class TrayFlyout : Window
         "timer" => "Power timer",
         "agents" => "Agents",
         "countdown" => "Countdown",
+        "quick" => "Quick settings",
         _ => ""
     };
 
@@ -219,7 +229,7 @@ public sealed partial class TrayFlyout : Window
         stack.Children.Add(Tiles());
         var active = Sessions.Where(s => Text(s["state"]) is "working" or "idle").ToList();
         if (active.Count > 0) stack.Children.Add(AgentList(active, compact: true));
-        return Framed(stack, Footer(BatteryText(), ("Quick settings", "", () => Send("menu", new JsonObject { ["name"] = "quick" })),
+        return Framed(stack, Footer(BatteryText(), ("Quick settings", "", () => { Navigate("quick"); return Task.CompletedTask; }),
             ("Settings", "", () => OpenSettings("overview"))));
     }
 
@@ -681,6 +691,54 @@ public sealed partial class TrayFlyout : Window
         return SubPage("countdown", items, "More notification settings", "notifications");
     }
 
+    /// Saved preferences, as in the menu's Quick Settings, without leaving the flyout.
+    private FrameworkElement QuickPage()
+    {
+        var items = new List<FrameworkElement>
+        {
+            SwitchRow("Keep the display on", !Flag(Setting("allowDisplaySleep")), on => Set("allowDisplaySleep", !on)),
+            SwitchRow("Show countdown notifications", Flag(Setting("notifications")), on => Set("notifications", on)),
+            SwitchRow("Start Doze when I sign in", Flag(Setting("launchAtStartup")), on => Set("launchAtStartup", on), Flag(snapshot["startupSupported"])),
+            SwitchRow("Start in the tray", Flag(Setting("startMinimized")), on => Set("startMinimized", on)),
+            SwitchRow("Write diagnostic logs", Flag(Setting("logging")), on => Set("logging", on)),
+        };
+        if (Flag(snapshot["lidClosedSupported"]))
+            items.Insert(1, SwitchRow("Stay awake with the lid closed", Flag(Setting("lidClosedKeepAwake")), on => Set("lidClosedKeepAwake", on)));
+        items.Add(Separator());
+        items.Add(MinutesRow("Default keep awake", "defaultAwakeMinutes"));
+        items.Add(MinutesRow("Default power timer", "defaultTimerMinutes"));
+        return SubPage("quick", items, "All settings", "general");
+    }
+
+    private FrameworkElement SwitchRow(string label, bool on, Func<bool, Task> apply, bool enabled = true)
+    {
+        var row = new Grid { Padding = new Thickness(16, 0, 4, 0), MinHeight = 40 };
+        row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Opacity = enabled ? 1 : 0.5 });
+        var toggle = new ToggleSwitch { IsOn = on, IsEnabled = enabled, HorizontalAlignment = HorizontalAlignment.Right, MinWidth = 0, OnContent = "On", OffContent = "Off" };
+        AutomationProperties.SetName(toggle, label);
+        toggle.Toggled += (_, _) => _ = apply(toggle.IsOn);
+        row.Children.Add(toggle);
+        return row;
+    }
+
+    private FrameworkElement MinutesRow(string label, string key)
+    {
+        var current = (int)(Number(Setting(key)) ?? 30);
+        var row = new Grid { Padding = new Thickness(16, 4, 12, 4) };
+        row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
+        var combo = new ComboBox { MinWidth = 140, HorizontalAlignment = HorizontalAlignment.Right };
+        AutomationProperties.SetName(combo, label);
+        foreach (var minutes in new[] { 15, 30, 60, 120, current }.Distinct().Order())
+            combo.Items.Add(new ComboBoxItem { Content = Labels.Minutes(minutes), Tag = minutes });
+        combo.SelectedItem = combo.Items.OfType<ComboBoxItem>().FirstOrDefault(item => (int)item.Tag == current);
+        combo.SelectionChanged += (_, _) =>
+        {
+            if (combo.SelectedItem is ComboBoxItem { Tag: int value } && value != current) _ = Set(key, value);
+        };
+        row.Children.Add(combo);
+        return row;
+    }
+
     private FrameworkElement SubPage(string page, List<FrameworkElement> items, string more, string settingsPage)
     {
         var stack = new StackPanel();
@@ -859,11 +917,45 @@ public sealed partial class TrayFlyout : Window
     [DllImport("shcore.dll")]
     private static extern int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
 
-    /// Windows 11 rounds borderless windows only when asked: 8 px corners, like Quick Settings.
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(nint window, nint region, bool redraw);
+    [DllImport("gdi32.dll")]
+    private static extern nint CreateRectRgn(int left, int top, int right, int bottom);
+    [DllImport("gdi32.dll")]
+    private static extern nint CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
+    [DllImport("gdi32.dll")]
+    private static extern int CombineRgn(nint destination, nint first, nint second, int mode);
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(nint handle);
+
+    private nint Handle => WinRT.Interop.WindowNative.GetWindowHandle(this);
+
+    /// Windows 11 rounds borderless windows only when asked: 8 px corners, like Quick Settings,
+    /// and without the system's light outline.
     private void Rounded()
     {
         var round = 2; // DWMWCP_ROUND
-        _ = DwmSetWindowAttribute(WinRT.Interop.WindowNative.GetWindowHandle(this), 33, ref round, sizeof(int));
+        _ = DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));
+        var none = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+        _ = DwmSetWindowAttribute(Handle, 34, ref none, sizeof(int)); // DWMWA_BORDER_COLOR
+    }
+
+    /// Clips the window to the part above the taskbar, so it seems to slide out from behind
+    /// it. `null` removes the clip and gives the window back its rounded corners and shadow.
+    private void Clip(RectInt32? visible)
+    {
+        if (visible is not RectInt32 area)
+        {
+            _ = SetWindowRgn(Handle, 0, true);
+            return;
+        }
+        var corner = (int)Math.Round(16 * placed.Width / 360.0);
+        var rounded = CreateRoundRectRgn(0, 0, placed.Width + 1, placed.Height + 1, corner, corner);
+        var cut = CreateRectRgn(area.X, area.Y, area.X + Math.Max(0, area.Width), area.Y + Math.Max(0, area.Height));
+        _ = CombineRgn(rounded, rounded, cut, 1); // RGN_AND
+        DeleteObject(cut);
+        // The window owns the region from here on.
+        _ = SetWindowRgn(Handle, rounded, true);
     }
 
     private static double Pixels(JsonNode? node) =>
@@ -911,7 +1003,7 @@ public sealed partial class TrayFlyout : Window
         var height = Math.Min((int)Math.Ceiling(ContentHeight() * scale), work.Height - (int)(24 * scale));
         var margin = (int)(12 * scale);
         edge = work.Y > outer.Y ? Edge.Top : work.X > outer.X ? Edge.Left : work.X + work.Width < outer.X + outer.Width ? Edge.Right : Edge.Bottom;
-        slide = (int)(48 * scale);
+        workArea = work;
         var left = edge == Edge.Left ? work.X + margin : work.X + work.Width - width - margin;
         var top = edge == Edge.Top ? work.Y + margin : work.Y + work.Height - height - margin;
         return new RectInt32(left, top, width, height);
@@ -920,21 +1012,24 @@ public sealed partial class TrayFlyout : Window
     private enum Edge { Bottom, Top, Left, Right }
     private Edge edge = Edge.Bottom;
     private RectInt32 placed;
+    private RectInt32 workArea;
     private int slide;
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer? sliding;
+    private EventHandler<object>? frame;
 
     /// Keeps the flyout's edge against the taskbar when its content grows or shrinks.
     private void Resize()
     {
-        if (!AppWindow.IsVisible) return;
-        sliding?.Stop();
+        if (!AppWindow.IsVisible || dismissing) return;
+        StopSlide();
+        Clip(null);
         Place();
     }
 
-    /// Where the entrance starts: the docked position pushed back toward the taskbar.
-    private PointInt32 Offset(double remaining)
+    /// The window's position part of the way through the slide: `hidden` is 1 when it is
+    /// entirely behind the taskbar and 0 when docked.
+    private PointInt32 Offset(double hidden)
     {
-        var distance = (int)Math.Round(slide * remaining);
+        var distance = (int)Math.Round(slide * hidden);
         return edge switch
         {
             Edge.Top => new PointInt32(placed.X, placed.Y - distance),
@@ -944,37 +1039,58 @@ public sealed partial class TrayFlyout : Window
         };
     }
 
-    /// Before the window shows: start at the taskbar end of the slide, unless animations are off.
-    private void PrepareEntrance()
+    /// Moves the window and clips away whatever would cover the taskbar.
+    private void MoveClipped(double hidden)
     {
-        root.Opacity = system.AnimationsEnabled ? 0 : 1;
-        if (system.AnimationsEnabled) AppWindow.Move(Offset(1));
+        var position = Offset(hidden);
+        var left = Math.Max(0, workArea.X - position.X);
+        var top = Math.Max(0, workArea.Y - position.Y);
+        var right = Math.Min(placed.Width, workArea.X + workArea.Width - position.X);
+        var bottom = Math.Min(placed.Height, workArea.Y + workArea.Height - position.Y);
+        Clip(new RectInt32(left, top, right - left, bottom - top));
+        AppWindow.Move(position);
     }
 
-    /// The Quick Settings entrance: the window slides out from the taskbar with an ease-out
-    /// curve while its content fades in, about a quarter of a second.
-    private void Animate()
+    /// Before the window shows: start entirely behind the taskbar, unless animations are off.
+    private void PrepareEntrance()
     {
-        if (!system.AnimationsEnabled) { root.Opacity = 1; return; }
-        var fade = new DoubleAnimation { From = 0, To = 1, Duration = TimeSpan.FromMilliseconds(160) };
-        Storyboard.SetTarget(fade, root);
-        Storyboard.SetTargetProperty(fade, "Opacity");
-        var story = new Storyboard();
-        story.Children.Add(fade);
-        story.Begin();
+        root.Opacity = 1;
+        var margin = (int)(12 * placed.Width / 360.0);
+        slide = (edge is Edge.Left or Edge.Right ? placed.Width : placed.Height) + margin;
+        if (system.AnimationsEnabled && !verification) MoveClipped(1);
+    }
+
+    /// The Quick Settings motion: out from behind the taskbar on a decelerating curve, and back
+    /// behind it, faster, when closing. Reduced motion shows and hides at once.
+    private void Slide(bool entering, Action? done = null)
+    {
+        StopSlide();
+        if (!system.AnimationsEnabled || verification)
+        {
+            if (entering) { Clip(null); AppWindow.Move(Offset(0)); }
+            done?.Invoke();
+            return;
+        }
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        const double duration = 260;
-        sliding?.Stop();
-        sliding = DispatcherQueue.CreateTimer();
-        sliding.Interval = TimeSpan.FromMilliseconds(8);
-        sliding.Tick += (timer, _) =>
+        var duration = entering ? 320.0 : 200.0;
+        frame = (_, _) =>
         {
             var t = Math.Min(1, clock.Elapsed.TotalMilliseconds / duration);
-            var eased = 1 - Math.Pow(1 - t, 4);
-            AppWindow.Move(Offset(1 - eased));
-            if (t >= 1) timer.Stop();
+            var shown = entering ? 1 - Math.Pow(1 - t, 5) : 1 - Math.Pow(t, 3);
+            MoveClipped(1 - shown);
+            if (t < 1) return;
+            StopSlide();
+            if (entering) Clip(null);
+            done?.Invoke();
         };
-        sliding.Start();
+        CompositionTarget.Rendering += frame;
+    }
+
+    private void StopSlide()
+    {
+        if (frame is null) return;
+        CompositionTarget.Rendering -= frame;
+        frame = null;
     }
 
     // ---------- Verification ----------
@@ -986,7 +1102,7 @@ public sealed partial class TrayFlyout : Window
         foreach (var appearance in new[] { ElementTheme.Light, ElementTheme.Dark })
         {
             root.RequestedTheme = appearance;
-            foreach (var page in new[] { "", "keep", "timer", "agents", "countdown" })
+            foreach (var page in new[] { "", "keep", "timer", "agents", "countdown", "quick" })
             {
                 subpage = page;
                 Render();
@@ -1024,7 +1140,7 @@ public sealed partial class TrayFlyout : Window
             {
                 root.RequestedTheme = theme;
                 root.Background = new SolidColorBrush(theme == ElementTheme.Dark ? Windows.UI.Color.FromArgb(255, 38, 38, 42) : Windows.UI.Color.FromArgb(255, 242, 242, 244));
-                foreach (var page in new[] { "", "keep", "timer", "agents", "countdown" })
+                foreach (var page in new[] { "", "keep", "timer", "agents", "countdown", "quick" })
                 {
                     subpage = page;
                     Render();

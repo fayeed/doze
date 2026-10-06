@@ -18,6 +18,23 @@ use std::{
 type Connection = (u64, Sender<Value>);
 static UI: OnceLock<Mutex<Option<Connection>>> = OnceLock::new();
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+/// The companion's process id, for handing it the foreground.
+static COMPANION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Clicking a tray icon lets its owner, the engine, bring a window to the foreground. Windows
+/// refuses that to other background processes, so the engine passes the right on to the
+/// companion: the flyout then becomes the active window and closes when focus moves away.
+#[cfg(windows)]
+fn allow_foreground() {
+    use windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
+    let pid = COMPANION.load(Ordering::Relaxed);
+    if pid != 0 {
+        let _ = unsafe { AllowSetForegroundWindow(pid) };
+    }
+}
+#[cfg(not(windows))]
+fn allow_foreground() {}
+
 /// What the open windows last received, without values that only count down.
 static PUBLISHED: Mutex<String> = Mutex::new(String::new());
 
@@ -402,14 +419,16 @@ fn icon_path() -> Option<std::path::PathBuf> {
 
 pub(super) fn show(snapshot: Snapshot, requests: Sender<Request>) -> Result<(), String> {
     if snapshot.view == DialogView::Panel {
-        return send(
+        send(
             json!({
                 "type": "panel",
                 "anchor": snapshot.panel_anchor,
                 "snapshot": snapshot_json(&snapshot, false),
             }),
             requests,
-        );
+        )?;
+        allow_foreground();
+        return Ok(());
     }
     let view = match snapshot.view {
         DialogView::Panel => "panel",
@@ -454,6 +473,7 @@ pub(super) fn send(open: Value, requests: Sender<Request>) -> Result<(), String>
     let mut child = command
         .spawn()
         .map_err(|error| format!("Could not start native Settings: {error}"))?;
+    COMPANION.store(child.id(), Ordering::Relaxed);
     // A new window process has seen nothing yet.
     if let Ok(mut published) = PUBLISHED.lock() {
         published.clear();
