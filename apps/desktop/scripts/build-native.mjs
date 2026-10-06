@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -16,6 +16,11 @@ if (process.platform === "darwin") {
   }
   const output = path.join(desktop, "native/macos/publish");
   mkdirSync(output, { recursive: true });
+  // Every Swift file in native/macos makes up the companion.
+  const sources = readdirSync(path.join(desktop, "native/macos"))
+    .filter((name) => name.endsWith(".swift"))
+    .sort()
+    .map((name) => `native/macos/${name}`);
   const slices = [];
   for (const arch of ["arm64", "x86_64"]) {
     const slice = path.join(output, `Doze.NativeUI-${arch}`);
@@ -29,7 +34,7 @@ if (process.platform === "darwin") {
         "-parse-as-library",
         "-target",
         `${arch}-apple-macos13.0`,
-        "native/macos/Doze.swift",
+        ...sources,
         "-o",
         slice,
       ],

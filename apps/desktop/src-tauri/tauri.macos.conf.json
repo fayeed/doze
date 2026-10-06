@@ -2,7 +2,8 @@
   "bundle": {
     "resources": {
       "../native/macos/publish/Doze.NativeUI": "macos-ui/Doze.NativeUI",
-      "icons/clypy.png": "macos-ui/clypy.png"
+      "icons/clypy.png": "macos-ui/clypy.png",
+      "icons/glyphs/": "glyphs/"
     },
     "macOS": {
       "minimumSystemVersion": "13.0"
