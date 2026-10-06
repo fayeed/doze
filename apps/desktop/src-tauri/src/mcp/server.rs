@@ -47,10 +47,20 @@ fn write_line(writer: &mut impl Write, value: &Value) -> Result<(), String> {
         .and_then(|_| writer.flush())
         .map_err(|e| e.to_string())
 }
+static ADDRESS: std::sync::OnceLock<SocketAddr> = std::sync::OnceLock::new();
+
+/// The private bridge's loopback address, shown in Settings. Its port changes every launch
+/// and every call needs the token from the endpoint file.
+pub fn address() -> Option<SocketAddr> {
+    ADDRESS.get().copied()
+}
+
 pub fn start(path: PathBuf, sender: Sender<Request>) -> Result<(), String> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).map_err(|e| e.to_string())?;
+    let address = listener.local_addr().map_err(|e| e.to_string())?;
+    let _ = ADDRESS.set(address);
     let endpoint = Endpoint {
-        address: listener.local_addr().map_err(|e| e.to_string())?,
+        address,
         token: format!(
             "{}{}",
             uuid::Uuid::new_v4().simple(),

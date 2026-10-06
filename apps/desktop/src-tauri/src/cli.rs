@@ -20,6 +20,7 @@ Usage:
   doze run [--then ACTION] [--reason TEXT] -- COMMAND [ARGS...]
   doze watch --pid PID [--then ACTION] [--reason TEXT]
   doze agent-event --session ID [--activity STATE] [--title TEXT] [--workspace PATH]
+  doze hook AGENT EVENT   (agents run this from their hooks; event JSON on stdin)
 
 ACTION is nothing (default), sleep, display-off, lock, shutdown or hibernate.
 The action runs only after the job succeeds, following Doze's final warning, which you can
@@ -31,13 +32,22 @@ Doze must be running. Exit status: the command's own status, or 2 for usage erro
 pub fn requested(args: &[String]) -> bool {
     matches!(
         args.get(1).map(String::as_str),
-        Some("run" | "watch" | "agent-event" | "help" | "--help")
+        Some("run" | "watch" | "agent-event" | "hook" | "help" | "--help")
     )
 }
 
 pub fn main(args: &[String]) -> i32 {
     #[cfg(windows)]
     attach_console();
+    if args.get(1).is_some_and(|arg| arg == "hook") {
+        // A hook must never fail or slow the agent: report problems and exit 0.
+        if let Err(error) = hook(&args[2..]) {
+            if std::env::var_os("DOZE_DEBUG").is_some() {
+                eprintln!("doze: {error}");
+            }
+        }
+        return 0;
+    }
     if args.get(1).is_some_and(|arg| arg == "agent-event") {
         return match agent_event(&args[2..]) {
             Ok(()) => 0,
@@ -113,6 +123,76 @@ fn agent_event(args: &[String]) -> Result<(), String> {
         }),
     };
     forward(&endpoint, call).map(|_| ())
+}
+
+/// `doze hook AGENT EVENT`: forwards one lifecycle event from an agent's hook to the running
+/// app over the private bridge. The hook's JSON arrives on stdin; Codex's `notify` passes it
+/// as the last argument instead.
+fn hook(args: &[String]) -> Result<(), String> {
+    let agent = args.first().ok_or("doze hook needs an agent.")?;
+    let mut payload = Value::Null;
+    let mut event = None;
+    for arg in &args[1..] {
+        if arg.trim_start().starts_with('{') {
+            payload = serde_json::from_str(arg).map_err(|e| e.to_string())?;
+        } else {
+            event = Some(arg.clone());
+        }
+    }
+    if payload.is_null() {
+        use std::io::{IsTerminal, Read};
+        let stdin = std::io::stdin();
+        if !stdin.is_terminal() {
+            let mut text = String::new();
+            stdin
+                .lock()
+                .take(1024 * 1024)
+                .read_to_string(&mut text)
+                .map_err(|e| e.to_string())?;
+            payload = serde_json::from_str(&text).unwrap_or(Value::Null);
+        }
+    }
+    let arguments = hook_arguments(agent, event, &payload)?;
+    forward(
+        &default_endpoint()?,
+        Call {
+            key: String::new(),
+            name: "hook.event".into(),
+            arguments,
+        },
+    )
+    .map(|_| ())
+}
+
+/// The fields Doze needs from each tool's hook input.
+fn hook_arguments(agent: &str, event: Option<String>, payload: &Value) -> Result<Value, String> {
+    let text = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| payload[*key].as_str().map(String::from))
+    };
+    let event = event
+        .or_else(|| text(&["hook_event_name", "type", "event"]))
+        .ok_or("No hook event name.")?;
+    let prompt = text(&["prompt", "user_prompt"]).or_else(|| {
+        // Codex notify: the turn's input messages.
+        payload["input-messages"]
+            .as_array()
+            .and_then(|messages| messages.last())
+            .and_then(Value::as_str)
+            .map(String::from)
+    });
+    let cwd = text(&["cwd", "workspace", "directory"]).or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .map(|dir| dir.to_string_lossy().into_owned())
+    });
+    Ok(json!({
+        "agent": agent,
+        "event": event,
+        "session_id": text(&["session_id", "sessionId", "thread-id", "thread_id", "conversation_id"]),
+        "cwd": cwd,
+        "prompt": prompt,
+    }))
 }
 
 #[derive(Debug, PartialEq)]
@@ -456,6 +536,24 @@ mod tests {
         assert!(requested(&args("doze run -- make")));
         assert!(!requested(&args("doze --startup")));
         assert!(!requested(&args("doze --mcp --endpoint x")));
+    }
+
+    #[test]
+    fn hook_input_from_each_tool_names_the_session_project_and_prompt() {
+        let claude = json!({"hook_event_name": "UserPromptSubmit", "session_id": "abc", "cwd": "/w/doze-app", "prompt": "Fix it"});
+        let arguments =
+            hook_arguments("claude-code", Some("UserPromptSubmit".into()), &claude).unwrap();
+        assert_eq!(arguments["session_id"], "abc");
+        assert_eq!(arguments["cwd"], "/w/doze-app");
+        assert_eq!(arguments["prompt"], "Fix it");
+        // Codex notify: event and session come from the JSON argument.
+        let notify = json!({"type": "agent-turn-complete", "thread-id": "t1", "cwd": "/w/api", "input-messages": ["first", "last"]});
+        let arguments = hook_arguments("codex", None, &notify).unwrap();
+        assert_eq!(arguments["event"], "agent-turn-complete");
+        assert_eq!(arguments["session_id"], "t1");
+        assert_eq!(arguments["prompt"], "last");
+        assert!(hook_arguments("codex", None, &Value::Null).is_err());
+        assert!(requested(&args("doze hook claude-code Stop")));
     }
 
     #[test]

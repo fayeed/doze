@@ -1,4 +1,4 @@
-//! `doze-cli.exe`: the console front end for `doze run` and `doze watch` on Windows.
+//! `doze-cli.exe`: the console front end for `doze run`, `doze watch` and `doze hook` on Windows.
 //!
 //! `doze.exe` is a GUI program, so cmd.exe and PowerShell return to the prompt without waiting
 //! for it, drop its exit status and cannot capture its output. This console program starts the
@@ -14,7 +14,7 @@ fn main() {
     let mut args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let job = matches!(
         args.first().and_then(|arg| arg.to_str()),
-        Some("run" | "watch" | "help" | "--help" | "-h")
+        Some("run" | "watch" | "hook" | "agent-event" | "help" | "--help" | "-h")
     );
     let unknown = !job && !args.is_empty();
     if unknown {

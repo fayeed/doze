@@ -100,7 +100,17 @@ pub fn call(
             local = local_client(supported);
             &local
         }
-        None => settings.agents.authenticate(&call.key)?,
+        None => match call.name.strip_prefix("hook.") {
+            Some(event) => {
+                return crate::agents::hooks::call(engine, settings, event, call.arguments)
+            }
+            None => {
+                if !settings.mcp_server_enabled {
+                    return Err("Doze's MCP server is turned off in Settings › Advanced.".into());
+                }
+                settings.agents.authenticate(&call.key)?
+            }
+        },
     };
     if call.name == "doze.start_session" {
         let start: Start = decode(call.arguments)?;
@@ -161,18 +171,24 @@ pub fn call(
         {
             return Err("Too many agent sessions.".into());
         }
-        let approved = client.keep_awake && action.is_none_or(|a| client.actions.contains(&a));
+        let explicit = start.completion_action.is_some();
+        // Trusted clients hold leases without asking; an explicit action of their own also
+        // needs that action's permission. Without one, When agents finish applies.
+        let trusted = client.keep_awake || !settings.agents.ask_before_new;
+        let approved = trusted && (!explicit || action.is_none_or(|a| client.actions.contains(&a)));
         let session = Session {
             session_id: uuid::Uuid::new_v4().to_string(),
             client_id: client.id.clone(),
             client_name: client.name.clone(),
+            agent: crate::agents::AgentKind::for_client(&client.name),
+            source: crate::agents::SessionSource::McpLease,
+            project: start.workspace.as_deref().and_then(crate::agents::project),
             reason: start.reason,
             title: start.title,
             workspace: start.workspace,
             activity: crate::mcp::sessions::Activity::Unknown,
             parent_session_id: start.parent_session_id,
             provider_session_id: start.provider_session_id,
-            wake_released: false,
             activity_changed_at: engine.now,
             working_seconds: 0,
             created_at: engine.now,
@@ -195,6 +211,7 @@ pub fn call(
             timeout_at: start.optional_timeout.map(|t| engine.now.saturating_add(t)),
             lost_at: None,
             explicit_at: engine.now,
+            explicit_action: explicit,
         };
         if approved {
             join_authorized_batch(engine, &session.session_id);
@@ -239,6 +256,7 @@ pub fn call(
             session.title = Some(title);
         }
         if let Some(workspace) = update.workspace {
+            session.project = crate::agents::project(&workspace);
             session.workspace = Some(workspace);
         }
         if let Some(parent_id) = update.parent_session_id {
@@ -247,19 +265,23 @@ pub fn call(
         if let Some(provider_id) = update.provider_session_id {
             session.provider_session_id = Some(provider_id);
         }
+        let mut resumed = false;
         if let Some(activity) = update.activity {
-            if session.activity == crate::mcp::sessions::Activity::Working {
-                session.working_seconds = session
-                    .working_seconds
-                    .saturating_add(now.saturating_sub(session.activity_changed_at));
-            }
-            session.activity = activity;
-            session.activity_changed_at = now;
-            if activity == crate::mcp::sessions::Activity::Working {
-                session.wake_released = false;
-            }
+            resumed = !session.holds() && activity != crate::mcp::sessions::Activity::Idle;
+            session.set_activity(activity, now);
         }
         session.last_heartbeat = now;
+        let (id, authorized) = (session.session_id.clone(), session.status.holds_awake());
+        // Work that resumes after an idle stretch starts a new batch, or joins the running one.
+        if resumed && authorized {
+            join_authorized_batch(engine, &id);
+        }
+        let session = engine
+            .agents
+            .items
+            .iter()
+            .find(|s| s.session_id == id)
+            .ok_or("Session not found for this client.")?;
         return Ok(json!(session));
     }
     if ![
@@ -360,9 +382,11 @@ pub fn authorize(
     decision: &str,
 ) -> Result<(), String> {
     if !settings.agents.enabled {
-        return Err("MCP is disabled.".into());
+        return Err("Agents are turned off in Doze.".into());
     }
-    if !["once", "deny"].contains(&decision) {
+    // Allow trusts the agent until it is removed in Settings › Agents; it never grants a
+    // power action the agent asked for beyond this session. Once keeps the old one-off grant.
+    if !["allow", "once", "deny"].contains(&decision) {
         return Err("Persistent permissions can only be changed in Agents settings.".into());
     }
     let session = engine
@@ -374,15 +398,32 @@ pub fn authorize(
     if session.status != Status::AwaitingAuthorization {
         return Err("Authorization is no longer pending.".into());
     }
-    if !settings
-        .agents
-        .clients
-        .iter()
-        .any(|c| c.id == session.client_id)
+    let mcp = session.source == crate::agents::SessionSource::McpLease;
+    if mcp
+        && !settings
+            .agents
+            .clients
+            .iter()
+            .any(|c| c.id == session.client_id)
     {
         return Err("Client revoked.".into());
     }
-    if decision == "once" {
+    if decision == "allow" {
+        if mcp {
+            if let Some(client) = settings
+                .agents
+                .clients
+                .iter_mut()
+                .find(|c| c.id == session.client_id)
+            {
+                client.keep_awake = true;
+            }
+        } else {
+            settings.agents.trust(&session.agent.id());
+        }
+    }
+    let holds = session.activity_holds();
+    if decision != "deny" && holds {
         join_authorized_batch(engine, id);
     }
     let session = engine
@@ -399,10 +440,29 @@ pub fn authorize(
     session.authorized_action = session.completion_action;
     session.last_heartbeat = engine.now;
     session.explicit_at = engine.now;
+    let lease = if mcp {
+        settings.agents.lease_seconds
+    } else {
+        crate::mcp::sessions::LOST_GRACE_SECONDS
+    };
     session.lease_expires_at = engine
         .now
-        .saturating_add(settings.agents.lease_seconds)
+        .saturating_add(lease)
         .min(session.timeout_at.unwrap_or(u64::MAX));
+    // A hook agent allowed once is trusted for its other open requests too.
+    if decision == "allow" && !mcp {
+        let agent = session.agent.clone();
+        let others: Vec<String> = engine
+            .agents
+            .items
+            .iter()
+            .filter(|s| s.agent == agent && s.status == Status::AwaitingAuthorization)
+            .map(|s| s.session_id.clone())
+            .collect();
+        for other in others {
+            authorize(engine, settings, &other, "once")?;
+        }
+    }
     Ok(())
 }
 pub fn connect(settings: &mut Settings, name: &str) -> Result<(), String> {
@@ -460,8 +520,15 @@ pub fn definitions() -> Value {
     json!({"tools":tools})
 }
 
-fn join_authorized_batch(engine: &mut Engine, id: &str) {
-    if !engine.agents.holds_awake() {
+/// Adds a session that starts holding the computer awake to the current batch, or starts a
+/// new batch (and cancels a finished batch's countdown) when nothing else is working.
+pub(crate) fn join_authorized_batch(engine: &mut Engine, id: &str) {
+    let others_working = engine
+        .agents
+        .items
+        .iter()
+        .any(|s| s.session_id != id && s.holds());
+    if !others_working {
         if engine
             .countdown
             .as_ref()
@@ -473,10 +540,12 @@ fn join_authorized_batch(engine: &mut Engine, id: &str) {
         engine.agents.completion_consumed = false;
         prune_history(engine);
     }
-    engine.agents.batch.push(id.into());
+    if !engine.agents.batch.iter().any(|b| b == id) {
+        engine.agents.batch.push(id.into());
+    }
 }
 
-fn prune_history(engine: &mut Engine) {
+pub(crate) fn prune_history(engine: &mut Engine) {
     let sessions = &mut engine.agents;
     let removable = |s: &Session| s.status.terminal() && !sessions.batch.contains(&s.session_id);
     let mut remove = sessions

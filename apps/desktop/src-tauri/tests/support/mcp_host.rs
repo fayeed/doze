@@ -1,5 +1,7 @@
 //! Test-only host. Never links native power adapters or runs a Tauri application.
 #![allow(dead_code)]
+#[path = "../../src/agents/mod.rs"]
+mod agents;
 #[path = "../../src/core/mod.rs"]
 mod core;
 #[path = "../../src/mcp/mod.rs"]

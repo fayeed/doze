@@ -139,25 +139,32 @@ pub(super) fn worker(
     let mut logged_error = None;
     let mut attempted_notification = None;
     let mut shown_notification = None;
+    let mut next_battery_at = 0;
+    let mut next_scan_at = 0;
     loop {
         let now = origin.elapsed().as_secs();
         snapshot.engine.now = now;
-        let wait = if snapshot.engine.agents.unsettled()
-            || snapshot.engine.needs_audio()
-            || snapshot.engine.countdown.is_some()
-        {
+        let engine = &snapshot.engine;
+        let wait = if engine.needs_audio() || engine.countdown.is_some() {
             Duration::from_secs(1)
-        } else if let Some(deadline) = snapshot
-            .engine
-            .awake_deadline
-            .into_iter()
-            .chain(snapshot.engine.timer.as_ref().map(|t| t.deadline))
-            .min()
-        {
-            // Tray labels show the minutes left, so refresh them at least once a minute.
-            Duration::from_secs(deadline.saturating_sub(now).clamp(1, 60))
+        } else if engine.completion_waiting(&snapshot.settings) {
+            // Finished agents wait for the user to step away; check input now and then.
+            Duration::from_secs(5)
         } else {
-            Duration::from_secs(3600)
+            let holding = engine.should_hold_awake() || engine.battery_low;
+            let deadline = engine
+                .awake_deadline
+                .into_iter()
+                .chain(engine.timer.as_ref().map(|t| t.deadline))
+                .chain(engine.agents.next_deadline())
+                // Tray labels show minutes, and the battery guard samples while holding.
+                .chain(holding.then_some(now + 60))
+                .chain(
+                    crate::agents::process::wanted(&snapshot.settings)
+                        .then_some(next_scan_at.max(now + 1)),
+                )
+                .min();
+            Duration::from_secs(deadline.map_or(3600, |d| d.saturating_sub(now).clamp(1, 3600)))
         };
         let wait = errors
             .expires_in(now)
@@ -186,60 +193,30 @@ pub(super) fn worker(
         let mut open_dialog = false;
         let mut preview_countdown = false;
         let mut warning_failed = false;
+        let mut show_menu = None;
         if let Some(request) = request {
             match request {
-                Request::PanelSnapshot(tx) => {
-                    let sessions = snapshot
-                        .engine
-                        .agents
-                        .items
-                        .iter()
-                        .filter(|session| !session.status.terminal())
-                        .map(|session| super::PanelSession {
-                            id: session.session_id.clone(),
-                            provider: session.client_name.clone(),
-                            task: session.reason.clone(),
-                            title: session.title.clone(),
-                            workspace: session.workspace.clone(),
-                            parent_session_id: session.parent_session_id.clone(),
-                            activity: format!("{:?}", session.activity),
-                            working_seconds: session.working_seconds.saturating_add(
-                                if session.activity == crate::mcp::sessions::Activity::Working {
-                                    snapshot
-                                        .engine
-                                        .now
-                                        .saturating_sub(session.activity_changed_at)
-                                } else {
-                                    0
-                                },
-                            ),
-                            started_at: session.created_at,
-                            last_activity: session.last_heartbeat,
-                            status: format!("{:?}", session.status),
-                        })
-                        .collect();
-                    let _ = tx.send(super::PanelSnapshot {
-                        awake: snapshot.engine.awake || snapshot.engine.agents.holds_awake(),
-                        awake_deadline: snapshot.engine.awake_deadline,
-                        now: snapshot.engine.now,
-                        sessions,
-                    });
-                }
                 Request::Mcp(call, tx) => {
                     let request_authorization = call.name == "doze.start_session";
+                    let pending = snapshot.engine.agents.pending();
                     let result = crate::mcp::tools::call(
                         &mut snapshot.engine,
                         &snapshot.settings,
                         &snapshot.actions,
                         call,
                     );
-                    if request_authorization
-                        && result
-                            .as_ref()
-                            .is_ok_and(|value| value["status"] == "awaiting_authorization")
-                    {
-                        snapshot.view = super::DialogView::Agents;
-                        open_dialog = true;
+                    // New approval requests appear in the panel and the menu bar icon; a
+                    // notification points there instead of opening a window.
+                    if request_authorization && snapshot.engine.agents.pending() > pending {
+                        if let Some(session) = snapshot.engine.agents.items.iter().rev().find(|s| {
+                            s.status == crate::mcp::sessions::Status::AwaitingAuthorization
+                        }) {
+                            let event = crate::core::sessions::Event::ApprovalNeeded {
+                                agent: session.agent.label(),
+                                project: session.project.clone(),
+                            };
+                            snapshot.engine.events.push(event);
+                        }
                     }
                     mcp_reply = Some((tx, result));
                 }
@@ -266,9 +243,20 @@ pub(super) fn worker(
                     snoozing = matches!(op, Operation::Snooze);
                     open_dialog = matches!(
                         op,
-                        Operation::OpenDialog { .. } | Operation::ConnectAgent { .. }
+                        Operation::OpenDialog { .. }
+                            | Operation::OpenPage { .. }
+                            | Operation::OpenPanel { .. }
+                            | Operation::ConnectAgent { .. }
                     );
                     preview_countdown = matches!(op, Operation::PreviewCountdown);
+                    if let Operation::ShowMenu { name } = &op {
+                        show_menu = Some(name.clone());
+                    }
+                    if matches!(op, Operation::OpenPanel { .. }) {
+                        // The panel footer shows the battery; read it fresh.
+                        next_battery_at = 0;
+                    }
+                    snapshot.result = None;
                     let previous_settings = snapshot.settings.clone();
                     let result = apply(op, &mut snapshot, &path);
                     match &result {
@@ -289,9 +277,45 @@ pub(super) fn worker(
             app.exit(0);
             break;
         }
+        let now = snapshot.engine.now;
+        if now >= next_battery_at {
+            next_battery_at = now + 60;
+            if let Some((percent, on_battery)) = platform::battery() {
+                snapshot.engine.battery(
+                    percent,
+                    on_battery,
+                    snapshot.settings.battery_floor_percent,
+                );
+            }
+        }
+        let scanning = crate::agents::process::wanted(&snapshot.settings);
+        let detected = snapshot
+            .engine
+            .agents
+            .items
+            .iter()
+            .any(|s| s.source == crate::agents::SessionSource::Process && !s.status.terminal());
+        if (scanning && now >= next_scan_at) || (!scanning && detected) {
+            next_scan_at = now + 30;
+            let names = if scanning {
+                platform::processes()
+            } else {
+                Vec::new()
+            };
+            let running = crate::agents::process::detect(&names);
+            crate::agents::process::observe(&mut snapshot.engine, &snapshot.settings, &running);
+        }
         let mut observation = None;
         let mut idle_seconds = None;
         let mut activity_marker = None;
+        if !snapshot.engine.needs_audio() && snapshot.engine.completion_waiting(&snapshot.settings)
+        {
+            match idle.observe() {
+                Ok(value) => idle_seconds = Some(value.seconds),
+                // Without an idle reading the warning starts at once; it is cancellable.
+                Err(_) => idle_seconds = None,
+            }
+        }
         if snapshot.engine.needs_audio() {
             if audio.is_none() && now >= retry_audio_at {
                 match platform::NativeAudio::new() {
@@ -354,6 +378,10 @@ pub(super) fn worker(
                 .engine
                 .reset_transient("Power request failed · sessions cleared");
         }
+        snapshot.assertions = power.describe();
+        for event in std::mem::take(&mut snapshot.engine.events) {
+            notify(&notifications, &snapshot.settings, event);
+        }
         if let Some(c) = snapshot.engine.countdown.clone() {
             let key = Some((c.deadline, c.source));
             if let Some(only_warning) = announcement(
@@ -387,10 +415,10 @@ pub(super) fn worker(
                 snapshot.engine.countdown.as_ref(),
                 snapshot.engine.now,
                 snoozing,
-                snapshot.settings.theme,
+                &snapshot.settings,
             );
             if preview_countdown {
-                warning.preview(snapshot.selected_action, snapshot.settings.theme);
+                warning.preview(snapshot.selected_action, &snapshot.settings);
             }
         }
         if let Some(action) = action {
@@ -410,6 +438,12 @@ pub(super) fn worker(
         let tray_app = app.clone();
         let tray_snapshot = snapshot.clone();
         let _ = app.run_on_main_thread(move || crate::tray::update(&tray_app, &tray_snapshot));
+        if let Some(name) = show_menu {
+            let menu_app = app.clone();
+            let _ = app.run_on_main_thread(move || crate::tray::show_menu(&menu_app, &name));
+        }
+        // Open windows follow the engine through this stream instead of polling it.
+        platform::publish(&snapshot);
         if open_dialog {
             let dialog_snapshot = snapshot.clone();
             let dialog_sender = sender.clone();
@@ -442,6 +476,59 @@ pub(super) fn worker(
         }
         if let Some((tx, result)) = reply {
             let _ = tx.send(result.map(|_| snapshot.clone()));
+        }
+        snapshot.result = None;
+    }
+}
+
+/// Notifications for engine events, each behind its own setting.
+fn notify(
+    notifications: &platform::NativeNotifications,
+    settings: &crate::core::sessions::Settings,
+    event: crate::core::sessions::Event,
+) {
+    use crate::core::sessions::Event;
+    let device = if cfg!(target_os = "macos") {
+        "Mac"
+    } else {
+        "PC"
+    };
+    let (enabled, title, body) = match event {
+        Event::ApprovalNeeded { agent, project } => (
+            settings.notify_agent_approval,
+            format!("{agent} wants to keep your {device} awake"),
+            match project {
+                Some(project) => format!("{project} · Allow or deny it in Doze."),
+                None => "Allow or deny it in Doze.".into(),
+            },
+        ),
+        Event::AgentsFinished { action } => (
+            settings.notify_agents_finished,
+            "All agents finished".into(),
+            format!(
+                "{} after the final warning. Open Doze to cancel or snooze.",
+                action.label()
+            ),
+        ),
+        Event::AgentStalled { agent } => (
+            settings.notify_agent_stalled,
+            format!("{agent} stopped checking in"),
+            format!("Doze kept your {device} awake for 30 minutes, then let go without acting."),
+        ),
+        Event::KeepAwakeEnded => (
+            settings.notify_keep_awake_ended,
+            "Keep Awake ended".into(),
+            "Normal sleep settings apply again.".into(),
+        ),
+        Event::BatteryGuard { percent } => (
+            true,
+            format!("Battery at {percent}%"),
+            format!("Doze stopped keeping your {device} awake. It resumes when you plug in."),
+        ),
+    };
+    if enabled {
+        if let Err(error) = notifications.notify(&title, &body) {
+            eprintln!("Notification unavailable: {error}");
         }
     }
 }

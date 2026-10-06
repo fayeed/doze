@@ -11,15 +11,37 @@ pub struct AgentSettings {
     /// The MCP bridge renews its sessions while the agent app stays connected, so one long
     /// step without model turns does not lose the lease.
     pub keep_alive_while_connected: bool,
+    /// A new agent's first session waits for Allow or Deny before it may hold a lease.
+    pub ask_before_new: bool,
+    /// Agents (by `AgentKind` id) the user allowed. They stay trusted until removed in Settings.
+    pub trusted: Vec<String>,
+    /// Tools without lifecycle hooks, detected by their running process.
+    pub process_tools: Vec<ProcessTool>,
+}
+/// A tool detected by process. It shows as Open and never holds the computer awake unless
+/// the user turns `keep_awake` on for it.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessTool {
+    pub id: String,
+    pub detect: bool,
+    pub keep_awake: bool,
 }
 impl Default for AgentSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             lease_seconds: 300,
-            default_completion: None,
+            default_completion: Some(PowerAction::Sleep),
             clients: vec![],
             keep_alive_while_connected: true,
+            ask_before_new: true,
+            trusted: vec![],
+            process_tools: vec![ProcessTool {
+                id: "cursor".into(),
+                detect: true,
+                keep_awake: false,
+            }],
         }
     }
 }
@@ -45,7 +67,25 @@ impl AgentSettings {
                 return Err("Invalid or duplicate agent credentials.".into());
             }
         }
+        if self.trusted.len() > 64
+            || self.process_tools.len() > 16
+            || self
+                .trusted
+                .iter()
+                .chain(self.process_tools.iter().map(|tool| &tool.id))
+                .any(|id| id.is_empty() || id.len() > 128 || id.chars().any(char::is_control))
+        {
+            return Err("Invalid trusted agents or detected tools.".into());
+        }
         Ok(())
+    }
+    pub fn is_trusted(&self, agent: &str) -> bool {
+        !self.ask_before_new || self.trusted.iter().any(|id| id == agent)
+    }
+    pub fn trust(&mut self, agent: &str) {
+        if !self.trusted.iter().any(|id| id == agent) {
+            self.trusted.push(agent.into());
+        }
     }
     pub fn authenticate(&self, key: &str) -> Result<&TrustedClient, String> {
         if !self.enabled {

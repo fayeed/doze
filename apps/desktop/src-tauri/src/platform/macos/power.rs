@@ -73,6 +73,19 @@ impl NativePower {
     }
 }
 impl PowerManager for NativePower {
+    fn describe(&self) -> Vec<String> {
+        self.assertion
+            .map(|id| {
+                let kind = if self.allow_display_sleep {
+                    "PreventUserIdleSystemSleep"
+                } else {
+                    "PreventUserIdleDisplaySleep"
+                };
+                format!("{kind} · “Doze keep awake” · IOKit assertion {id}")
+            })
+            .into_iter()
+            .collect()
+    }
     fn supported_actions(&self) -> Vec<PowerAction> {
         let mut actions = vec![PowerAction::Sleep, PowerAction::Shutdown];
         if lock_screen().is_some() {

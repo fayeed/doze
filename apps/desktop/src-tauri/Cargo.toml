@@ -19,7 +19,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 uuid = { version = "1", features = ["v4"] }
 
 [profile.release]
@@ -34,7 +34,7 @@ strip = true
 strip = false
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = ["Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_Accessibility", "Win32_Foundation", "Win32_UI_Controls", "Win32_System_Time", "Win32_System_Power", "Win32_System_Shutdown", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_Com", "Win32_System_Console", "Win32_System_Registry", "Win32_Security", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_Media_Audio", "Win32_Media_Audio_Endpoints", "Win32_Devices_FunctionDiscovery", "Win32_UI_Shell_PropertiesSystem", "implement"] }
+windows = { version = "0.58", features = ["Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_Accessibility", "Win32_Foundation", "Win32_UI_Controls", "Win32_System_Time", "Win32_System_Power", "Win32_System_Shutdown", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_SystemInformation", "Win32_System_Com", "Win32_System_Console", "Win32_System_Registry", "Win32_Security", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_Media_Audio", "Win32_Media_Audio_Endpoints", "Win32_Devices_FunctionDiscovery", "Win32_UI_Shell_PropertiesSystem", "implement"] }
 
 windows-core = "0.58"
 

@@ -121,13 +121,13 @@ fn heartbeat_renews_and_recovers_lost_lease() {
 fn disconnect_or_expiry_never_schedules_a_power_action() {
     let (mut e, s) = (Engine::default(), settings());
     start(&mut e, &s, "codex", "sleep");
-    for now in [30, 300, 1829] {
+    for now in [30, 300, 1799] {
         assert_eq!(tick(&mut e, &s, now), None);
         assert!(e.should_hold_awake());
         assert!(e.countdown.is_none());
     }
     // An abandoned session is released without its completion action.
-    for now in [1830, 3600, 86400] {
+    for now in [1800, 3600, 86400] {
         assert_eq!(tick(&mut e, &s, now), None);
         assert!(!e.should_hold_awake());
         assert!(e.countdown.is_none());
@@ -249,9 +249,11 @@ fn audio_keep_awake_defers_agent_completion_only_while_audio_holds() {
     e.tick(2, Some(false), Some(0), false, &s);
     assert!(e.countdown.is_none());
     e.tick(62, Some(false), Some(0), false, &s);
+    assert!(e.countdown.is_none(), "the user is still at the keyboard");
+    e.tick(63, Some(false), Some(600), false, &s);
     assert_eq!(e.countdown.as_ref().unwrap().source, Source::Agents);
     // Resumed audio is user intent to stay awake and cancels the agent countdown.
-    e.tick(63, Some(true), Some(0), false, &s);
+    e.tick(64, Some(true), Some(0), false, &s);
     assert!(e.countdown.is_none());
 }
 #[test]
@@ -629,7 +631,8 @@ fn job(e: &mut Engine, s: &Settings, name: &str, args: Value) -> Result<Value, S
 #[test]
 fn command_line_jobs_need_no_mcp_or_approval_and_sleep_after_success() {
     let mut s = Settings::default();
-    assert!(!s.agents.enabled);
+    s.agents.enabled = false;
+    s.mcp_server_enabled = false;
     let mut e = Engine::default();
     let started = job(
         &mut e,
@@ -748,12 +751,20 @@ fn lifecycle_updates_track_work_waiting_and_stable_provider_identity() {
         json!({"session_id":id,"activity":"waiting","title":"Approval needed"}),
     )
     .unwrap();
-    assert_eq!(engine.agents.items[0].working_seconds, 10);
-    assert!(engine.should_hold_awake());
-    engine.agents.expire(319);
-    assert!(engine.should_hold_awake());
+    assert_eq!(engine.agents.items[0].working_seconds, 20);
+    // Waiting on the user mid-task keeps the computer awake.
     engine.agents.expire(320);
-    assert!(!engine.should_hold_awake());
+    assert!(engine.should_hold_awake());
+    engine.now = 320;
+    call(
+        &mut engine,
+        &settings,
+        "codex",
+        "update_session",
+        json!({"session_id":id,"activity":"idle"}),
+    )
+    .unwrap();
+    assert!(!engine.should_hold_awake(), "idle releases at once");
     engine.now = 321;
     call(
         &mut engine,

@@ -9,7 +9,21 @@ pub trait PowerManager {
     fn take_notice(&mut self) -> Option<String> {
         None
     }
+    /// The power assertions or requests Doze holds right now, for Settings › Advanced.
+    fn describe(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
+/// Executable names of running processes, for tools detected by process.
+#[cfg(target_os = "macos")]
+pub use macos::battery::processes;
+/// Battery level in percent and whether the computer runs on battery, if it has one.
+#[cfg(target_os = "macos")]
+pub use macos::battery::read as battery;
+#[cfg(windows)]
+pub use windows::battery::processes;
+#[cfg(windows)]
+pub use windows::battery::read as battery;
 pub mod countdown;
 #[cfg(windows)]
 pub use windows::dialogs;
@@ -54,7 +68,21 @@ pub use windows::{audio::NativeAudio, idle::NativeIdle, lifecycle, power::Native
 #[cfg(not(any(windows, target_os = "macos")))]
 compile_error!("Doze currently targets Windows and macOS.");
 
+pub use native_ui::publish;
+
 pub struct NativeNotifications(pub tauri::AppHandle);
+impl NativeNotifications {
+    pub fn notify(&self, title: &str, body: &str) -> Result<(), String> {
+        use tauri_plugin_notification::NotificationExt;
+        self.0
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+            .map_err(|e| e.to_string())
+    }
+}
 impl NotificationManager for NativeNotifications {
     fn countdown(&self, action: PowerAction, seconds: u64) -> Result<(), String> {
         use tauri_plugin_notification::NotificationExt;

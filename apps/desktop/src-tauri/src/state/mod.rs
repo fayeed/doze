@@ -1,12 +1,10 @@
+mod diagnostics;
 mod model;
 mod operations;
 mod persistence;
 mod runtime;
 
-use crate::{
-    core::sessions::{Engine, Settings},
-    platform,
-};
+use crate::{core::sessions::Settings, platform};
 use runtime::worker;
 use std::{
     path::PathBuf,
@@ -22,31 +20,6 @@ pub struct AppState {
     pub sender: Sender<Request>,
 }
 
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PanelSnapshot {
-    pub awake: bool,
-    pub awake_deadline: Option<u64>,
-    pub now: u64,
-    pub sessions: Vec<PanelSession>,
-}
-
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PanelSession {
-    pub id: String,
-    pub provider: String,
-    pub task: String,
-    pub title: Option<String>,
-    pub workspace: Option<String>,
-    pub parent_session_id: Option<String>,
-    pub activity: String,
-    pub working_seconds: u64,
-    pub started_at: u64,
-    pub last_activity: u64,
-    pub status: String,
-}
-
 pub fn start(
     app: tauri::AppHandle,
     path: PathBuf,
@@ -55,15 +28,10 @@ pub fn start(
 ) -> Result<AppState, String> {
     let (sender, receiver) = mpsc::channel();
     let snapshot = Snapshot {
-        settings_path: path.clone(),
-        selected_action: settings.default_action,
-        view: DialogView::Settings,
-        engine: Engine::default(),
-        settings,
-        actions: Vec::new(),
         audio_supported: platform::audio_supported(),
         startup_supported: platform::startup_supported(),
         error: initial_error,
+        ..Snapshot::new(path.clone(), settings)
     };
     let lifecycle_sender = sender.clone();
     std::thread::Builder::new()

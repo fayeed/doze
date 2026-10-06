@@ -1,55 +1,13 @@
 use crate::{
-    core::sessions::PowerAction,
+    core::sessions::{IconClick, PowerAction},
     menu_icons::{self, Glyph},
     state::{AppState, DialogView, Operation, Request, Snapshot},
 };
 use tauri::{
     menu::{CheckMenuItem, IconMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::{TrayIconBuilder, TrayIconEvent},
-    Manager, WebviewUrl, WebviewWindowBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager,
 };
-
-fn show_panel(app: &tauri::AppHandle, x: f64, y: f64) {
-    let Some(window) = app.get_webview_window("panel") else {
-        return;
-    };
-    let (width, height) = (390.0, 620.0);
-    let position = app
-        .available_monitors()
-        .ok()
-        .and_then(|monitors| {
-            monitors
-                .into_iter()
-                .find(|monitor| {
-                    let p = monitor.position();
-                    let s = monitor.size();
-                    x >= p.x as f64
-                        && x <= (p.x + s.width as i32) as f64
-                        && y >= p.y as f64
-                        && y <= (p.y + s.height as i32) as f64
-                })
-                .map(|monitor| {
-                    let p = monitor.position();
-                    let s = monitor.size();
-                    let scale = monitor.scale_factor();
-                    let w = (width * scale) as i32;
-                    let h = (height * scale) as i32;
-                    let left =
-                        (x - w as f64 + 8.0).clamp(p.x as f64, (p.x + s.width as i32 - w) as f64);
-                    let top = if cfg!(target_os = "macos") {
-                        y + 8.0
-                    } else {
-                        y - h as f64 - 8.0
-                    }
-                    .clamp(p.y as f64, (p.y + s.height as i32 - h) as f64);
-                    (left, top)
-                })
-        })
-        .unwrap_or((x - width, y - height));
-    let _ = window.set_position(tauri::PhysicalPosition::new(position.0, position.1));
-    let _ = window.show();
-    let _ = window.set_focus();
-}
 
 struct NativeMenu {
     agents: Submenu<tauri::Wry>,
@@ -68,6 +26,12 @@ struct NativeMenu {
     audio: CheckMenuItem<tauri::Wry>,
     playback: CheckMenuItem<tauri::Wry>,
     actions: Vec<(PowerAction, CheckMenuItem<tauri::Wry>)>,
+    /// The whole menu, and the panel's Countdown, Quick Settings and Help & About rows: the
+    /// same items as the menu's submenus, shown on their own.
+    root: Menu<tauri::Wry>,
+    submenus: Vec<(&'static str, Menu<tauri::Wry>)>,
+    /// What a plain click opens, from the latest settings.
+    click: std::sync::Mutex<IconClick>,
 }
 
 pub(crate) fn dispatch(app: &tauri::AppHandle, operation: Operation) {
@@ -89,18 +53,74 @@ fn item(app: &tauri::App, id: &str, text: &str) -> tauri::Result<MenuItem<tauri:
     MenuItem::with_id(app, id, text, true, None::<&str>)
 }
 
-pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
-    if app.get_webview_window("panel").is_none() {
-        WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("index.html".into()))
-            .title("Doze")
-            .inner_size(390.0, 620.0)
-            .min_inner_size(340.0, 420.0)
-            .resizable(false)
-            .decorations(false)
-            .skip_taskbar(true)
-            .visible(false)
-            .build()?;
+/// ⌥-click opens whichever of panel and menu a plain click does not.
+#[cfg(target_os = "macos")]
+fn option_pressed() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventSourceFlagsState(state: i32) -> u64;
     }
+    const COMBINED_SESSION_STATE: i32 = 0;
+    const ALTERNATE: u64 = 0x0008_0000;
+    unsafe { CGEventSourceFlagsState(COMBINED_SESSION_STATE) & ALTERNATE != 0 }
+}
+#[cfg(not(target_os = "macos"))]
+fn option_pressed() -> bool {
+    false
+}
+
+/// Whether this click opens the panel; otherwise it opens the menu.
+fn opens_panel(button: MouseButton, option: bool, setting: IconClick) -> bool {
+    let primary = button == MouseButton::Left && !option;
+    primary == (setting == IconClick::Panel)
+}
+
+fn on_click(tray: &tauri::tray::TrayIcon, button: MouseButton, rect: tauri::Rect) {
+    let app = tray.app_handle();
+    let Some(menu) = app.try_state::<NativeMenu>() else {
+        return;
+    };
+    let setting = menu.click.lock().map_or(IconClick::Panel, |c| *c);
+    if opens_panel(button, option_pressed(), setting) {
+        let position = rect.position.to_physical::<f64>(1.0);
+        let size = rect.size.to_physical::<f64>(1.0);
+        let scale = app
+            .monitor_from_point(position.x, position.y)
+            .ok()
+            .flatten()
+            .map(|monitor| monitor.scale_factor());
+        dispatch(
+            app,
+            Operation::OpenPanel {
+                anchor: serde_json::json!({
+                    "x": position.x,
+                    "y": position.y,
+                    "width": size.width,
+                    "height": size.height,
+                    "scale": scale,
+                }),
+            },
+        );
+    } else {
+        let _ = tray.set_menu(Some(menu.root.clone()));
+        let _ = tray.with_inner_tray_icon(|inner| inner.show_menu());
+    }
+}
+
+/// Shows one of the menu's submenus at the icon, for the panel's rows that open them.
+pub(crate) fn show_menu(app: &tauri::AppHandle, name: &str) {
+    let (Some(menu), Some(tray)) = (app.try_state::<NativeMenu>(), app.tray_by_id("doze")) else {
+        return;
+    };
+    let Some((_, submenu)) = menu.submenus.iter().find(|(id, _)| *id == name) else {
+        return;
+    };
+    let _ = tray.set_menu(Some(submenu.clone()));
+    let _ = tray.with_inner_tray_icon(|inner| inner.show_menu());
+    let _ = tray.set_menu(Some(menu.root.clone()));
+}
+
+pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
     let status = item(app, "status", "Normal sleep allowed")?;
     let timer = item(app, "timer_status", "No power timer")?;
     let awake = menu_icons::submenu(app, "awake_menu", "Keep Awake", Glyph::Awake)?;
@@ -217,6 +237,19 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
             &quit,
         ],
     )?;
+    // The panel's rows open these: the same items, so they stay in step with the menu.
+    let mut submenus = Vec::new();
+    for (name, source) in [
+        ("countdown", &countdown),
+        ("quick", &quick.menu),
+        ("support", &support),
+    ] {
+        let standalone = Menu::new(app)?;
+        for child in source.items()? {
+            standalone.append(&child)?;
+        }
+        submenus.push((name, standalone));
+    }
     app.manage(NativeMenu {
         agents,
         agent_signature: std::sync::Mutex::new(String::new()),
@@ -234,9 +267,12 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         audio,
         playback,
         actions,
+        root: menu.clone(),
+        submenus,
+        click: std::sync::Mutex::new(IconClick::Panel),
     });
-    TrayIconBuilder::with_id("doze")
-        .icon(image(0))
+    let tray = TrayIconBuilder::with_id("doze")
+        .icon(image(IconState::Normal, taskbar_ink()))
         .tooltip("Doze · Normal sleep allowed")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -312,17 +348,22 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
-                position,
-                button: tauri::tray::MouseButton::Left,
+                button,
+                button_state: MouseButtonState::Up,
+                rect,
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                dispatch(app, Operation::Refresh);
-                show_panel(app, position.x, position.y);
+                if matches!(button, MouseButton::Left | MouseButton::Right) {
+                    on_click(tray, button, rect);
+                }
             }
         })
         .build(app)?;
+    // Doze decides which button opens the menu and which the panel.
+    let _ = tray.with_inner_tray_icon(|inner| inner.set_show_menu_on_right_click(false));
+    #[cfg(windows)]
+    watch_taskbar_theme(app.handle().clone());
     dispatch(app.handle(), Operation::Refresh);
     Ok(())
 }
@@ -365,7 +406,7 @@ pub(crate) fn status_text(snapshot: &Snapshot) -> String {
             .agents
             .items
             .iter()
-            .filter(|s| s.status.holds_awake())
+            .filter(|s| s.holds())
             .all(|s| s.client_id == crate::mcp::sessions::LOCAL_CLIENT_ID);
         if only_jobs {
             "Keeping awake · command running".into()
@@ -390,31 +431,216 @@ pub(crate) fn status_text(snapshot: &Snapshot) -> String {
     }
 }
 
-/// Short text beside the menu bar icon: the final warning in seconds, otherwise the power
-/// timer, otherwise a timed keep-awake session.
+/// The first status line in the panel and the Settings sidebar.
+pub(crate) fn status_short(snapshot: &Snapshot) -> String {
+    let engine = &snapshot.engine;
+    if let Some(countdown) = &engine.countdown {
+        match countdown.source {
+            crate::core::countdown::Source::Agents => "All agents finished".into(),
+            crate::core::countdown::Source::Timer => "Power timer finished".into(),
+            crate::core::countdown::Source::Playback => "Playback stopped".into(),
+        }
+    } else if engine.should_hold_awake() {
+        "Keeping awake".into()
+    } else {
+        "Normal sleep allowed".into()
+    }
+}
+
+/// The second status line: who or what holds the computer awake, or what is scheduled.
+pub(crate) fn status_detail(snapshot: &Snapshot) -> String {
+    let engine = &snapshot.engine;
+    let working: Vec<String> = {
+        let mut names: Vec<String> = engine
+            .agents
+            .items
+            .iter()
+            .filter(|s| s.holds())
+            .map(|s| s.agent.label())
+            .collect();
+        names.dedup();
+        names
+    };
+    if let Some(countdown) = &engine.countdown {
+        format!(
+            "{} in {}",
+            countdown.action.label(),
+            remaining(countdown.deadline, engine.now)
+        )
+    } else if engine.agents.holds_awake() {
+        match working.as_slice() {
+            [one] => format!("For {one}"),
+            many => format!("For {} agents", many.len()),
+        }
+    } else if let Some(deadline) = engine.awake_deadline {
+        format!("{} left", minutes_left(deadline, engine.now))
+    } else if engine.awake {
+        "Until you stop it".into()
+    } else if let Some(timer) = &engine.timer {
+        format!(
+            "{} in {}",
+            timer.action.label(),
+            minutes_left(timer.deadline, engine.now)
+        )
+    } else if engine.should_hold_awake() {
+        "While audio plays".into()
+    } else if engine.playback_enabled {
+        format!(
+            "{} after playback stops",
+            snapshot.settings.playback_action.label()
+        )
+    } else {
+        "No power action scheduled".into()
+    }
+}
+
+/// The four menu bar and tray glyphs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum IconState {
+    /// Hollow sun: normal sleep allowed.
+    Normal,
+    /// Whole sun: keeping awake.
+    Awake,
+    /// Sun with a dot: an agent waits for approval.
+    Attention,
+    /// Banded sun: the final warning is counting down.
+    Countdown,
+}
+
+pub(crate) fn icon_state_of(snapshot: &Snapshot) -> IconState {
+    let engine = &snapshot.engine;
+    if engine.countdown.is_some() {
+        IconState::Countdown
+    } else if engine.agents.pending() > 0 {
+        IconState::Attention
+    } else if engine.should_hold_awake() {
+        IconState::Awake
+    } else {
+        IconState::Normal
+    }
+}
+
+pub(crate) fn icon_state(snapshot: &Snapshot) -> &'static str {
+    match icon_state_of(snapshot) {
+        IconState::Normal => "normal",
+        IconState::Awake => "awake",
+        IconState::Attention => "attention",
+        IconState::Countdown => "countdown",
+    }
+}
+
+/// Short text beside the menu bar icon: the final warning in minutes and seconds, otherwise
+/// the time left on the power timer or keep-awake, otherwise the number of working agents
+/// when only agents hold the Mac awake.
 // Windows tray icons have no title; the tooltip already carries the same information.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn menu_bar_title(snapshot: &Snapshot) -> Option<String> {
     let engine = &snapshot.engine;
-    if !snapshot.settings.menu_bar_time {
-        return None;
-    }
+    let settings = &snapshot.settings;
     if let Some(countdown) = &engine.countdown {
+        if !settings.menu_bar_time {
+            return None;
+        }
         let seconds = countdown.deadline.saturating_sub(engine.now);
         return Some(format!("{}:{:02}", seconds / 60, seconds % 60));
     }
-    engine
+    let deadline = engine
         .timer
         .as_ref()
         .map(|timer| timer.deadline)
-        .or(engine.awake_deadline)
-        .map(|deadline| minutes_left(deadline, engine.now))
+        .or(engine.awake_deadline);
+    if let Some(deadline) = deadline {
+        if !settings.menu_bar_time {
+            return None;
+        }
+        let minutes = deadline.saturating_sub(engine.now).div_ceil(60);
+        return Some(if minutes >= 60 {
+            format!("{}:{:02}", minutes / 60, minutes % 60)
+        } else {
+            format!("{minutes}m")
+        });
+    }
+    let working = engine.agents.working();
+    let only_agents = !engine.awake && engine.timer.is_none();
+    (settings.menu_bar_agent_count && only_agents && working > 0).then(|| working.to_string())
+}
+
+/// The taskbar's colour scheme decides the tray glyph's ink: white on a dark taskbar,
+/// black on a light one. macOS template images ignore colour.
+#[cfg(windows)]
+fn taskbar_ink() -> [u8; 3] {
+    use windows::{
+        core::w,
+        Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD},
+    };
+    let mut value: u32 = 0;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    let light = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+            w!("SystemUsesLightTheme"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&mut value as *mut u32).cast()),
+            Some(&mut size),
+        )
+    }
+    .is_ok()
+        && value == 1;
+    if light {
+        [0, 0, 0]
+    } else {
+        [255, 255, 255]
+    }
+}
+#[cfg(not(windows))]
+fn taskbar_ink() -> [u8; 3] {
+    [0, 0, 0]
+}
+
+/// Swaps the tray glyph's ink when the taskbar switches between light and dark.
+#[cfg(windows)]
+fn watch_taskbar_theme(app: tauri::AppHandle) {
+    use windows::{
+        core::w,
+        Win32::System::Registry::{
+            RegCloseKey, RegNotifyChangeKeyValue, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER,
+            KEY_NOTIFY, REG_NOTIFY_CHANGE_LAST_SET,
+        },
+    };
+    let _ = std::thread::Builder::new()
+        .name("doze-taskbar-theme".into())
+        .spawn(move || unsafe {
+            let mut key = HKEY::default();
+            if RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+                0,
+                KEY_NOTIFY,
+                &mut key,
+            )
+            .is_err()
+            {
+                return;
+            }
+            // Blocks until the key changes; no polling.
+            while RegNotifyChangeKeyValue(key, false, REG_NOTIFY_CHANGE_LAST_SET, None, false)
+                .is_ok()
+            {
+                dispatch(&app, Operation::Refresh);
+            }
+            let _ = RegCloseKey(key);
+        });
 }
 
 pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
     let Some(menu) = app.try_state::<NativeMenu>() else {
         return;
     };
+    if let Ok(mut click) = menu.click.lock() {
+        *click = snapshot.settings.icon_click_opens;
+    }
     let engine = &snapshot.engine;
     let status = status_text(snapshot);
     menu.quick.update(&snapshot.settings);
@@ -502,9 +728,9 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
         "No countdown to cancel"
     });
     let _ = menu.snooze.set_text(if engine.countdown.is_some() {
-        "Snooze 15 minutes"
+        format!("Snooze {} minutes", snapshot.settings.snooze_minutes)
     } else {
-        "No countdown to snooze"
+        "No countdown to snooze".into()
     });
     let _ = menu.audio.set_checked(engine.while_audio);
     let _ = menu.playback.set_checked(engine.playback_enabled);
@@ -513,60 +739,67 @@ pub(crate) fn update(app: &tauri::AppHandle, snapshot: &Snapshot) {
         let _ = check.set_checked(*action == snapshot.selected_action);
     }
     if let Some(tray) = app.tray_by_id("doze") {
-        let state = if engine.countdown.is_some() {
-            2
+        let pending = engine.agents.pending();
+        // Windows shows the time left in the tooltip unless turned off in Settings › General.
+        let timer_line = if cfg!(windows) && !snapshot.settings.menu_bar_time {
+            String::new()
         } else {
-            u8::from(engine.should_hold_awake())
+            format!("\n{timer}")
         };
-        let _ = tray.set_tooltip(Some(&format!("Doze · {status}\n{timer}")));
-        let _ = tray.set_icon_with_as_template(Some(image(state)), cfg!(target_os = "macos"));
+        let tooltip = if pending > 0 {
+            format!("Doze · {status}\n{pending} agent request waiting for approval{timer_line}")
+        } else {
+            format!("Doze · {status}{timer_line}")
+        };
+        let _ = tray.set_tooltip(Some(&tooltip));
+        let _ = tray.set_icon_with_as_template(
+            Some(image(icon_state_of(snapshot), taskbar_ink())),
+            cfg!(target_os = "macos"),
+        );
         #[cfg(target_os = "macos")]
         let _ = tray.set_title(menu_bar_title(snapshot));
     }
 }
-// The brand glyphs (apps/web/public/brand/doze-glyph-*.svg) at 32 px: a ring while normal
-// sleep is allowed, a filled sun while awake, and the striped setting sun during a countdown.
-// Native template images ignore color, so the states differ in shape; Windows also paints the
-// active states in the brand's amber-to-coral gradient.
-pub(crate) fn image(status: u8) -> tauri::image::Image<'static> {
-    const TOP: [f64; 3] = [246.0, 178.0, 94.0];
-    const BOTTOM: [f64; 3] = [222.0, 95.0, 90.0];
-    let mut pixels = vec![0u8; 32 * 32 * 4];
-    for y in 0..32 {
-        for x in 0..32 {
-            let mut coverage = 0;
+
+/// The brand glyphs (icons/glyphs/doze-glyph-*.svg, a 16-unit grid) rasterized at 32 px:
+/// a ring while normal sleep is allowed, a whole sun while awake, the sun with a dot when an
+/// agent waits for approval, and the banded setting sun during the final warning.
+pub(crate) fn image(state: IconState, ink: [u8; 3]) -> tauri::image::Image<'static> {
+    const SIZE: usize = 32;
+    let covered = |x: f64, y: f64| -> bool {
+        let distance = |cx: f64, cy: f64| (x - cx).hypot(y - cy);
+        match state {
+            IconState::Normal => (distance(8.0, 8.0) - 5.75).abs() <= 0.75,
+            IconState::Awake => distance(8.0, 8.0) <= 6.5,
+            IconState::Countdown => {
+                distance(8.0, 8.0) <= 6.5 && (y <= 9.5 || (10.5..=12.0).contains(&y) || y >= 13.0)
+            }
+            IconState::Attention => {
+                (distance(7.5, 8.5) <= 6.25 && distance(13.0, 3.0) >= 3.6)
+                    || distance(13.0, 3.0) <= 2.1
+            }
+        }
+    };
+    let mut pixels = vec![0u8; SIZE * SIZE * 4];
+    let scale = 16.0 / SIZE as f64;
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let mut coverage = 0u32;
             for sy in 0..4 {
                 for sx in 0..4 {
-                    let px = x as f64 + (sx as f64 + 0.5) / 4.0;
-                    let py = y as f64 + (sy as f64 + 0.5) / 4.0;
-                    let radius = (px - 16.0).hypot(py - 16.0);
-                    let covered = match status {
-                        0 => (radius - 11.5).abs() <= 1.5,
-                        1 => radius <= 13.0,
-                        // Two gaps cut the lower half into horizon stripes.
-                        _ => {
-                            radius <= 13.0
-                                && !(19.0..21.0).contains(&py)
-                                && !(24.0..26.0).contains(&py)
-                        }
-                    };
-                    coverage += u32::from(covered);
+                    let gx = (x as f64 + (sx as f64 + 0.5) / 4.0) * scale;
+                    let gy = (y as f64 + (sy as f64 + 0.5) / 4.0) * scale;
+                    coverage += u32::from(covered(gx, gy));
                 }
             }
             if coverage > 0 {
-                let i = (y * 32 + x) * 4;
-                let color = if status == 0 {
-                    [165, 166, 180]
-                } else {
-                    let t = ((y as f64 + 0.5 - 3.0) / 26.0).clamp(0.0, 1.0);
-                    [0, 1, 2].map(|c| (TOP[c] + (BOTTOM[c] - TOP[c]) * t).round() as u8)
-                };
-                pixels[i..i + 3].copy_from_slice(&color);
+                let i = (y * SIZE + x) * 4;
+                pixels[i..i + 3].copy_from_slice(&ink);
                 pixels[i + 3] = (coverage * 255 / 16) as u8;
             }
         }
     }
-    tauri::image::Image::new_owned(pixels, 32, 32)
+    tauri::image::Image::new_owned(pixels, SIZE as u32, SIZE as u32)
 }
 
 fn agent_operation(id: &str) -> Option<Operation> {
@@ -713,62 +946,116 @@ fn update_agents(app: &tauri::AppHandle, menu: &NativeMenu, snapshot: &Snapshot)
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::core::{
+        countdown::{Countdown, Source},
+        sessions::{Engine, Settings, Timer},
+    };
+
+    fn snapshot() -> Snapshot {
+        Snapshot {
+            actions: vec![PowerAction::Sleep],
+            ..Snapshot::new("settings.json".into(), Settings::default())
+        }
+    }
+
     #[test]
     fn session_labels_round_up_to_whole_minutes() {
-        assert_eq!(super::minutes_left(100, 100), "0m");
-        assert_eq!(super::minutes_left(130, 100), "1m");
-        assert_eq!(super::minutes_left(1900, 100), "30m");
-        assert_eq!(super::minutes_left(3700, 100), "1h 0m");
-        assert_eq!(super::minutes_left(7301, 100), "2h 1m");
+        assert_eq!(minutes_left(100, 100), "0m");
+        assert_eq!(minutes_left(130, 100), "1m");
+        assert_eq!(minutes_left(1900, 100), "30m");
+        assert_eq!(minutes_left(3700, 100), "1h 0m");
+        assert_eq!(minutes_left(7301, 100), "2h 1m");
     }
+
     #[test]
-    fn menu_bar_title_prefers_the_warning_then_the_timer_then_awake() {
-        use crate::core::{
-            countdown::{Countdown, Source},
-            sessions::{Engine, PowerAction, Settings, Timer},
-        };
-        use crate::state::{DialogView, Snapshot};
-        let mut snapshot = Snapshot {
-            settings_path: "settings.json".into(),
-            engine: Engine::default(),
-            settings: Settings::default(),
-            actions: vec![PowerAction::Sleep],
-            audio_supported: true,
-            startup_supported: true,
-            error: None,
-            selected_action: PowerAction::Sleep,
-            view: DialogView::Settings,
-        };
-        assert_eq!(super::menu_bar_title(&snapshot), None);
+    fn menu_bar_title_prefers_the_warning_then_the_time_left_then_the_agent_count() {
+        let mut snapshot = snapshot();
+        assert_eq!(menu_bar_title(&snapshot), None);
         snapshot.engine.now = 100;
         snapshot.engine.awake_deadline = Some(100 + 2520);
-        assert_eq!(super::menu_bar_title(&snapshot).as_deref(), Some("42m"));
+        assert_eq!(menu_bar_title(&snapshot).as_deref(), Some("42m"));
         snapshot.engine.timer = Some(Timer {
-            deadline: 100 + 3900,
+            deadline: 100 + 6120,
             action: PowerAction::Sleep,
         });
-        assert_eq!(super::menu_bar_title(&snapshot).as_deref(), Some("1h 5m"));
+        assert_eq!(menu_bar_title(&snapshot).as_deref(), Some("1:42"));
         snapshot.engine.countdown = Some(Countdown {
             deadline: 100 + 287,
             action: PowerAction::Sleep,
             source: Source::Timer,
         });
-        assert_eq!(super::menu_bar_title(&snapshot).as_deref(), Some("4:47"));
+        assert_eq!(menu_bar_title(&snapshot).as_deref(), Some("4:47"));
         snapshot.settings.menu_bar_time = false;
-        assert_eq!(super::menu_bar_title(&snapshot), None);
-        // Older settings files gain the preference switched on.
+        assert_eq!(menu_bar_title(&snapshot), None);
+        // Older settings files gain the preferences switched on.
         let old: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
-        assert!(old.menu_bar_time);
+        assert!(old.menu_bar_time && old.menu_bar_agent_count);
     }
+
+    #[test]
+    fn agent_count_shows_only_when_agents_alone_hold_the_mac() {
+        let mut snapshot = snapshot();
+        snapshot.settings.agents.trusted = vec!["claude-code".into(), "codex".into()];
+        for (agent, id) in [("claude-code", "a"), ("codex", "b")] {
+            crate::agents::hooks::call(
+                &mut snapshot.engine,
+                &snapshot.settings,
+                "event",
+                serde_json::json!({"agent": agent, "event": "UserPromptSubmit", "session_id": id}),
+            )
+            .unwrap();
+        }
+        assert_eq!(menu_bar_title(&snapshot).as_deref(), Some("2"));
+        assert_eq!(icon_state_of(&snapshot), IconState::Awake);
+        assert_eq!(status_detail(&snapshot), "For 2 agents");
+        snapshot.settings.menu_bar_agent_count = false;
+        assert_eq!(menu_bar_title(&snapshot), None);
+        snapshot.settings.menu_bar_agent_count = true;
+        snapshot.engine.keep_awake(None);
+        assert_eq!(menu_bar_title(&snapshot), None);
+        // A request waiting for approval shows the attention glyph.
+        crate::agents::hooks::call(
+            &mut snapshot.engine,
+            &snapshot.settings,
+            "event",
+            serde_json::json!({"agent": "gemini-cli", "event": "BeforeAgent"}),
+        )
+        .unwrap();
+        assert_eq!(icon_state_of(&snapshot), IconState::Attention);
+    }
+
+    #[test]
+    fn clicks_open_the_panel_or_the_menu_as_set() {
+        use MouseButton::{Left, Right};
+        assert!(opens_panel(Left, false, IconClick::Panel));
+        assert!(!opens_panel(Right, false, IconClick::Panel));
+        assert!(!opens_panel(Left, true, IconClick::Panel));
+        assert!(!opens_panel(Left, false, IconClick::Menu));
+        assert!(opens_panel(Right, false, IconClick::Menu));
+        assert!(opens_panel(Left, true, IconClick::Menu));
+    }
+
     #[test]
     fn template_glyphs_distinguish_states_without_color() {
-        let alpha = |status, x: usize, y: usize| super::image(status).rgba()[(y * 32 + x) * 4 + 3];
-        // The ring is hollow; the sun and the setting sun are filled at the center.
-        assert_eq!(alpha(0, 16, 16), 0);
-        assert_eq!(alpha(1, 16, 16), 255);
-        assert_eq!(alpha(2, 16, 16), 255);
-        // Only the setting sun has horizon gaps.
-        assert_eq!(alpha(1, 16, 19), 255);
-        assert_eq!(alpha(2, 16, 19), 0);
+        let alpha =
+            |state, x: usize, y: usize| image(state, [0, 0, 0]).rgba()[(y * 32 + x) * 4 + 3];
+        // The ring is hollow; the suns are filled at the center.
+        assert_eq!(alpha(IconState::Normal, 16, 16), 0);
+        assert_eq!(alpha(IconState::Awake, 16, 16), 255);
+        assert_eq!(alpha(IconState::Countdown, 16, 16), 255);
+        // Only the setting sun has horizon gaps (y 9.5–10.5 in glyph units).
+        assert_eq!(alpha(IconState::Awake, 16, 20), 255);
+        assert_eq!(alpha(IconState::Countdown, 16, 20), 0);
+        // The attention dot sits apart from its sun at the top right.
+        assert_eq!(alpha(IconState::Attention, 26, 6), 255);
+        assert_eq!(alpha(IconState::Attention, 20, 8), 0);
+        // Windows inks the glyph for the taskbar.
+        let white = image(IconState::Awake, [255, 255, 255]);
+        assert_eq!(
+            &white.rgba()[(16 * 32 + 16) * 4..][..4],
+            &[255, 255, 255, 255]
+        );
+        let _ = Engine::default();
     }
 }

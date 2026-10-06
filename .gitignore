@@ -19,5 +19,6 @@ apps/desktop/native/macos/publish/
 target-qa/
 apps/desktop/native/macos/renders/
 apps/desktop/src-tauri/target-win/
-apps/desktop/resources/index.html
-apps/desktop/resources/assets/
+apps/desktop/src-tauri/target-mac/
+
+doze-native-handoff/

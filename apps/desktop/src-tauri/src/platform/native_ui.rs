@@ -18,6 +18,8 @@ use std::{
 type Connection = (u64, Sender<Value>);
 static UI: OnceLock<Mutex<Option<Connection>>> = OnceLock::new();
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+/// What the open windows last received, without values that only count down.
+static PUBLISHED: Mutex<String> = Mutex::new(String::new());
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,13 +32,64 @@ struct UiRequest {
     action: Option<crate::core::sessions::PowerAction>,
     agent_seconds: Option<u64>,
     seconds: Option<u64>,
+    key: Option<String>,
+    /// A setting's new value; JSON null clears optional settings.
+    #[serde(default)]
+    value: Value,
+    agent: Option<String>,
+    remove: Option<bool>,
+    token: Option<String>,
+    page: Option<String>,
+    path: Option<std::path::PathBuf>,
 }
 
 impl UiRequest {
     fn operation(self) -> Result<Operation, String> {
+        let id = |id: Option<String>| id.ok_or("Session missing.");
         Ok(match self.command.as_str() {
             "save" => Operation::SaveSettings {
                 settings: self.settings.ok_or("Settings were not supplied.")?,
+            },
+            "set" => Operation::Set {
+                key: self.key.ok_or("Setting missing.")?,
+                value: self.value,
+            },
+            "agent-allow" => Operation::AuthorizeAgent {
+                id: id(self.id)?,
+                decision: "allow".into(),
+            },
+            "agent-deny" => Operation::AuthorizeAgent {
+                id: id(self.id)?,
+                decision: "deny".into(),
+            },
+            "agent-release" => Operation::CancelAgent { id: id(self.id)? },
+            "connect-preview" => Operation::ConnectPreview {
+                agent: self.agent.ok_or("Agent missing.")?,
+                remove: self.remove.unwrap_or(false),
+            },
+            "connect-apply" => Operation::ConnectApply {
+                agent: self.agent.ok_or("Agent missing.")?,
+                remove: self.remove.unwrap_or(false),
+                token: self.token.ok_or("Review the change first.")?,
+            },
+            "copy-config" => Operation::CopyConfig,
+            "export-diagnostics" => Operation::ExportDiagnostics {
+                path: self.path.ok_or("Choose where to save the report.")?,
+            },
+            "reset" => Operation::Reset,
+            "menu" => Operation::ShowMenu {
+                name: self.name.ok_or("Menu missing.")?,
+            },
+            "open-settings" => Operation::OpenPage {
+                page: self.page.unwrap_or_else(|| "overview".into()),
+            },
+            "open-timer" => Operation::OpenDialog {
+                view: match self.name.as_deref() {
+                    Some("awakeTime") => DialogView::AwakeTime,
+                    Some("timerDuration") => DialogView::TimerDuration,
+                    Some("timerTime") => DialogView::TimerTime,
+                    _ => DialogView::AwakeDuration,
+                },
             },
             "preview" => Operation::PreviewCountdown,
             "refresh" => Operation::Refresh,
@@ -83,7 +136,6 @@ impl UiRequest {
             "cancel" => Operation::Cancel,
             "stay-awake" => Operation::StayAwake,
             "snooze" => Operation::Snooze,
-            #[cfg(target_os = "macos")]
             "quit" => Operation::Quit,
             "awake" => Operation::KeepAwake {
                 seconds: Some(self.seconds.ok_or("Duration missing.")?),
@@ -115,8 +167,19 @@ impl UiRequest {
 
 fn reply_to_ui(line: &str, requests: &Sender<Request>) -> Result<Value, String> {
     let request: UiRequest = serde_json::from_str(line).map_err(|error| error.to_string())?;
-    let saved = request.command == "save";
+    let saved = matches!(request.command.as_str(), "save" | "set" | "reset");
     let command = request.command.clone();
+    // Replies that change files or connections carry the full snapshot.
+    let full = matches!(
+        command.as_str(),
+        "refresh"
+            | "connect-apply"
+            | "copy-config"
+            | "reset"
+            | "agent-skill-install"
+            | "agent-skill-update"
+            | "agent-connect"
+    );
     let operation = request.operation()?;
     let (reply, response) = mpsc::channel();
     requests
@@ -128,19 +191,66 @@ fn reply_to_ui(line: &str, requests: &Sender<Request>) -> Result<Value, String> 
     Ok(json!({
         "type": if saved { "saved" } else { "state" },
         "command": command,
-        "snapshot": snapshot_json(&snapshot),
+        "result": snapshot.result,
+        "snapshot": snapshot_json(&snapshot, full),
     }))
 }
 
-/// Live session state for the native control center. Times are seconds remaining.
+/// Sends the engine's state to the open windows when it changed. Values that only count
+/// down are left out of the comparison: windows add their own elapsed time to `now`.
+pub fn publish(snapshot: &Snapshot) {
+    let connected = UI
+        .get()
+        .and_then(|ui| ui.lock().ok())
+        .is_some_and(|ui| ui.is_some());
+    if !connected {
+        return;
+    }
+    let value = snapshot_json(snapshot, false);
+    let mut stable = value.clone();
+    for key in ["now", "agentNow", "timerStatus"] {
+        stable.as_object_mut().map(|o| o.remove(key));
+    }
+    if let Some(session) = stable["session"].as_object_mut() {
+        session.remove("awakeRemaining");
+        for key in ["timer", "countdown"] {
+            if let Some(part) = session.get_mut(key).and_then(Value::as_object_mut) {
+                part.remove("remaining");
+            }
+        }
+    }
+    let signature = stable.to_string();
+    let Ok(mut published) = PUBLISHED.lock() else {
+        return;
+    };
+    if *published == signature {
+        return;
+    }
+    if let Ok(ui) = UI.get_or_init(|| Mutex::new(None)).lock() {
+        if let Some((_, queue)) = ui.as_ref() {
+            if queue
+                .send(json!({ "type": "state", "snapshot": value }))
+                .is_ok()
+            {
+                *published = signature;
+            }
+        }
+    }
+}
+
+/// Live session state for the native control center. Times are seconds remaining, with the
+/// engine's own deadlines beside them.
 fn session_json(snapshot: &Snapshot) -> Value {
     use crate::core::sessions::Phase;
     let engine = &snapshot.engine;
     let remaining = |deadline: u64| deadline.saturating_sub(engine.now);
     json!({
         "awake": engine.awake,
+        "awakeDeadline": engine.awake_deadline,
         "awakeRemaining": engine.awake_deadline.map(remaining),
         "whileAudio": engine.while_audio,
+        // Whether sound reaches the output, sampled only while an audio rule is on.
+        "audioActive": engine.audio_active,
         "holdingAwake": engine.should_hold_awake(),
         "playbackEnabled": engine.playback_enabled,
         "playbackPhase": match engine.playback_phase {
@@ -152,20 +262,55 @@ fn session_json(snapshot: &Snapshot) -> Value {
         "selectedAction": snapshot.selected_action,
         "timer": engine.timer.as_ref().map(|timer| json!({
             "action": timer.action,
+            "deadline": timer.deadline,
             "remaining": remaining(timer.deadline),
         })),
         "countdown": engine.countdown.as_ref().map(|countdown| json!({
             "action": countdown.action,
+            "deadline": countdown.deadline,
             "remaining": remaining(countdown.deadline),
             "source": countdown.source,
+            "length": match countdown.source {
+                crate::core::countdown::Source::Agents => snapshot.settings.agent_warning_seconds(),
+                _ => snapshot.settings.countdown_seconds,
+            },
         })),
+        "batteryLow": engine.battery_low,
         "error": snapshot.error,
         // The latest engine event, such as a cancelled action or sessions cleared by sleep.
         "message": engine.message,
     })
 }
 
-fn snapshot_json(snapshot: &Snapshot) -> Value {
+/// What the panel and menu bar show about agents.
+fn agents_json(snapshot: &Snapshot) -> Value {
+    let sessions = crate::agents::visible(&snapshot.engine.agents);
+    let count = |state| sessions.iter().filter(|s| s.state == state).count();
+    use crate::agents::AgentState;
+    json!({
+        "sessions": sessions,
+        "working": count(AgentState::Working),
+        "idle": count(AgentState::Idle),
+        "pending": count(AgentState::NeedsApproval),
+        "done": count(AgentState::Done),
+    })
+}
+
+/// The snapshot every window renders. `full` adds parts that read files, such as the agent
+/// connections; streamed updates leave them out and windows keep the last ones.
+fn snapshot_json(snapshot: &Snapshot, full: bool) -> Value {
+    let mut value = base_json(snapshot);
+    if full {
+        let home = crate::agents::connect::home().unwrap_or_default();
+        value["agentLinks"] = json!(crate::agents::connect::connections(&home));
+        value["agentSkills"] = crate::mcp::skill::states();
+        value["agentConnections"] =
+            crate::mcp::server::connection_configs(&snapshot.settings, &snapshot.settings_path);
+    }
+    value
+}
+
+fn base_json(snapshot: &Snapshot) -> Value {
     let engine = &snapshot.engine;
     let timer = if let Some(countdown) = &engine.countdown {
         format!(
@@ -185,23 +330,48 @@ fn snapshot_json(snapshot: &Snapshot) -> Value {
     json!({
         "settings": snapshot.settings,
         "session": session_json(snapshot),
+        "now": snapshot.engine.now,
+        "agents": agents_json(snapshot),
         "agentSessions": snapshot.engine.agents.items,
         "agentNow": snapshot.engine.now,
-        "agentConnections": crate::mcp::server::connection_configs(&snapshot.settings, &snapshot.settings_path),
-        "agentSkills": crate::mcp::skill::states(),
         "agentSkillMessage": snapshot.engine.message,
         "settingsPath": snapshot.settings_path,
         "actions": snapshot.actions,
         "audioSupported": snapshot.audio_supported,
         "startupSupported": snapshot.startup_supported,
+        // macOS cannot keep a closed-lid Mac awake without root, which Doze never uses.
+        "lidClosedSupported": false,
         "status": crate::tray::status_text(snapshot),
+        "statusDetail": crate::tray::status_detail(snapshot),
+        "statusShort": crate::tray::status_short(snapshot),
+        "iconState": crate::tray::icon_state(snapshot),
         "timerStatus": timer,
+        "battery": snapshot.engine.battery.map(|(percent, on_battery)| json!({
+            "percent": percent,
+            "onBattery": on_battery,
+        })),
+        "assertions": snapshot.assertions,
+        "mcpAddress": crate::mcp::server::address().map(|a| a.to_string()),
         "version": env!("CARGO_PKG_VERSION"),
+        "links": crate::links::json(),
         // Shown in Settings so `doze run` can be copied with the right path.
         "executable": std::env::current_exe().ok(),
+        "cliPath": crate::agents::connect::executable(),
         "iconPath": icon_path(),
         "clypyIconPath": resource_path("macos-ui/clypy.png", "icons/clypy.png"),
+        "glyphPaths": glyph_paths(),
     })
+}
+
+/// The brand template glyphs for the Menu guide, by state.
+fn glyph_paths() -> Value {
+    let mut glyphs = serde_json::Map::new();
+    for state in ["normal", "awake", "attention", "countdown"] {
+        let file = format!("doze-glyph-{state}.svg");
+        let path = resource_path(&format!("glyphs/{file}"), &format!("icons/glyphs/{file}"));
+        glyphs.insert(state.into(), json!(path));
+    }
+    Value::Object(glyphs)
 }
 
 /// A bundled resource, or the checkout's copy during development.
@@ -231,7 +401,18 @@ fn icon_path() -> Option<std::path::PathBuf> {
 }
 
 pub(super) fn show(snapshot: Snapshot, requests: Sender<Request>) -> Result<(), String> {
+    if snapshot.view == DialogView::Panel {
+        return send(
+            json!({
+                "type": "panel",
+                "anchor": snapshot.panel_anchor,
+                "snapshot": snapshot_json(&snapshot, false),
+            }),
+            requests,
+        );
+    }
     let view = match snapshot.view {
+        DialogView::Panel => "panel",
         DialogView::Settings => "settings",
         DialogView::Agents => "agents",
         DialogView::About => "about",
@@ -242,7 +423,12 @@ pub(super) fn show(snapshot: Snapshot, requests: Sender<Request>) -> Result<(), 
         DialogView::TimerTime => "timerTime",
     };
     send(
-        json!({ "type": "open", "view": view, "snapshot": snapshot_json(&snapshot) }),
+        json!({
+            "type": "open",
+            "view": view,
+            "page": snapshot.page,
+            "snapshot": snapshot_json(&snapshot, true),
+        }),
         requests,
     )
 }
@@ -268,6 +454,10 @@ pub(super) fn send(open: Value, requests: Sender<Request>) -> Result<(), String>
     let mut child = command
         .spawn()
         .map_err(|error| format!("Could not start native Settings: {error}"))?;
+    // A new window process has seen nothing yet.
+    if let Ok(mut published) = PUBLISHED.lock() {
+        published.clear();
+    }
     let mut input = child
         .stdin
         .take()
@@ -395,6 +585,14 @@ mod tests {
             Ok(Operation::ScheduleSelected { seconds: 600 })
         ));
         assert!(operation(r#"{"command":"select-action"}"#).is_err());
+        assert!(matches!(
+            operation(r#"{"command":"set","key":"stayAwakeMinutes","value":null}"#),
+            Ok(Operation::Set {
+                value: Value::Null,
+                ..
+            })
+        ));
+        assert!(operation(r#"{"command":"set","value":1}"#).is_err());
         assert!(operation(r#"{"command":"format-disk"}"#).is_err());
     }
 }

@@ -145,6 +145,16 @@ impl NativePower {
 
 // Execution state belongs to this worker thread; acquisition and release never move threads.
 impl PowerManager for NativePower {
+    fn describe(&self) -> Vec<String> {
+        if !self.held {
+            return Vec::new();
+        }
+        let mut requests = vec!["System required · ES_SYSTEM_REQUIRED | ES_CONTINUOUS".to_string()];
+        if !self.allow_display_sleep {
+            requests.push("Display required · ES_DISPLAY_REQUIRED".into());
+        }
+        requests
+    }
     fn supported_actions(&self) -> Vec<PowerAction> {
         let mut actions = vec![
             PowerAction::Lock,

@@ -1,9 +1,21 @@
 use super::{
     countdown::{Countdown, Source},
-    sessions::{Engine, Phase, PowerAction, Settings, Timer},
+    sessions::{Engine, Event, Phase, PowerAction, Settings, Timer},
 };
 
+/// How long the user must be away before finished agents start the final warning.
+pub const AGENT_FINISH_IDLE_SECONDS: u64 = 120;
+
 impl Engine {
+    /// Whether finished agents are waiting for the user to step away, so the runtime keeps
+    /// observing input.
+    pub fn completion_waiting(&self, settings: &Settings) -> bool {
+        self.countdown.is_none()
+            && self
+                .agents
+                .completion(settings.agents.default_completion)
+                .is_some()
+    }
     pub fn keep_awake(&mut self, seconds: Option<u64>) {
         self.awake = true;
         self.awake_deadline = seconds.map(|s| self.now.saturating_add(s));
@@ -74,10 +86,54 @@ impl Engine {
             self.message = Some("Power action cancelled · After Playback turned off".into());
         }
     }
-    pub fn snooze(&mut self) -> Result<(), String> {
+    pub fn snooze(&mut self, seconds: u64) -> Result<(), String> {
         let c = self.countdown.as_mut().ok_or("No countdown is active.")?;
-        c.deadline = c.deadline.saturating_add(900);
+        c.deadline = c.deadline.saturating_add(seconds);
         Ok(())
+    }
+    /// Battery guard: on battery below the floor, release every agent lease and manual
+    /// keep-awake once, notify, and keep agents from holding until power returns.
+    /// Timers and countdowns are the user's own plans and stay.
+    pub fn battery(&mut self, percent: u8, on_battery: bool, floor: u8) {
+        self.battery = Some((percent, on_battery));
+        let low = floor > 0 && on_battery && percent < floor;
+        if !low {
+            self.battery_low = false;
+            return;
+        }
+        let mut released = self.release_for_battery();
+        if self.awake || self.while_audio {
+            self.stop_awake();
+            self.while_audio = false;
+            released = true;
+        }
+        if released || !self.battery_low {
+            self.message = Some(format!("Battery at {percent}% · stopped keeping awake"));
+        }
+        if released && !self.battery_low {
+            self.events.push(Event::BatteryGuard { percent });
+        }
+        self.battery_low = true;
+    }
+    fn release_for_battery(&mut self) -> bool {
+        let mut released = false;
+        for session in &mut self.agents.items {
+            if session.holds() {
+                session.status = crate::mcp::sessions::Status::Cancelled;
+                released = true;
+            }
+        }
+        if released {
+            self.agents.completion_consumed = true;
+            if self
+                .countdown
+                .as_ref()
+                .is_some_and(|c| c.source == Source::Agents)
+            {
+                self.countdown = None;
+            }
+        }
+        released
     }
     pub fn reset_transient(&mut self, reason: &str) {
         self.agents.uncertain(self.now);
@@ -119,7 +175,12 @@ impl Engine {
         settings: &Settings,
     ) -> Option<PowerAction> {
         self.now = now;
-        self.agents.expire(now);
+        for agent in self.agents.expire(now) {
+            self.events.push(Event::AgentStalled { agent });
+        }
+        if self.battery_low {
+            self.release_for_battery();
+        }
         // Pause other power sources while agent work is unsettled. Do not continually
         // restart visible countdowns or emit a notification every engine tick.
         if self.agents.holds_awake() {
@@ -141,6 +202,7 @@ impl Engine {
         }
         if self.awake_deadline.is_some_and(|d| now >= d) {
             self.stop_awake();
+            self.events.push(Event::KeepAwakeEnded);
         }
         let previously_playing = self.audio_active;
         self.audio_active = audio == Some(true);
@@ -283,14 +345,21 @@ impl Engine {
         // Audio keep-awake only defers completion while audio is actually holding the computer.
         let other_wake_required =
             self.awake || self.audio_holds_awake() || self.timer.is_some() || self.playback_enabled;
+        // When the last working agent ends, the final warning starts once the user has been
+        // away from the keyboard and mouse for a moment, so finishing a turn while they watch
+        // does not put the computer to sleep under them. Without an idle reading it starts
+        // at once; it is always cancellable.
         if !(self.agents.holds_awake() || other_wake_required || self.countdown.is_some()) {
-            if let Some(action) = self.agents.completion() {
-                self.countdown = Some(Countdown {
-                    deadline: now.saturating_add(settings.countdown_seconds.max(300)),
-                    action,
-                    source: Source::Agents,
-                });
-                self.message = Some("All agents finished".into());
+            if let Some(action) = self.agents.completion(settings.agents.default_completion) {
+                if idle.is_none_or(|seconds| seconds >= AGENT_FINISH_IDLE_SECONDS) {
+                    self.countdown = Some(Countdown {
+                        deadline: now.saturating_add(settings.agent_warning_seconds()),
+                        action,
+                        source: Source::Agents,
+                    });
+                    self.message = Some("All agents finished".into());
+                    self.events.push(Event::AgentsFinished { action });
+                }
             }
         }
         if self

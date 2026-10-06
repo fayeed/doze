@@ -80,10 +80,45 @@ pub enum Operation {
     OpenDialog {
         view: DialogView,
     },
+    /// Settings on a given page, such as "agents".
+    OpenPage {
+        page: String,
+    },
+    /// The tray panel or flyout, anchored to the icon's screen rectangle.
+    OpenPanel {
+        anchor: serde_json::Value,
+    },
+    /// One setting by its saved key, such as "snoozeMinutes" or "agents.askBeforeNew".
+    Set {
+        key: String,
+        value: serde_json::Value,
+    },
+    /// Shows the existing tray submenu ("countdown", "quick" or "support") at the icon.
+    ShowMenu {
+        name: String,
+    },
+    ConnectPreview {
+        agent: String,
+        remove: bool,
+    },
+    ConnectApply {
+        agent: String,
+        remove: bool,
+        token: String,
+    },
+    /// A ready-to-paste MCP configuration for another client.
+    CopyConfig,
+    ExportDiagnostics {
+        path: std::path::PathBuf,
+    },
+    /// Every setting back to its default. Agent credentials are kept so connected tools
+    /// keep working; agent trust is reset.
+    Reset,
     Quit,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DialogView {
+    Panel,
     Settings,
     Help,
     Agents,
@@ -94,7 +129,6 @@ pub enum DialogView {
     TimerTime,
 }
 pub enum Request {
-    PanelSnapshot(Sender<crate::state::PanelSnapshot>),
     Operation(Operation, Sender<Result<Snapshot, String>>),
     Mcp(
         crate::mcp::tools::Call,
@@ -116,6 +150,34 @@ pub struct Snapshot {
     pub error: Option<String>,
     pub selected_action: PowerAction,
     pub view: DialogView,
+    /// The Settings page to open with the view, if any.
+    pub page: Option<String>,
+    /// Where the panel opens: the tray icon's rectangle in physical screen pixels.
+    pub panel_anchor: Option<serde_json::Value>,
+    /// Data returned by the last operation, such as a config diff. Cleared after the reply.
+    pub result: Option<serde_json::Value>,
+    /// What the power manager holds right now.
+    pub assertions: Vec<String>,
+}
+
+impl Snapshot {
+    pub fn new(settings_path: std::path::PathBuf, settings: Settings) -> Self {
+        Self {
+            settings_path,
+            engine: Engine::default(),
+            selected_action: settings.default_action,
+            settings,
+            actions: Vec::new(),
+            audio_supported: true,
+            startup_supported: true,
+            error: None,
+            view: DialogView::Settings,
+            page: None,
+            panel_anchor: None,
+            result: None,
+            assertions: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

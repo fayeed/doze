@@ -2,7 +2,7 @@
 use crate::{
     core::{
         countdown::{Countdown, Source},
-        sessions::{PowerAction, Theme},
+        sessions::{PowerAction, Settings},
     },
     platform::native_ui,
     state::Request,
@@ -22,6 +22,7 @@ impl WarningState {
         countdown: Option<&Countdown>,
         now: u64,
         snoozing: bool,
+        snooze_seconds: u64,
     ) -> Option<serde_json::Value> {
         if let Some(countdown) = countdown {
             if snoozing {
@@ -29,7 +30,7 @@ impl WarningState {
                     countdown.deadline,
                     countdown.action,
                     countdown.source,
-                    now.saturating_add(900),
+                    now.saturating_add(snooze_seconds),
                 ));
             }
         } else {
@@ -53,9 +54,18 @@ impl WarningState {
             json!({ "type": "countdown", "countdown": shown.map(|countdown| json!({
             "action": countdown.action.label(),
             "remaining": countdown.deadline.saturating_sub(now),
+            "source": countdown.source,
         })) }),
         )
     }
+}
+
+/// Appearance and the Notifications › Final warning preferences, sent with every message.
+fn decorate(message: &mut serde_json::Value, settings: &Settings) {
+    message["theme"] = json!(settings.theme);
+    message["sound"] = json!(settings.warning_sound);
+    message["allDisplays"] = json!(settings.warning_all_displays);
+    message["snoozeMinutes"] = json!(settings.snooze_minutes);
 }
 
 pub struct Warning {
@@ -72,21 +82,30 @@ impl Warning {
         })
     }
 
-    pub fn update(&self, countdown: Option<&Countdown>, now: u64, snoozing: bool, theme: Theme) {
-        let Some(mut message) = self.state.borrow_mut().update(countdown, now, snoozing) else {
+    pub fn update(
+        &self,
+        countdown: Option<&Countdown>,
+        now: u64,
+        snoozing: bool,
+        settings: &Settings,
+    ) {
+        let Some(mut message) =
+            self.state
+                .borrow_mut()
+                .update(countdown, now, snoozing, settings.snooze_minutes * 60)
+        else {
             return;
         };
-        message["theme"] = json!(theme);
+        decorate(&mut message, settings);
         if let Err(error) = native_ui::send(message, self.requests.clone()) {
             let _ = self.requests.send(Request::WarningFailed(error));
         }
     }
 
-    pub fn preview(&self, action: PowerAction, theme: Theme) {
-        if let Err(error) = native_ui::send(
-            json!({ "type": "preview", "action": action.label(), "theme": theme }),
-            self.requests.clone(),
-        ) {
+    pub fn preview(&self, action: PowerAction, settings: &Settings) {
+        let mut message = json!({ "type": "preview", "action": action.label() });
+        decorate(&mut message, settings);
+        if let Err(error) = native_ui::send(message, self.requests.clone()) {
             eprintln!("Could not preview native countdown: {error}");
         }
     }
@@ -100,7 +119,10 @@ mod tests {
     fn paused_playback_reaches_native_warning_after_idle_wait() {
         use crate::core::sessions::{Engine, Settings};
         let mut engine = Engine::default();
-        let settings = Settings::default();
+        let settings = Settings {
+            idle_seconds: 300,
+            ..Settings::default()
+        };
         let mut warning = WarningState::default();
         engine.enable_playback(true);
         for now in 0..3 {
@@ -108,11 +130,11 @@ mod tests {
         }
         engine.tick(3, Some(false), Some(0), true, &settings);
         assert!(warning
-            .update(engine.countdown.as_ref(), 3, false)
+            .update(engine.countdown.as_ref(), 3, false, 900)
             .is_none());
         engine.tick(303, Some(false), Some(300), false, &settings);
         let message = warning
-            .update(engine.countdown.as_ref(), 303, false)
+            .update(engine.countdown.as_ref(), 303, false, 900)
             .unwrap();
         assert_eq!(message["type"], "countdown");
         assert_eq!(message["countdown"]["remaining"], 300);
@@ -127,14 +149,14 @@ mod tests {
             source: Source::Timer,
         };
         assert_eq!(
-            state.update(Some(&countdown), 0, false).unwrap()["countdown"]["remaining"],
+            state.update(Some(&countdown), 0, false, 900).unwrap()["countdown"]["remaining"],
             300
         );
         countdown.deadline += 900;
-        assert!(state.update(Some(&countdown), 0, true).unwrap()["countdown"].is_null());
-        assert!(state.update(Some(&countdown), 899, false).is_none());
+        assert!(state.update(Some(&countdown), 0, true, 900).unwrap()["countdown"].is_null());
+        assert!(state.update(Some(&countdown), 899, false, 900).is_none());
         assert_eq!(
-            state.update(Some(&countdown), 900, false).unwrap()["countdown"]["remaining"],
+            state.update(Some(&countdown), 900, false, 900).unwrap()["countdown"]["remaining"],
             300
         );
     }
@@ -147,10 +169,10 @@ mod tests {
             action: PowerAction::Sleep,
             source: Source::Timer,
         };
-        state.update(Some(&countdown), 0, true);
+        state.update(Some(&countdown), 0, true, 900);
         countdown.deadline = 600;
-        assert!(state.update(Some(&countdown), 1, false).unwrap()["countdown"].is_object());
-        assert!(state.update(None, 2, false).unwrap()["countdown"].is_null());
-        assert!(state.update(None, 3, false).is_none());
+        assert!(state.update(Some(&countdown), 1, false, 900).unwrap()["countdown"].is_object());
+        assert!(state.update(None, 2, false, 900).unwrap()["countdown"].is_null());
+        assert!(state.update(None, 3, false, 900).is_none());
     }
 }

@@ -144,7 +144,7 @@ fn playback_action_rechecks_idle_at_execution_after_snoozing() {
     let mut engine = armed();
     audio(&mut engine, 3, false);
     audio(&mut engine, 63, false);
-    engine.snooze().unwrap();
+    engine.snooze(900).unwrap();
     let action = engine.tick(1263, Some(false), Some(5), false, &Settings::default());
     assert_eq!(action, None);
 }
@@ -175,7 +175,10 @@ fn idle_is_required_and_errors_fail_closed() {
 #[test]
 fn clicking_pause_waits_for_idle_then_starts_playback_countdown() {
     let mut engine = armed();
-    let settings = Settings::default();
+    let settings = Settings {
+        idle_seconds: 300,
+        ..Settings::default()
+    };
     engine.tick(3, Some(false), Some(0), true, &settings);
     engine.tick(63, Some(false), Some(60), false, &settings);
     assert!(engine.countdown.is_none());
@@ -189,7 +192,10 @@ fn clicking_pause_waits_for_idle_then_starts_playback_countdown() {
 #[test]
 fn input_during_silence_wait_defers_without_requiring_new_playback() {
     let mut engine = armed();
-    let settings = Settings::default();
+    let settings = Settings {
+        idle_seconds: 300,
+        ..Settings::default()
+    };
     engine.tick(3, Some(false), Some(0), false, &settings);
     engine.tick(120, Some(false), Some(0), true, &settings);
     engine.tick(419, Some(false), Some(299), false, &settings);
@@ -206,7 +212,7 @@ fn timer_uses_common_countdown_and_snooze() {
     e.schedule(60, PowerAction::Lock);
     audio(&mut e, 60, false);
     assert_eq!(e.countdown.as_ref().unwrap().source, Source::Timer);
-    e.snooze().unwrap();
+    e.snooze(900).unwrap();
     assert_eq!(audio(&mut e, 360, false), None);
     assert_eq!(audio(&mut e, 1260, false), Some(PowerAction::Lock));
 }
