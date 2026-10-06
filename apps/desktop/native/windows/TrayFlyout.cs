@@ -46,7 +46,6 @@ public sealed partial class TrayFlyout : Window
         this.verification = verification;
         Title = "Doze";
         root.Children.Add(body);
-        root.RenderTransform = new TranslateTransform();
         Content = root;
         SystemBackdrop = new DesktopAcrylicBackdrop();
         AppWindow.IsShownInSwitchers = false;
@@ -99,6 +98,7 @@ public sealed partial class TrayFlyout : Window
         ApplyTheme(theme);
         Render();
         Place();
+        PrepareEntrance();
         AppWindow.Show(true);
         Activate();
         Animate();
@@ -892,8 +892,16 @@ public sealed partial class TrayFlyout : Window
         return Math.Ceiling(root.DesiredSize.Height);
     }
 
-    /// Above the tray icon, whichever edge the taskbar is on, inside that display's work area.
+    /// Docked like Windows' own Quick Settings: at the right end of the taskbar, 12 epx from the
+    /// screen edge and the taskbar, on the display that was clicked. A taskbar on the left or
+    /// top keeps the flyout beside it.
     private void Place()
+    {
+        placed = Placement();
+        AppWindow.MoveAndResize(placed);
+    }
+
+    private RectInt32 Placement()
     {
         var (center, scale) = AnchorPoint();
         var display = DisplayArea.GetFromPoint(center, DisplayAreaFallback.Nearest);
@@ -902,62 +910,71 @@ public sealed partial class TrayFlyout : Window
         var width = (int)Math.Ceiling(360 * scale);
         var height = Math.Min((int)Math.Ceiling(ContentHeight() * scale), work.Height - (int)(24 * scale));
         var margin = (int)(12 * scale);
-        int left, top;
         edge = work.Y > outer.Y ? Edge.Top : work.X > outer.X ? Edge.Left : work.X + work.Width < outer.X + outer.Width ? Edge.Right : Edge.Bottom;
-        switch (edge)
-        {
-            case Edge.Top:
-                left = Math.Clamp(center.X - width / 2, work.X + margin, work.X + work.Width - width - margin);
-                top = work.Y + margin;
-                break;
-            case Edge.Left:
-                left = work.X + margin;
-                top = Math.Clamp(center.Y - height / 2, work.Y + margin, work.Y + work.Height - height - margin);
-                break;
-            case Edge.Right:
-                left = work.X + work.Width - width - margin;
-                top = Math.Clamp(center.Y - height / 2, work.Y + margin, work.Y + work.Height - height - margin);
-                break;
-            default:
-                left = Math.Clamp(center.X - width / 2, work.X + margin, work.X + work.Width - width - margin);
-                top = work.Y + work.Height - height - margin;
-                break;
-        }
-        AppWindow.MoveAndResize(new RectInt32(left, top, width, height));
+        slide = (int)(48 * scale);
+        var left = edge == Edge.Left ? work.X + margin : work.X + work.Width - width - margin;
+        var top = edge == Edge.Top ? work.Y + margin : work.Y + work.Height - height - margin;
+        return new RectInt32(left, top, width, height);
     }
 
     private enum Edge { Bottom, Top, Left, Right }
     private Edge edge = Edge.Bottom;
+    private RectInt32 placed;
+    private int slide;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? sliding;
 
     /// Keeps the flyout's edge against the taskbar when its content grows or shrinks.
     private void Resize()
     {
         if (!AppWindow.IsVisible) return;
+        sliding?.Stop();
         Place();
     }
 
-    /// The Quick Settings entrance: a short slide away from the taskbar and a fade.
+    /// Where the entrance starts: the docked position pushed back toward the taskbar.
+    private PointInt32 Offset(double remaining)
+    {
+        var distance = (int)Math.Round(slide * remaining);
+        return edge switch
+        {
+            Edge.Top => new PointInt32(placed.X, placed.Y - distance),
+            Edge.Left => new PointInt32(placed.X - distance, placed.Y),
+            Edge.Right => new PointInt32(placed.X + distance, placed.Y),
+            _ => new PointInt32(placed.X, placed.Y + distance),
+        };
+    }
+
+    /// Before the window shows: start at the taskbar end of the slide, unless animations are off.
+    private void PrepareEntrance()
+    {
+        root.Opacity = system.AnimationsEnabled ? 0 : 1;
+        if (system.AnimationsEnabled) AppWindow.Move(Offset(1));
+    }
+
+    /// The Quick Settings entrance: the window slides out from the taskbar with an ease-out
+    /// curve while its content fades in, about a quarter of a second.
     private void Animate()
     {
-        var transform = (TranslateTransform)root.RenderTransform;
-        if (!system.AnimationsEnabled) { transform.X = transform.Y = 0; root.Opacity = 1; return; }
-        var (property, from) = edge switch
-        {
-            Edge.Top => ("Y", -24.0),
-            Edge.Left => ("X", -24.0),
-            Edge.Right => ("X", 24.0),
-            _ => ("Y", 24.0)
-        };
-        var story = new Storyboard();
-        var slide = new DoubleAnimation { From = from, To = 0, Duration = TimeSpan.FromMilliseconds(250), EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut, Exponent = 6 } };
-        Storyboard.SetTarget(slide, transform);
-        Storyboard.SetTargetProperty(slide, property);
-        var fade = new DoubleAnimation { From = 0, To = 1, Duration = TimeSpan.FromMilliseconds(120) };
+        if (!system.AnimationsEnabled) { root.Opacity = 1; return; }
+        var fade = new DoubleAnimation { From = 0, To = 1, Duration = TimeSpan.FromMilliseconds(160) };
         Storyboard.SetTarget(fade, root);
         Storyboard.SetTargetProperty(fade, "Opacity");
-        story.Children.Add(slide);
+        var story = new Storyboard();
         story.Children.Add(fade);
         story.Begin();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        const double duration = 260;
+        sliding?.Stop();
+        sliding = DispatcherQueue.CreateTimer();
+        sliding.Interval = TimeSpan.FromMilliseconds(8);
+        sliding.Tick += (timer, _) =>
+        {
+            var t = Math.Min(1, clock.Elapsed.TotalMilliseconds / duration);
+            var eased = 1 - Math.Pow(1 - t, 4);
+            AppWindow.Move(Offset(1 - eased));
+            if (t >= 1) timer.Stop();
+        };
+        sliding.Start();
     }
 
     // ---------- Verification ----------
@@ -986,10 +1003,12 @@ public sealed partial class TrayFlyout : Window
         foreach (var name in new[] { "Keep awake", "Awake while audio plays", "Sleep after playback", "Power timer", "Agents", "Countdown" })
             if (!tiles.Contains(name)) throw new InvalidOperationException($"Flyout is missing the {name} tile.");
         if (ContentHeight() < 200) throw new InvalidOperationException("Flyout content did not lay out.");
-        // The engine sends fractional physical pixels; the flyout must anchor to them, not to 0,0.
-        anchor = JsonNode.Parse("""{"x":2213.0,"y":1400.0,"width":24.0,"height":24.0,"scale":1.5}""")!.AsObject();
-        if (AnchorPoint().Point is { X: 2225, Y: 1412 } is false)
-            throw new InvalidOperationException($"Flyout anchors to {AnchorPoint().Point.X},{AnchorPoint().Point.Y} instead of the tray icon.");
+        // The flyout docks at the right of the clicked display's taskbar, whatever the click's x.
+        anchor = JsonNode.Parse("""{"x":40.0,"y":1400.0,"width":0.0,"height":0.0}""")!.AsObject();
+        var docked = Placement();
+        var work = DisplayArea.GetFromPoint(AnchorPoint().Point, DisplayAreaFallback.Nearest).WorkArea;
+        if (edge is Edge.Bottom or Edge.Top or Edge.Right && Math.Abs(docked.X + docked.Width - (work.X + work.Width)) > docked.Width / 360.0 * 13)
+            throw new InvalidOperationException($"Flyout is not right-aligned ({docked.X}+{docked.Width} vs {work.X + work.Width}).");
         anchor = null;
     }
 

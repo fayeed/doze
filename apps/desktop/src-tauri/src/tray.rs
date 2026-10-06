@@ -75,15 +75,29 @@ fn opens_panel(button: MouseButton, option: bool, setting: IconClick) -> bool {
     primary == (setting == IconClick::Panel)
 }
 
-fn on_click(tray: &tauri::tray::TrayIcon, button: MouseButton, rect: tauri::Rect) {
+fn on_click(
+    tray: &tauri::tray::TrayIcon,
+    button: MouseButton,
+    rect: tauri::Rect,
+    cursor: tauri::PhysicalPosition<f64>,
+) {
     let app = tray.app_handle();
     let Some(menu) = app.try_state::<NativeMenu>() else {
         return;
     };
     let setting = menu.click.lock().map_or(IconClick::Panel, |c| *c);
     if opens_panel(button, option_pressed(), setting) {
-        let position = rect.position.to_physical::<f64>(1.0);
-        let size = rect.size.to_physical::<f64>(1.0);
+        // macOS drops the panel under the status item. Windows docks the flyout at the right
+        // of the taskbar like its own Quick Settings, so it only needs the clicked monitor,
+        // and the cursor (on the icon at click time) always identifies it.
+        let (position, size) = if cfg!(windows) {
+            (cursor, tauri::PhysicalSize::new(0.0, 0.0))
+        } else {
+            (
+                rect.position.to_physical::<f64>(1.0),
+                rect.size.to_physical::<f64>(1.0),
+            )
+        };
         let scale = app
             .monitor_from_point(position.x, position.y)
             .ok()
@@ -351,11 +365,12 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
                 button,
                 button_state: MouseButtonState::Up,
                 rect,
+                position,
                 ..
             } = event
             {
                 if matches!(button, MouseButton::Left | MouseButton::Right) {
-                    on_click(tray, button, rect);
+                    on_click(tray, button, rect, position);
                 }
             }
         })
