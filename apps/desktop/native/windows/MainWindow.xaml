@@ -28,18 +28,18 @@
                                 QuerySubmitted="SearchSubmitted" />
             </NavigationView.AutoSuggestBox>
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Overview" Tag="Overview"><NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" Foreground="{ThemeResource DozeAccentBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Overview" Tag="Overview"><NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" Foreground="{ThemeResource TextFillColorPrimaryBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItemSeparator />
-                <NavigationViewItem Content="General" Tag="General"><NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" Foreground="{ThemeResource DozeGrayBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="General" Tag="General"><NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" Foreground="{ThemeResource TextFillColorPrimaryBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="Session defaults" Tag="Session defaults"><NavigationViewItem.Icon><FontIcon Glyph="&#xE706;" Foreground="{ThemeResource DozeOrangeBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="After playback" Tag="After playback"><NavigationViewItem.Icon><FontIcon Glyph="&#xE995;" Foreground="{ThemeResource DozePinkBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="Notifications" Tag="Notifications"><NavigationViewItem.Icon><FontIcon Glyph="&#xEA8F;" Foreground="{ThemeResource DozeRedBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItemSeparator />
                 <NavigationViewItem Content="Agents" Tag="Agents"><NavigationViewItem.Icon><FontIcon Glyph="&#xE716;" Foreground="{ThemeResource DozeTealBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
-                <NavigationViewItem Content="Advanced" Tag="Advanced"><NavigationViewItem.Icon><FontIcon Glyph="&#xE9E9;" Foreground="{ThemeResource DozeGrayBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Advanced" Tag="Advanced"><NavigationViewItem.Icon><FontIcon Glyph="&#xE9E9;" Foreground="{ThemeResource TextFillColorPrimaryBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
-                <NavigationViewItem Content="Menu guide" Tag="Menu guide"><NavigationViewItem.Icon><FontIcon Glyph="&#xE736;" Foreground="{ThemeResource DozeBrownBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="Menu guide" Tag="Menu guide"><NavigationViewItem.Icon><FontIcon Glyph="&#xE736;" Foreground="{ThemeResource DozeOrangeBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="About Doze" Tag="About Doze"><NavigationViewItem.Icon><FontIcon Glyph="&#xE946;" Foreground="{ThemeResource DozeBlueBrush}" /></NavigationViewItem.Icon></NavigationViewItem>
             </NavigationView.FooterMenuItems>
             <Grid>

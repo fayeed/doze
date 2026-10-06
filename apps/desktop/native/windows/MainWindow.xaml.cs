@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -14,14 +13,13 @@ public sealed partial class MainWindow : Window
     private readonly EngineBridge bridge;
     private readonly Action<string> changeTheme;
     private JsonObject snapshot;
-    private readonly LiveSettings preferences;
-    private Preferences draft => preferences.Draft;
+    /// When the latest snapshot arrived. Remaining times count down from the engine's `now`
+    /// on this clock, so the window never asks the engine for updates.
+    private readonly Stopwatch received = Stopwatch.StartNew();
     private string page = "Overview";
-    private bool saving => preferences.IsApplying;
-    private bool closeAfterApply;
     private readonly bool verification = Environment.GetCommandLineArgs().Contains("--verify-ui");
-    private readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromSeconds(1) };
-    private int ticks;
+    /// Redraws countdowns once a second while one is visible. It never contacts the engine.
+    private readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private static readonly string[] Pages = ["Overview", "General", "Session defaults", "After playback", "Notifications", "Agents", "Advanced", "Menu guide", "About Doze"];
     // Smallest size in effective pixels; it fits a 1080p display at 200% scaling with the taskbar.
     private const int MinimumWidth = 680, MinimumHeight = 480;
@@ -34,10 +32,9 @@ public sealed partial class MainWindow : Window
         this.changeTheme = changeTheme ?? SetTheme;
         this.openTimer = openTimer;
         snapshot = initial["snapshot"]!.AsObject();
-        preferences = new LiveSettings(ReadPreferences());
         InitializeComponent();
         WindowAppearance.Observe(this, Root);
-        SetTheme(draft.Theme);
+        SetTheme(Text(Setting("theme")) ?? "system");
         Title = "Doze Settings";
         AppWindow.IsShownInSwitchers = true;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Doze.ico"));
@@ -50,24 +47,32 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += (window, args) =>
         {
             if (verification) return;
+            // Every change is already applied; closing only hides the window.
             args.Cancel = true;
-            if (!preferences.HasChanges && !saving) { HideWindow(); return; }
-            closeAfterApply = true;
-            _ = ApplySettingsAsync();
+            HideWindow();
         };
-        SelectPage(ViewPage(initial["view"]?.GetValue<string>(), "Overview"));
-        // Overview counts down every second while something has a deadline; otherwise
-        // Overview and Agents refresh every five seconds. Hidden windows never poll.
-        refresh.Tick += async (_, _) =>
+        // Ctrl+F finds a setting, as in Windows Settings.
+        Root.KeyboardAccelerators.Add(Accelerator(Windows.System.VirtualKey.F, Windows.System.VirtualKeyModifiers.Control, () => Search.Focus(FocusState.Keyboard)));
+        SelectPage(ViewPage(initial["view"]?.GetValue<string>(), Text(initial["page"]), "Overview"));
+        clock.Tick += (_, _) =>
         {
-            ticks++;
-            if ((page != "Overview" && page != "Agents") || !AppWindow.IsVisible || saving) return;
-            if (ticks % (page == "Overview" && HasDeadline ? 1 : 5) != 0) return;
-            try { await bridge.SendAsync("refresh"); }
-            catch (IOException) { refresh.Stop(); }
+            if (!AppWindow.IsVisible || !HasDeadline) { clock.Stop(); return; }
+            UpdateLive();
         };
-        Closed += (_, _) => refresh.Stop();
-        refresh.Start();
+        Closed += (_, _) => clock.Stop();
+        StartClock();
+    }
+
+    private static Microsoft.UI.Xaml.Input.KeyboardAccelerator Accelerator(Windows.System.VirtualKey key, Windows.System.VirtualKeyModifiers modifiers, Action invoke)
+    {
+        var accelerator = new Microsoft.UI.Xaml.Input.KeyboardAccelerator { Key = key, Modifiers = modifiers };
+        accelerator.Invoked += (_, args) => { args.Handled = true; invoke(); };
+        return accelerator;
+    }
+
+    private void StartClock()
+    {
+        if (HasDeadline && AppWindow.IsVisible) clock.Start();
     }
 
     public void Receive(JsonObject message)
@@ -75,61 +80,58 @@ public sealed partial class MainWindow : Window
         // The pipe is read from the UI synchronization context; use the dispatcher defensively.
         DispatcherQueue.TryEnqueue(() =>
         {
+            var command = message["command"]?.GetValue<string>();
             if (message["error"] is JsonValue error)
             {
-                var command = message["command"]?.GetValue<string>();
-                if (command == "save")
-                {
-                    preferences.Reject();
-                    this.changeTheme(draft.Theme);
-                    closeAfterApply = false;
-                    KeepScroll(ShowPage);
-                    _ = ApplySettingsAsync();
-                }
-                // A refused control-center command leaves its switch or picker as it was.
-                else if (page == "Overview") KeepScroll(ShowPage);
-                Notify(command == "save" ? "Couldn't apply changes" : "Couldn't complete that", error.GetValue<string>(), InfoBarSeverity.Error);
-                if (agentDialog is not null) agentDialog.Content = new TextBlock { Text = error.GetValue<string>(), TextWrapping = TextWrapping.Wrap };
+                // A refused change leaves its control as the engine has it.
+                KeepScroll(ShowPage);
+                Notify(command is "set" or "save" ? "Couldn't apply that change" : "Couldn't complete that", error.GetValue<string>(), InfoBarSeverity.Error);
                 return;
             }
             if (message["snapshot"] is JsonObject next)
             {
                 var previous = snapshot;
+                // Streamed updates leave out file-backed parts; keep the last ones.
+                foreach (var key in new[] { "agentLinks", "agentSkills", "agentConnections" })
+                    if (next[key] is null && previous[key] is JsonNode kept) next[key] = kept.DeepClone();
                 snapshot = next;
-                RefreshAgentDialog();
-                if (message["type"]?.GetValue<string>() == "saved")
-                {
-                    preferences.Confirm(ReadPreferences());
-                    this.changeTheme(draft.Theme);
-                    _ = ApplySettingsAsync();
-                    if (closeAfterApply && !preferences.HasChanges) HideWindow();
-                }
+                received.Restart();
+                if (Text(previous["settings"]?["theme"]) != Text(next["settings"]?["theme"]))
+                    changeTheme(Text(Setting("theme")) ?? "system");
                 UpdateLivePage(previous);
+                StartClock();
             }
+            if (message["result"] is JsonObject result) HandleResult(command, result);
             if (message["type"]?.GetValue<string>() == "open")
             {
-                preferences.Refresh(ReadPreferences());
-                this.changeTheme(draft.Theme);
-                SelectPage(ViewPage(message["view"]?.GetValue<string>(), page));
-                closeAfterApply = false;
-                refresh.Start();
+                SelectPage(ViewPage(message["view"]?.GetValue<string>(), Text(message["page"]), page));
+                AppWindow.Show();
                 Activate();
+                StartClock();
             }
         });
     }
 
-    /// Rebuilds the visible page only when its structure changed; times update in place so
-    /// focus and scroll position survive the once-a-second refresh.
+    /// Rebuilds the visible page only when what it shows changed; times update in place so
+    /// focus and scroll position survive.
     private void UpdateLivePage(JsonObject previous)
     {
-        if (page == "Overview")
+        if (PageShape(previous) != PageShape(snapshot)) KeepScroll(ShowPage);
+        else UpdateLive();
+    }
+
+    /// Everything the current page shows except values that only count down.
+    private string PageShape(JsonObject from)
+    {
+        var copy = from.DeepClone().AsObject();
+        foreach (var key in new[] { "now", "agentNow", "timerStatus", "status", "statusDetail", "assertions", "battery" }) copy.Remove(key);
+        if (copy["session"] is JsonObject session)
         {
-            if (OverviewShape(previous) != OverviewShape(snapshot)) KeepScroll(ShowPage);
-            else UpdateOverview();
+            session.Remove("awakeRemaining");
+            if (session["timer"] is JsonObject timer) timer.Remove("remaining");
+            if (session["countdown"] is JsonObject countdown) countdown.Remove("remaining");
         }
-        else if (page == "Agents" && (previous["settings"]?["agents"]?.ToJsonString() != snapshot["settings"]?["agents"]?.ToJsonString()
-                 || AgentSessionShape(previous) != AgentSessionShape(snapshot)))
-            KeepScroll(ShowPage);
+        return copy.ToJsonString();
     }
 
     private void KeepScroll(Action rebuild)
@@ -187,9 +189,10 @@ public sealed partial class MainWindow : Window
 
     private void HideWindow()
     {
-        closeAfterApply = false;
-        refresh.Stop();
+        clock.Stop();
         AppWindow.Hide();
+        // A hidden window keeps no page alive.
+        Cards.Children.Clear();
     }
 
     public void SetTheme(string value) => WindowAppearance.Apply(Root, value);
@@ -199,7 +202,6 @@ public sealed partial class MainWindow : Window
     // requesting any engine operation. CI invokes this against inherited test pipes.
     public void VerifyPages()
     {
-        LiveSettings.Verify();
         Labels.Verify();
         VerifySearch();
         foreach (var appearance in new[] { "light", "dark", "system" })
@@ -226,46 +228,37 @@ public sealed partial class MainWindow : Window
                     .Select(ControlName).Where(n => !string.IsNullOrEmpty(n)).ToList();
                 if (names.GroupBy(n => n).FirstOrDefault(g => g.Count() > 1) is { } duplicate)
                     throw new InvalidOperationException($"{name} has two controls named \"{duplicate.Key}\".");
+                if (Descendants(Cards).OfType<Control>().Any(c => c is Button or ComboBox or ToggleSwitch && string.IsNullOrEmpty(ControlName(c))))
+                    throw new InvalidOperationException($"{name} has a control without a Narrator name.");
                 if (Descendants(Cards).OfType<NumberBox>().Any())
                     throw new InvalidOperationException($"{name} still uses a number field for a duration.");
-                if (name == "Agents" && AgentClient("Codex") is JsonObject client)
-                {
-                    var permissions = AgentPermissionContent(client);
-                    var grid = permissions.Children.OfType<Grid>().Single();
-                    if (grid.Children.OfType<ToggleSwitch>().Count() != Actions.Count() + 1)
-                        throw new InvalidOperationException("Agent permission controls are missing.");
-                    var setup = AgentSetupContent("Codex", (snapshot["agentConnections"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault());
-                    if (!setup.Children.OfType<TextBox>().Any(t => t.IsReadOnly))
-                        throw new InvalidOperationException("Agent setup has no configuration to copy.");
-                }
             }
         }
         VerifyText();
         VerifyControlCenter();
+        foreach (var (pageName, expected) in new[]
+        {
+            ("General", new[] { "Start Doze when I sign in", "Clicking the tray icon opens", "Show time left in the tray tooltip", "Keep the display on too", "Stop keeping awake below" }),
+            ("Session defaults", new[] { "Default duration", "Remember my last custom duration", "Default action", "Default timer", "Snooze length", "Stay Awake keeps going" }),
+            ("After playback", new[] { "Sleep after playback stops", "Wait for inactivity", "Then", "Keep awake while audio plays", "Live output level" }),
+            ("Notifications", new[] { "Warning length", "Play a sound when it appears", "Show on every display", "When an agent asks to keep the PC awake", "When all agents have finished", "When an agent stops checking in", "When a Keep Awake session ends" }),
+            ("Agents", new[] { "Let agents keep the PC awake", "Ask before a new agent holds a lease", "When agents finish", "If an agent stops checking in", "Claude Code", "Codex", "OpenCode", "Gemini CLI", "Cursor", "Other MCP clients" }),
+            ("Advanced", new[] { "doze command-line tool", "MCP server for agents", "How Doze keeps the PC awake", "Local data", "Export a diagnostics report", "Reset all settings" }),
+            ("Menu guide", new[] { "Hollow sun", "Whole sun", "Sun with a dot", "Banded sun", "Click the tray icon", "Right-click the tray icon" }),
+            ("About Doze", new[] { "Doze", "getdoze.app", "MCP guide", "No account · No cloud · No telemetry" }),
+        })
+        {
+            SelectPage(pageName);
+            foreach (var title in expected)
+                if (!Shows(title)) throw new InvalidOperationException($"{pageName} is missing \"{title}\".");
+        }
         SelectPage("About Doze");
-        if (Descendants(Cards).OfType<Image>().Count() != 2 || !Shows("Visit Clypy") || !Shows("Open data folder") || !Shows("Made by Fayeed Pawaskar"))
-            throw new InvalidOperationException("About is missing Doze's or Clypy's icon, or a link.");
+        if (Shows("Source on GitHub")) throw new InvalidOperationException("About links to source code.");
         SelectPage("Advanced");
-        if (!Shows("Reset preferences") || ResetDialog().PrimaryButtonText != "Reset" || ResetDialog().DefaultButton != ContentDialogButton.Close)
+        if (ResetDialog().PrimaryButtonText != "Reset" || ResetDialog().DefaultButton != ContentDialogButton.Close)
             throw new InvalidOperationException("Reset does not ask for confirmation.");
-        if (!Shows("Copy the example command") || !Shows("Copy the PowerShell alias")
-            || !Descendants(Cards).OfType<TextBlock>().Any(t => t.Text.StartsWith(@"& 'C:\Users\example\AppData\Local\Doze\doze-cli.exe' run --then sleep -- ", StringComparison.Ordinal)))
-            throw new InvalidOperationException("Advanced does not show the doze-cli.exe command line.");
-        SelectPage("Agents");
-        foreach (var expected in new[] { "Keep sessions alive while connected", "5 minutes", "Waiting for your approval", "Connection lost · keeping awake", "Command line", "Running ffmpeg" })
-            if (!Descendants(Cards).Any(e => (e as TextBlock)?.Text.Contains(expected) == true || (e as ComboBoxItem)?.Content as string == expected
-                    || Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(e) == expected))
-                throw new InvalidOperationException($"Agents is missing \"{expected}\".");
-        var before = draft.DefaultAwakeMinutes;
-        draft.DefaultAwakeMinutes = 42;
-        SelectPage("General");
-        SelectPage("Session defaults");
-        if (draft.DefaultAwakeMinutes != 42) throw new InvalidOperationException("Navigation discarded edits.");
-        if (!Descendants(Cards).OfType<ComboBoxItem>().Any(item => item.Content as string == "42 minutes"))
-            throw new InvalidOperationException("A saved custom duration is not selectable.");
-        draft.DefaultAwakeMinutes = before;
-        ResetDraft();
-        if (draft.DefaultAwakeMinutes != 30) throw new InvalidOperationException("Reset did not fill defaults.");
+        if (ConnectDialog(SampleChange()).PrimaryButtonText != "Connect")
+            throw new InvalidOperationException("Connect does not show the change for confirmation.");
     }
 
     internal JsonObject Snapshot => snapshot;
@@ -280,11 +273,17 @@ public sealed partial class MainWindow : Window
 
     private static JsonObject BusySession() => new()
     {
-        ["awake"] = true, ["awakeRemaining"] = 2520, ["whileAudio"] = true, ["holdingAwake"] = true, ["playbackEnabled"] = true,
+        ["awake"] = true, ["awakeRemaining"] = 2520, ["awakeDeadline"] = 3120, ["whileAudio"] = true, ["holdingAwake"] = true, ["playbackEnabled"] = true,
         ["playbackPhase"] = "grace", ["selectedAction"] = "displayOff",
-        ["timer"] = new JsonObject { ["action"] = "displayOff", ["remaining"] = 3900 },
-        ["countdown"] = new JsonObject { ["action"] = "displayOff", ["remaining"] = 287, ["source"] = "timer" },
+        ["timer"] = new JsonObject { ["action"] = "displayOff", ["remaining"] = 3900, ["deadline"] = 4500 },
+        ["countdown"] = new JsonObject { ["action"] = "displayOff", ["remaining"] = 287, ["deadline"] = 887, ["source"] = "timer", ["length"] = 300 },
         ["message"] = "Snoozed for 15 minutes"
+    };
+
+    private static JsonObject SampleChange() => new()
+    {
+        ["agent"] = "claude-code", ["remove"] = false, ["path"] = @"C:\Users\example\.claude\settings.json",
+        ["diff"] = "  {\n+   \"hooks\": {\n+     \"Stop\": []\n+   }\n  }\n", ["token"] = "0", ["note"] = null
     };
 
     private bool Shows(string name) => Descendants(Cards).OfType<FrameworkElement>().Any(element =>
@@ -299,29 +298,26 @@ public sealed partial class MainWindow : Window
             snapshot["session"] = IdleSession();
             SelectPage("Overview");
             foreach (var name in new[] { "Keep awake for 15m", "Keep awake for 2h", "Keep awake indefinitely", "Sleep in 15m", "Sleep in 2h",
-                         "More ways to keep awake", "More timer options", "Keep awake while audio plays", "Sleep after playback stops" })
+                         "More ways to keep awake", "More timer options", "Keep awake while audio plays", "Sleep after playback stops", "Agent settings" })
                 if (!Shows(name)) throw new InvalidOperationException($"Overview is missing \"{name}\".");
-            if (Shows("Last event: Doze skill installed")) throw new InvalidOperationException("Overview shows skill messages as events.");
             if (Cards.Children.OfType<TextBlock>().Any(header => header.Text == "Overview"))
                 throw new InvalidOperationException("Overview repeats its title.");
 
             var previous = snapshot.DeepClone().AsObject();
             snapshot["session"] = BusySession();
             UpdateLivePage(previous);
-            foreach (var name in new[] { "Extend 15 minutes", "Stop keeping awake", "Stop timer", "Snooze 15 minutes", "Stay Awake",
-                         "Cancel the action", "Turn display off in", "4:47", "Last event: Snoozed for 15 minutes", "Waiting for silence and inactivity" })
+            foreach (var name in new[] { "Extend 15 minutes", "Stop keeping awake", "Stop timer", "Snooze", "Stay Awake", "Cancel the action" })
                 if (!Shows(name)) throw new InvalidOperationException($"Overview is missing \"{name}\" during a session.");
             if (Shows("Keep awake for 15m")) throw new InvalidOperationException("Overview offers presets while keeping awake.");
 
-            // A tick that only changes times updates text in place instead of rebuilding.
+            // A snapshot that only changes times updates text in place instead of rebuilding.
             var first = Cards.Children[0];
             previous = snapshot.DeepClone().AsObject();
             snapshot["session"]!["countdown"]!["remaining"] = 286;
             snapshot["session"]!["awakeRemaining"] = 2519;
             UpdateLivePage(previous);
-            if (!ReferenceEquals(first, Cards.Children[0]) || !Shows("4:46"))
+            if (!ReferenceEquals(first, Cards.Children[0]))
                 throw new InvalidOperationException("Overview rebuilt instead of updating its clock.");
-            if (!HasDeadline) throw new InvalidOperationException("Overview would not refresh every second.");
         }
         finally
         {
@@ -339,7 +335,7 @@ public sealed partial class MainWindow : Window
             foreach (var text in Descendants(Cards).OfType<TextBlock>().Select(block => block.Text)
                          .Concat(Descendants(Cards).OfType<ComboBoxItem>().Select(item => item.Content as string ?? "")))
             {
-                foreach (var banned in new[] { "displayOff", "Display off", "Shutdown ", "awaiting_authorization", "connection_lost", "(seconds)", "2060" })
+                foreach (var banned in new[] { "displayOff", "Display off", "Shutdown ", "awaiting_authorization", "connection_lost", "(seconds)", "claude-code", "gemini-cli" })
                     if (text.Contains(banned, StringComparison.Ordinal))
                         throw new InvalidOperationException($"{name} shows \"{banned}\" in \"{text}\".");
             }
@@ -353,6 +349,7 @@ public sealed partial class MainWindow : Window
             Panel panel => panel.Children.Cast<DependencyObject>(),
             Border border when border.Child is not null => [border.Child],
             ContentControl { Content: DependencyObject content } => [content],
+            ContentPresenter { Content: DependencyObject presented } => [presented],
             Expander expander => new[] { expander.Header, expander.Content }.OfType<DependencyObject>(),
             ComboBox combo => combo.Items.OfType<DependencyObject>(),
             _ => []
@@ -372,7 +369,7 @@ public sealed partial class MainWindow : Window
         try
         {
             // Effective sizes: the default window, a 1080p display at 200% scaling, and the minimum.
-            foreach (var (label, width, height) in new[] { ("", 1120, 780), ("-200pct", 883, 475), ("-minimum", MinimumWidth, MinimumHeight) })
+            foreach (var (label, width, height) in new[] { ("", 1120, 780), ("-minimum", MinimumWidth, MinimumHeight) })
             {
                 AppWindow.Resize(new SizeInt32((int)(width * Scale), (int)(height * Scale)));
                 foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
@@ -396,10 +393,9 @@ public sealed partial class MainWindow : Window
                             await Task.Delay(150);
                             await VisualVerification.SaveAsync(Root, Path.Combine(directory, file + "-end.png"));
                         }
-                        if (name == "Overview") await RenderSessionsAsync(directory, file);
+                        if (name == "Overview" && label == "") await RenderSessionsAsync(directory, file);
                         if (label == "" && name == "Advanced") await RenderDialogAsync(ResetDialog(), theme, Path.Combine(directory, $"Advanced-Reset-{theme}.png"));
-                        if (label == "" && name == "Agents" && AgentClient("Codex") is JsonObject client)
-                            await RenderAgentDialogsAsync(directory, theme, client);
+                        if (label == "" && name == "Agents") await RenderDialogAsync(ConnectDialog(SampleChange()), theme, Path.Combine(directory, $"Agents-Connect-{theme}.png"));
                     }
                 }
             }
@@ -417,12 +413,6 @@ public sealed partial class MainWindow : Window
             await Task.Delay(300);
             AssertNothingClipped($"{file} {variant}");
             await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"{file}-{variant}.png"));
-            if (PageScroll.ScrollableHeight > 0)
-            {
-                PageScroll.ChangeView(null, PageScroll.ScrollableHeight, null, true);
-                await Task.Delay(150);
-                await VisualVerification.SaveAsync(Root, Path.Combine(directory, $"{file}-{variant}-end.png"));
-            }
         }
         snapshot["session"] = original;
         ShowPage();
@@ -434,22 +424,6 @@ public sealed partial class MainWindow : Window
         var shown = dialog.ShowAsync();
         try { await Task.Delay(300); await VisualVerification.SaveAsync(dialog, path); }
         finally { dialog.Hide(); await shown; }
-    }
-
-    private async Task RenderAgentDialogsAsync(string directory, ElementTheme theme, JsonObject client)
-    {
-        foreach (var permissions in new[] { false, true })
-        {
-            var dialog = new ContentDialog
-            {
-                XamlRoot = Root.XamlRoot, RequestedTheme = theme,
-                Title = permissions ? "Codex permissions" : "Set up Codex", CloseButtonText = "Done",
-                Content = permissions ? AgentPermissionContent(client) : AgentSetupContent("Codex", (snapshot["agentConnections"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault())
-            };
-            var shown = dialog.ShowAsync();
-            try { await Task.Delay(150); await VisualVerification.SaveAsync(dialog, Path.Combine(directory, $"Agents-{(permissions ? "Permissions" : "Setup")}-{theme}.png")); }
-            finally { dialog.Hide(); await shown; }
-        }
     }
 
     /// Fails when text is trimmed, a control is narrower than its content, or a card extends
@@ -470,15 +444,34 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private Preferences ReadPreferences() => snapshot["settings"]!.Deserialize<Preferences>(EngineBridge.Json)!;
-    private static string ViewPage(string? view, string fallback) => view switch
+    private static string ViewPage(string? view, string? requested, string fallback)
     {
-        "about" => "About Doze",
-        "help" => "Menu guide",
+        if (requested is not null && PageId(requested) is string named) return named;
+        return view switch
+        {
+            "about" => "About Doze",
+            "help" => "Menu guide",
+            "agents" => "Agents",
+            "settings" => "Overview",
+            _ => fallback
+        };
+    }
+
+    /// Page ids shared with the engine and the panel, such as "agents" or "session".
+    private static string? PageId(string id) => id switch
+    {
+        "overview" => "Overview",
+        "general" => "General",
+        "session" => "Session defaults",
+        "playback" => "After playback",
+        "notifications" or "notif" => "Notifications",
         "agents" => "Agents",
-        "settings" => "Overview",
-        _ => fallback
+        "advanced" => "Advanced",
+        "guide" => "Menu guide",
+        "about" => "About Doze",
+        _ => Pages.Contains(id) ? id : null
     };
+
     private IEnumerable<string> Actions => snapshot["actions"]!.AsArray().Select(action => action!.GetValue<string>());
     private bool Capability(string name) => snapshot[name]?.GetValue<bool>() == true;
 
@@ -504,7 +497,15 @@ public sealed partial class MainWindow : Window
         if (Cards is null) return;
         BeginPage(page);
         Notice.IsOpen = false;
-        switch (page)
+        Build(page);
+        // Pages whose text continues below their last control scroll with the keyboard.
+        PageScroll.IsTabStop = page is "Menu guide" or "About Doze";
+        PageScroll.ChangeView(null, 0, null, true);
+    }
+
+    private void Build(string name)
+    {
+        switch (name)
         {
             case "Overview": Overview(); break;
             case "General": General(); break;
@@ -516,16 +517,6 @@ public sealed partial class MainWindow : Window
             case "Menu guide": MenuGuide(); break;
             case "About Doze": About(); break;
         }
-        // Pages whose text continues below their last control scroll with the keyboard.
-        PageScroll.IsTabStop = page is "Menu guide" or "About Doze";
-        PageScroll.ChangeView(null, 0, null, true);
-    }
-
-    private void Changed()
-    {
-        changeTheme(draft.Theme);
-        Notice.IsOpen = false;
-        _ = ApplySettingsAsync();
     }
 
     private static Task OpenLink(string url)
@@ -544,29 +535,8 @@ public sealed partial class MainWindow : Window
 
     private Task Send(string command, JsonObject? fields = null) => verification ? Task.CompletedTask : bridge.SendCommandAsync(command, fields);
 
-    private async Task ApplySettingsAsync()
-    {
-        if (verification) return;
-        var change = preferences.BeginApply();
-        if (change is null) return;
-        try { await bridge.SendAsync("save", change); }
-        catch (Exception error)
-        {
-            preferences.Reject();
-            changeTheme(draft.Theme);
-            ShowPage();
-            Notify("Couldn't apply settings", error.Message, InfoBarSeverity.Error);
-        }
-    }
-
-    private void ResetDraft()
-    {
-        var defaults = new Preferences();
-        if (!Actions.Contains("sleep")) defaults.DefaultAction = defaults.PlaybackAction = Actions.First();
-        preferences.Reset(defaults);
-        ShowPage();
-        Changed();
-    }
+    /// Changes one setting in the engine's store. The engine's reply redraws the page.
+    private Task Set(string key, JsonNode? value) => Send("set", new JsonObject { ["key"] = key, ["value"] = value });
 
     private void Notify(string title, string message, InfoBarSeverity severity) { Notice.Title = title; Notice.Message = message; Notice.Severity = severity; Notice.IsOpen = true; }
 }

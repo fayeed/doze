@@ -18,6 +18,7 @@ public sealed partial class TimerWindow : Window
     private readonly EngineBridge bridge;
     private readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool awake;
+    private bool remember;
     private bool usesDate;
     private bool pending;
     private bool closing;
@@ -108,7 +109,11 @@ public sealed partial class TimerWindow : Window
         action.SelectedItem = action.Items.OfType<ComboBoxItem>().FirstOrDefault(item => (string)item.Tag == selected) ?? action.Items.FirstOrDefault();
         action.Visibility = awake ? Visibility.Collapsed : Visibility.Visible;
 
-        minutes.Value = settings?[awake ? "defaultAwakeMinutes" : "defaultTimerMinutes"]?.GetValue<int>() ?? 30;
+        // Remember my last custom duration: a custom Keep Awake starts from the last one used.
+        var remembered = awake && settings?["rememberLastCustomDuration"]?.GetValue<bool>() == true
+            ? settings?["lastCustomAwakeMinutes"]?.GetValue<int?>() : null;
+        minutes.Value = remembered ?? settings?[awake ? "defaultAwakeMinutes" : "defaultTimerMinutes"]?.GetValue<int>() ?? 30;
+        remember = awake && settings?["rememberLastCustomDuration"]?.GetValue<bool>() == true;
         var target = DateTimeOffset.Now.AddMinutes(minutes.Value);
         date.MinDate = DateTimeOffset.Now.Date; date.MaxDate = DateTimeOffset.Now.AddDays(7);
         date.Date = target; time.Time = new TimeSpan(target.Hour, target.Minute, 0);
@@ -176,6 +181,8 @@ public sealed partial class TimerWindow : Window
             var (command, fields) = Request(DateTimeOffset.Now);
             pending = true; start.IsEnabled = false; error.IsOpen = false;
             await bridge.SendCommandAsync(command, fields);
+            if (remember && durationPanel.Visibility == Visibility.Visible)
+                await bridge.SendCommandAsync("set", new JsonObject { ["key"] = "lastCustomAwakeMinutes", ["value"] = (int)minutes.Value });
         }
         catch (Exception failure) { ShowError(failure.Message); }
     }

@@ -22,11 +22,14 @@ public sealed partial class CountdownWindow : Window
     private bool visible;
     private bool pending;
     private string action = "Sleep";
+    /// A copy on another display (Show on every display): silent, and placed by the app.
+    private readonly bool mirror;
 
-    public CountdownWindow(Func<string, Task> send, bool verification = false)
+    public CountdownWindow(Func<string, Task> send, bool verification = false, bool mirror = false)
     {
         this.send = send;
         this.verification = verification;
+        this.mirror = mirror;
         InitializeComponent();
         WindowAppearance.Observe(this, Root);
         Title = "Doze · Countdown";
@@ -76,12 +79,34 @@ public sealed partial class CountdownWindow : Window
         AppWindow.MoveAndResize(new RectInt32(area.X + (area.Width - width) / 2, area.Y + (area.Height - height) / 2, width, height));
     }
 
+    /// The display the warning is on.
+    public ulong Display => DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).DisplayId.Value;
+
+    /// Centers the warning on another display.
+    public void PlaceOn(DisplayArea display)
+    {
+        var area = display.WorkArea;
+        var size = AppWindow.Size;
+        AppWindow.Move(new PointInt32(area.X + (area.Width - size.Width) / 2, area.Y + (area.Height - size.Height) / 2));
+    }
+
+    [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
+    private static extern bool PlaySound(string sound, nint module, uint flags);
+
+    /// The Windows notification sound, once, when a real warning appears.
+    private static void Chime() => PlaySound("SystemNotification", 0, 0x00010000 | 0x0001 | 0x0002); // SND_ALIAS | SND_ASYNC | SND_NODEFAULT
+
     public void SetTheme(string value) => WindowAppearance.Apply(Root, value);
     public void StopAppearance() => WindowAppearance.Stop(Root);
 
     public void Receive(JsonObject message)
     {
         var type = message["type"]?.GetValue<string>();
+        if (message["snoozeMinutes"]?.GetValue<int>() is int snooze)
+        {
+            SnoozeButton.Content = $"Snooze {snooze} minutes";
+            Description.Text = $"Cancel the action or snooze for {snooze} minutes.";
+        }
         if (type == "preview")
         {
             if (visible && !preview) return;
@@ -102,6 +127,7 @@ public sealed partial class CountdownWindow : Window
                 action = countdown["action"]!.GetValue<string>();
                 UpdateTime(countdown["remaining"]!.GetValue<ulong>());
                 ShowWarning(newlyShown);
+                if (newlyShown && !mirror && !verification && message["sound"]?.GetValue<bool>() != false) Chime();
             }
             else if (!preview) HideWarning();
         }

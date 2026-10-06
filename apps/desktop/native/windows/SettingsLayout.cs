@@ -88,6 +88,7 @@ public sealed partial class MainWindow
 
     private static Grid CardGrid(string title, string? description, object? icon, FrameworkElement? control, out TextBlock descriptionText)
     {
+        collecting?.Add((title, description, control));
         var grid = new Grid { VerticalAlignment = VerticalAlignment.Center };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -137,6 +138,15 @@ public sealed partial class MainWindow
         control.Margin = new Thickness(16, 0, 0, 0);
         grid.SizeChanged += (_, args) => { if (args.NewSize.Width != args.PreviousSize.Width) Arrange(args.NewSize.Width); };
         return grid;
+    }
+
+    /// A brand tray glyph for the Menu guide and the status card.
+    private static FrameworkElement Glyph(string state, double size)
+    {
+        var glyph = Glyphs.Create(state, size, state == "normal" ? "{ThemeResource TextFillColorSecondaryBrush}" : "{ThemeResource DozeTrayAccentBrush}");
+        glyph.HorizontalAlignment = HorizontalAlignment.Center;
+        glyph.VerticalAlignment = VerticalAlignment.Center;
+        return glyph;
     }
 
     private static FrameworkElement? Icon(object? icon) => icon switch

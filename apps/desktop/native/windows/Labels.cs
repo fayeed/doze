@@ -67,6 +67,17 @@ internal static class Labels
 
     private static string Unit(int value, string name) => $"{value} {name}{(value == 1 ? "" : "s")}";
 
+    /// "Claude Code, Codex and OpenCode".
+    public static string List(IReadOnlyList<string> items) => items.Count switch
+    {
+        0 => "",
+        1 => items[0],
+        _ => string.Join(", ", items.Take(items.Count - 1)) + " and " + items[^1]
+    };
+
+    /// Minutes of work for an agent row: "12m", "1h 5m".
+    public static string Elapsed(long seconds) => seconds >= 3600 ? $"{seconds / 3600}h {seconds / 60 % 60}m" : $"{Math.Max(0, seconds) / 60}m";
+
     public static void Verify()
     {
         var checks = new (string Actual, string Expected)[]
@@ -74,7 +85,8 @@ internal static class Labels
             (Action("displayOff"), "Turn display off"), (Action("shutdown"), "Shut down"), (Action(null), "Return to normal"),
             (Seconds(300), "5 minutes"), (Seconds(60), "1 minute"), (Seconds(3600), "1 hour"), (Seconds(90), "1 minute 30 seconds"),
             (Minutes(1440), "1 day"), (Minutes(90), "1 hour 30 minutes"), (Remaining(3900), "1h 5m"), (Remaining(61), "2m"),
-            (Clock(287), "4:47"), (AgentStatus("awaiting_authorization"), "Waiting for your approval"), (Preset(120), "2h")
+            (Clock(287), "4:47"), (AgentStatus("awaiting_authorization"), "Waiting for your approval"), (Preset(120), "2h"),
+            (List(["Claude Code", "Codex", "OpenCode"]), "Claude Code, Codex and OpenCode"), (Elapsed(720), "12m"), (Elapsed(3900), "1h 5m")
         };
         foreach (var (actual, expected) in checks)
             if (actual != expected) throw new InvalidOperationException($"Label \"{actual}\" should read \"{expected}\".");

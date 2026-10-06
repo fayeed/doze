@@ -10,6 +10,14 @@
             <!-- Icon colours for navigation and guide rows, tuned for contrast in each theme. -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
+                    <!-- The tray flyout's accent: tiles that are on, the working dot, links. -->
+                    <SolidColorBrush x:Key="DozeTrayAccentBrush" Color="#C25B16" />
+                    <SolidColorBrush x:Key="DozeTrayOnForegroundBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="DozeTileBrush" Color="#E4E2EA" />
+                    <SolidColorBrush x:Key="DozeTileTextBrush" Color="#4A4C5E" />
+                    <SolidColorBrush x:Key="DozeInfoBackgroundBrush" Color="#FCEFE4" />
+                    <SolidColorBrush x:Key="DozeInfoBorderBrush" Color="#F0D2BB" />
+                    <SolidColorBrush x:Key="DozeWorkingBrush" Color="#A64A0C" />
                     <SolidColorBrush x:Key="DozeAccentBrush" Color="#C2453F" />
                     <SolidColorBrush x:Key="DozeGrayBrush" Color="#5C5C66" />
                     <SolidColorBrush x:Key="DozeOrangeBrush" Color="#C75100" />
@@ -22,18 +30,32 @@
                     <SolidColorBrush x:Key="DozePurpleBrush" Color="#8E3AC4" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="DozeTrayAccentBrush" Color="#F28C3A" />
+                    <SolidColorBrush x:Key="DozeTrayOnForegroundBrush" Color="#1B1B1B" />
+                    <SolidColorBrush x:Key="DozeTileBrush" Color="#3A3A44" />
+                    <SolidColorBrush x:Key="DozeTileTextBrush" Color="#DAD8E4" />
+                    <SolidColorBrush x:Key="DozeInfoBackgroundBrush" Color="#3A2C22" />
+                    <SolidColorBrush x:Key="DozeInfoBorderBrush" Color="#6B4A30" />
+                    <SolidColorBrush x:Key="DozeWorkingBrush" Color="#F6A35E" />
                     <SolidColorBrush x:Key="DozeAccentBrush" Color="#F7A37A" />
                     <SolidColorBrush x:Key="DozeGrayBrush" Color="#C5C5CC" />
-                    <SolidColorBrush x:Key="DozeOrangeBrush" Color="#FFA24D" />
-                    <SolidColorBrush x:Key="DozePinkBrush" Color="#FF7AB0" />
-                    <SolidColorBrush x:Key="DozeRedBrush" Color="#FF8A80" />
-                    <SolidColorBrush x:Key="DozeTealBrush" Color="#4FD1C5" />
+                    <SolidColorBrush x:Key="DozeOrangeBrush" Color="#F6A35E" />
+                    <SolidColorBrush x:Key="DozePinkBrush" Color="#F27AAE" />
+                    <SolidColorBrush x:Key="DozeRedBrush" Color="#FF7B72" />
+                    <SolidColorBrush x:Key="DozeTealBrush" Color="#3FD2A6" />
                     <SolidColorBrush x:Key="DozeBrownBrush" Color="#D9A66F" />
-                    <SolidColorBrush x:Key="DozeBlueBrush" Color="#60CDFF" />
+                    <SolidColorBrush x:Key="DozeBlueBrush" Color="#4CC2FF" />
                     <SolidColorBrush x:Key="DozeGreenBrush" Color="#6CCB5F" />
                     <SolidColorBrush x:Key="DozePurpleBrush" Color="#D29BFF" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
+                    <SolidColorBrush x:Key="DozeTrayAccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <SolidColorBrush x:Key="DozeTrayOnForegroundBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+                    <SolidColorBrush x:Key="DozeTileBrush" Color="{ThemeResource SystemColorButtonFaceColor}" />
+                    <SolidColorBrush x:Key="DozeTileTextBrush" Color="{ThemeResource SystemColorButtonTextColor}" />
+                    <SolidColorBrush x:Key="DozeInfoBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="DozeInfoBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DozeWorkingBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="DozeAccentBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="DozeGrayBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                     <SolidColorBrush x:Key="DozeOrangeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
@@ -46,16 +68,16 @@
                     <SolidColorBrush x:Key="DozePurpleBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
-            <!-- Brand accent: the setting sun's coral replaces the system accent for toggles, accent
-                 buttons, links and selection. Light themes put white text on Dark1 and dark themes
-                 black text on Light2, so both keep at least 4.5:1. High Contrast keeps system colours. -->
-            <Color x:Key="SystemAccentColor">#DE5F5A</Color>
-            <Color x:Key="SystemAccentColorLight1">#E8806A</Color>
-            <Color x:Key="SystemAccentColorLight2">#F2A27A</Color>
-            <Color x:Key="SystemAccentColorLight3">#F8C79C</Color>
-            <Color x:Key="SystemAccentColorDark1">#B8433E</Color>
-            <Color x:Key="SystemAccentColorDark2">#963432</Color>
-            <Color x:Key="SystemAccentColorDark3">#702626</Color>
+            <!-- Brand accent, from the tray and Settings designs: dark themes fill toggles, accent
+                 buttons and selection with Light2 (#F28C3A, black text) and light themes with Dark1
+                 (#C25B16, white text, 5.9:1). High Contrast keeps system colours. -->
+            <Color x:Key="SystemAccentColor">#E0782C</Color>
+            <Color x:Key="SystemAccentColorLight1">#EA8433</Color>
+            <Color x:Key="SystemAccentColorLight2">#F28C3A</Color>
+            <Color x:Key="SystemAccentColorLight3">#F6B07A</Color>
+            <Color x:Key="SystemAccentColorDark1">#C25B16</Color>
+            <Color x:Key="SystemAccentColorDark2">#9E4A12</Color>
+            <Color x:Key="SystemAccentColorDark3">#7A390E</Color>
             <!-- The Windows 11 Settings card: 4 px corners, 16 px padding, at least 68 px tall. -->
             <Style x:Key="SettingsCardStyle" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
@@ -91,6 +113,11 @@
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextWrapping" Value="Wrap" />
                 <Setter Property="Margin" Value="1,8,0,0" />
+                <Setter Property="IsTextSelectionEnabled" Value="True" />
+            </Style>
+            <!-- A card description that is an address or a command. -->
+            <Style x:Key="CodeCaptionStyle" TargetType="TextBlock" BasedOn="{StaticResource CardDescriptionStyle}">
+                <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
                 <Setter Property="IsTextSelectionEnabled" Value="True" />
             </Style>
             <Style x:Key="CodeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
