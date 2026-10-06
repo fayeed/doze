@@ -135,7 +135,7 @@ try {
   const codex = await connect("codex");
   const claude = await connect("claude");
   const listed = await codex.listTools();
-  assert.equal(listed.tools.length, 7);
+  assert.equal(listed.tools.length, 8);
   assert(
     !listed.tools.some((t) =>
       /sleep_now|shutdown_now|execute_command/.test(t.name),
