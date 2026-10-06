@@ -35,7 +35,7 @@ Agent sessions come from four sources and share one model: lifecycle **hooks** (
 - Below the battery floor (General, default 15%) on battery, every agent lease and manual keep-awake is released once with a notification; agents cannot hold the computer again until power returns.
 - Cursor and other tools without hooks show as Open and never hold the computer awake unless "Keep awake while Cursor is open" is on.
 
-Keeping a closed MacBook awake needs root (the kernel's `SleepDisabled` flag; idle-sleep assertions do not survive clamshell sleep), so Doze does not offer it and the `lidClosedKeepAwake` setting stays hidden.
+**Stay awake with the lid closed** (General, on by default, Windows laptops): power requests do not stop the lid-close action, so while Doze keeps the PC awake it sets the active power plan's "When I close the lid" to Do nothing, without administrator rights, and puts the user's values back when it lets go or quits. The original values are saved to `lid-restore.json` first, so a crash or power loss restores them on the next launch; the battery guard still releases everything below the floor. Keeping a closed MacBook awake needs root (the kernel's `SleepDisabled` flag; idle-sleep assertions do not survive clamshell sleep), so macOS hides the switch.
 
 ## Behavior
 

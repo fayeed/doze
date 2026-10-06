@@ -95,6 +95,8 @@ pub(super) fn worker(
     sender: Sender<Request>,
 ) {
     let mut power = platform::NativePower::new();
+    // Restores a lid setting left changed by a crash before anything else runs.
+    let mut lid = platform::Lid::new(path.with_file_name("lid-restore.json"));
     let idle = platform::NativeIdle;
     let notifications = platform::NativeNotifications(app.clone());
     let mut errors = Errors {
@@ -270,6 +272,7 @@ pub(super) fn worker(
             }
         }
         if quit {
+            let _ = lid.set(false);
             let result = power.set_awake(false, false);
             if let Some((tx, _)) = reply {
                 let _ = tx.send(result.map(|_| snapshot.clone()));
@@ -378,7 +381,16 @@ pub(super) fn worker(
                 .engine
                 .reset_transient("Power request failed · sessions cleared");
         }
+        // A closed lid sleeps the PC whatever power requests say, so Windows also changes the
+        // lid-close action, only while Doze keeps the PC awake.
+        let hold_lid = snapshot.lid_supported
+            && snapshot.settings.lid_closed_keep_awake
+            && snapshot.engine.should_hold_awake();
+        if let Err(error) = lid.set(hold_lid) {
+            errors.report(error, snapshot.engine.now);
+        }
         snapshot.assertions = power.describe();
+        snapshot.assertions.extend(lid.describe());
         for event in std::mem::take(&mut snapshot.engine.events) {
             notify(&notifications, &snapshot.settings, event);
         }

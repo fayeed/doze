@@ -12,7 +12,7 @@ $snapshot = @{
         defaultAction = 'sleep'; playbackAction = 'sleep'; silenceSeconds = 60
         idleSeconds = 600; countdownSeconds = 300; logging = $false
         allowDisplaySleep = $false; defaultAwakeMinutes = 30; defaultTimerMinutes = 30
-        menuBarTime = $true; menuBarAgentCount = $true; iconClickOpens = 'panel'; lidClosedKeepAwake = $false
+        menuBarTime = $true; menuBarAgentCount = $true; iconClickOpens = 'panel'; lidClosedKeepAwake = $true
         batteryFloorPercent = 15; rememberLastCustomDuration = $true; lastCustomAwakeMinutes = $null
         snoozeMinutes = 15; stayAwakeMinutes = $null; warningSound = $true; warningAllDisplays = $false
         notifyAgentApproval = $true; notifyAgentsFinished = $true; notifyAgentStalled = $true; notifyKeepAwakeEnded = $false
@@ -48,7 +48,7 @@ $snapshot = @{
     clypyIconPath = (Join-Path $desktop 'src-tauri/icons/clypy.png')
     actions = @('sleep', 'hibernate', 'shutdown', 'lock', 'displayOff')
     settingsPath = (Join-Path $desktop 'native-test/settings.json')
-    audioSupported = $true; startupSupported = $true; lidClosedSupported = $false
+    audioSupported = $true; startupSupported = $true; lidClosedSupported = $true
     status = "Keeping awake $([char]0xB7) agents working"; statusShort = 'Keeping awake'; statusDetail = 'For Claude Code'; iconState = 'attention'
     timerStatus = 'Sleep in 65 minutes'; version = '0.2.0'
     battery = @{ percent = 82; onBattery = $true }

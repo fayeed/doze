@@ -30,6 +30,7 @@ pub fn start(
     let snapshot = Snapshot {
         audio_supported: platform::audio_supported(),
         startup_supported: platform::startup_supported(),
+        lid_supported: platform::lid_supported(),
         error: initial_error,
         ..Snapshot::new(path.clone(), settings)
     };

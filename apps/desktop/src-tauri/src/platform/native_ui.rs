@@ -339,8 +339,8 @@ fn base_json(snapshot: &Snapshot) -> Value {
         "actions": snapshot.actions,
         "audioSupported": snapshot.audio_supported,
         "startupSupported": snapshot.startup_supported,
-        // macOS cannot keep a closed-lid Mac awake without root, which Doze never uses.
-        "lidClosedSupported": false,
+        // Windows laptops only: macOS needs root to keep a closed Mac awake.
+        "lidClosedSupported": snapshot.lid_supported,
         "status": crate::tray::status_text(snapshot),
         "statusDetail": crate::tray::status_detail(snapshot),
         "statusShort": crate::tray::status_short(snapshot),

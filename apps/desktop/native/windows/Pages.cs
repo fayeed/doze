@@ -24,6 +24,9 @@ public sealed partial class MainWindow
         Section("While keeping awake");
         Card("Keep the display on too", "When off, the screen can turn off while the PC stays awake.", null,
             Switch("Keep the display on too", !On("allowDisplaySleep"), value => _ = Set("allowDisplaySleep", !value)));
+        if (Capability("lidClosedSupported"))
+            Card("Stay awake with the lid closed", "Only while Doze is keeping your PC awake. Doze sets “When I close the lid” to Do nothing, then puts your setting back.", null,
+                Switch("Stay awake with the lid closed", On("lidClosedKeepAwake"), value => _ = Set("lidClosedKeepAwake", value)));
         Card("Stop keeping awake below", "On battery only.", null,
             Choice("Stop keeping awake below", BatteryChoices(Int("batteryFloorPercent", 15)), Int("batteryFloorPercent", 15), value => _ = Set("batteryFloorPercent", value)));
     }

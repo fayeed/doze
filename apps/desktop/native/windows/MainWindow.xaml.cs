@@ -238,7 +238,7 @@ public sealed partial class MainWindow : Window
         VerifyControlCenter();
         foreach (var (pageName, expected) in new[]
         {
-            ("General", new[] { "Start Doze when I sign in", "Clicking the tray icon opens", "Show time left in the tray tooltip", "Keep the display on too", "Stop keeping awake below" }),
+            ("General", new[] { "Start Doze when I sign in", "Clicking the tray icon opens", "Show time left in the tray tooltip", "Keep the display on too", "Stay awake with the lid closed", "Stop keeping awake below" }),
             ("Session defaults", new[] { "Default duration", "Remember my last custom duration", "Default action", "Default timer", "Snooze length", "Stay Awake keeps going" }),
             ("After playback", new[] { "Sleep after playback stops", "Wait for inactivity", "Then", "Keep awake while audio plays", "Live output level" }),
             ("Notifications", new[] { "Warning length", "Play a sound when it appears", "Show on every display", "When an agent asks to keep the PC awake", "When all agents have finished", "When an agent stops checking in", "When a Keep Awake session ends" }),

@@ -69,8 +69,8 @@ pub struct Settings {
     /// macOS shows how many agents are working when only agents hold the Mac awake.
     pub menu_bar_agent_count: bool,
     pub icon_click_opens: IconClick,
-    /// Stay awake with the lid closed (macOS). Kept in the store but not offered: macOS only
-    /// honours it with root privileges, which Doze does not use.
+    /// Stay awake with the lid closed, while Doze keeps the computer awake. Offered on Windows
+    /// laptops; macOS only honours it with root privileges, which Doze does not use.
     pub lid_closed_keep_awake: bool,
     /// On battery below this level every agent and manual keep-awake is released. 0 is off.
     pub battery_floor_percent: u8,
@@ -109,7 +109,7 @@ impl Default for Settings {
             menu_bar_time: true,
             menu_bar_agent_count: true,
             icon_click_opens: IconClick::Panel,
-            lid_closed_keep_awake: false,
+            lid_closed_keep_awake: true,
             battery_floor_percent: 15,
             remember_last_custom_duration: true,
             last_custom_awake_minutes: None,

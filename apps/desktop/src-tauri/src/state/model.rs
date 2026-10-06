@@ -147,6 +147,8 @@ pub struct Snapshot {
     pub actions: Vec<PowerAction>,
     pub audio_supported: bool,
     pub startup_supported: bool,
+    /// Stay awake with the lid closed is available (Windows laptops).
+    pub lid_supported: bool,
     pub error: Option<String>,
     pub selected_action: PowerAction,
     pub view: DialogView,
@@ -170,6 +172,7 @@ impl Snapshot {
             actions: Vec::new(),
             audio_supported: true,
             startup_supported: true,
+            lid_supported: false,
             error: None,
             view: DialogView::Settings,
             page: None,
