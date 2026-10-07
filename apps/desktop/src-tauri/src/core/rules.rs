@@ -143,6 +143,9 @@ impl Engine {
         self.timer = None;
         self.countdown = None;
         self.cancel_playback();
+        // After Playback is one-shot like the timer: a sleep from elsewhere (Start menu, lid,
+        // power button) has done its job, so it must not stay armed for tomorrow's music.
+        self.playback_enabled = false;
         self.audio_active = false;
         self.message = Some(reason.into());
     }

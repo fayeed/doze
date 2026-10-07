@@ -235,6 +235,17 @@ fn resume_discards_sessions() {
     assert!(!e.should_hold_awake());
 }
 #[test]
+fn sleep_from_elsewhere_turns_after_playback_off() {
+    let mut e = armed();
+    e.reset_transient("Resumed");
+    assert!(!e.playback_enabled);
+    for t in 10..13 {
+        audio(&mut e, t, true);
+    }
+    assert_eq!(audio(&mut e, 10000, false), None);
+    assert!(e.countdown.is_none());
+}
+#[test]
 fn awake_expiry_and_extension() {
     let mut e = Engine::default();
     e.keep_awake(Some(60));
