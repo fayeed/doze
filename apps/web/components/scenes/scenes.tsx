@@ -1,432 +1,261 @@
 "use client";
 
 import type { Platform } from "@/lib/platform";
-import {
-  Countdown,
-  Cursor,
-  Desktop,
-  Menu,
-  Notice,
-  Tooltip,
-  Window,
-  itemCenter,
-  menuHeight,
-  submenuTop,
-  trayIcon,
-  type MenuItem,
-} from "./desktop";
+import { Countdown, Cursor, Desktop, Notice, Tooltip, Window, trayIcon } from "./desktop";
+import { MacPanel, WinFlyout, type Agent, type PanelState } from "./panel";
+import { SettingsWindow } from "./settings";
 import { eased, path, pressed, progress, track, useTime, visible, within } from "./timeline";
 
 type Scene = (props: { platform: Platform }) => React.ReactNode;
 
-/* Menus, mirroring apps/desktop/src-tauri/src/tray.rs. */
+/*
+ * The panel sits under the status item on macOS (Panel.swift centres it on the icon) and the
+ * flyout docks at the right end of the taskbar on Windows (TrayFlyout.cs). Pointer targets
+ * below are the centres of the controls they click, measured from the rendered scenes.
+ */
+const PANEL = { x: trayIcon("macos").x - 184, y: 32 };
 
-function rootMenu(status: string, timer: string, audio = false): MenuItem[] {
-  return [
-    { label: status },
-    { label: timer },
-    "-",
-    { label: "Keep Awake", icon: "awake", sub: true },
-    { label: "Keep awake while audio plays", check: audio },
-    "-",
-    { label: "Power Timer", icon: "timer", sub: true },
-    { label: "Sleep after playback stops" },
-    { label: "Countdown", icon: "timer", sub: true },
-    "-",
-    { label: "Agents", sub: true },
-    { label: "Quick Settings", icon: "quick", sub: true },
-    { label: "Settings…", icon: "settings" },
-    { label: "Help & About", icon: "help", sub: true },
-    "-",
-    { label: "Quit Doze", icon: "quit" },
-  ];
+/** The panel appears almost at once and fades out like a dismissed menu. */
+const panelOpacity = (t: number, open: number, close: number) => visible(t, open, close, 0.12);
+
+/** The flyout slides out from behind the taskbar on a decelerating curve, and back down. */
+function flyoutShown(t: number, open: number, close: number) {
+  const out = 1 - (1 - progress(t, open, open + 0.28)) ** 3;
+  const back = progress(t, close, close + 0.2) ** 2;
+  return t < open ? 0 : Math.max(0, out - back);
 }
 
-const keepAwakeMenu: MenuItem[] = [
-  { label: "Default (30 minutes)" },
-  { label: "15 minutes" },
-  { label: "30 minutes" },
-  { label: "1 hour" },
-  { label: "2 hours" },
-  { label: "Indefinitely" },
-  { label: "Custom duration…" },
-  { label: "Until a specific time…" },
-  "-",
-  { label: "No timed session to extend", icon: "add", disabled: true },
-  { label: "No awake session to stop", icon: "stop", disabled: true },
-];
+/** The Working dot breathes, as PulsingDot does. */
+const pulse = (t: number) => 0.675 + 0.325 * Math.cos((t / 1.6) * Math.PI * 2);
 
-const ROOT_WIDTH = { macos: 262, windows: 292 };
+const idle: PanelState = {
+  glyph: "normal",
+  title: "Normal sleep allowed",
+  detail: "No power action scheduled",
+  action: "Sleep",
+};
 
-/** Root menu placement: under the status item on macOS, above the tray on Windows. */
-function rootPosition(platform: Platform, items: MenuItem[]) {
-  const icon = trayIcon(platform);
-  if (platform === "macos") return { x: Math.min(icon.x - 16, 960 - ROOT_WIDTH.macos - 6), y: 26 };
-  return { x: icon.x - ROOT_WIDTH.windows, y: 552 - 8 - menuHeight(platform, items) };
-}
+/* Hero: start a two-hour Keep Awake session from the panel, then close it. */
+const HERO = {
+  macos: { chip: [680, 253] },
+  windows: { more: [691, 316], twoHours: [680, 323], back: [616, 96] },
+};
 
-/** Menus fade quickly on Windows and appear almost at once on macOS. */
-const menuOpacity = (platform: Platform, t: number, open: number, close: number) =>
-  visible(t, open, close, platform === "macos" ? 0.06 : 0.12);
-
-/* Hero: start a two-hour Keep Awake session from the menu, then check the status. */
 const Hero: Scene = ({ platform }) => {
   const t = useTime();
   const icon = trayIcon(platform);
-  const awake = within(t, 3.35, 7.75);
-  const root = rootMenu(awake ? "Keeping awake · 2h 0m left" : "Normal sleep allowed", "No power action scheduled");
-  const r = rootPosition(platform, root);
-  const keepAwakeY = r.y + itemCenter(platform, root, "Keep Awake");
-  const subX = r.x - 232 + 4;
-  const subY = submenuTop(platform, root, "Keep Awake", r.y);
-  const twoHoursY = subY + itemCenter(platform, keepAwakeMenu, "2 hours");
-  const statusY = r.y + itemCenter(platform, root, "Keeping awake · 2h 0m left");
+  if (platform === "macos") {
+    const awake = within(t, 2.55, 7.85);
+    const [cx, cy] = HERO.macos.chip;
+    const cursor = path(t, [
+      [0, 480, 330],
+      [0.4, 480, 330],
+      [1.2, icon.x, icon.y],
+      [1.4, icon.x, icon.y],
+      [2.3, cx, cy],
+      [3.4, cx, cy],
+      [3.9, cx + 30, cy + 40],
+      [4.5, cx + 30, cy + 40],
+      [5.1, 360, 400],
+      [5.6, 360, 400],
+      [7.6, 480, 330],
+    ]);
+    const state: PanelState = awake
+      ? { ...idle, glyph: "awake", title: "Keeping awake", detail: "2h 0m left · until 23:40", stop: true }
+      : idle;
+    return (
+      <Desktop platform={platform} trayState={awake ? "awake" : "normal"} trayTitle={awake ? "2:00" : null} trayOpen={within(t, 1.32, 5.25)}>
+        <MacPanel
+          x={PANEL.x}
+          y={PANEL.y}
+          opacity={panelOpacity(t, 1.32, 5.37)}
+          state={state}
+          active={within(t, 2.2, 2.66) ? "awake-2h" : null}
+        />
+        <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [1.3, 2.5, 5.2])} />
+      </Desktop>
+    );
+  }
+  const awake = within(t, 3.05, 7.85);
+  const page = within(t, 2.25, 3.85) ? "keep" : "main";
+  const { more, twoHours, back } = HERO.windows;
   const cursor = path(t, [
-    [0, 480, 330],
-    [0.5, 480, 330],
+    [0, 480, 300],
+    [0.4, 480, 300],
     [1.2, icon.x, icon.y],
-    [1.6, icon.x, icon.y],
-    [2.1, r.x + 120, keepAwakeY],
-    [2.6, subX + 150, keepAwakeY],
-    [3.0, subX + 110, twoHoursY],
-    [3.4, subX + 110, twoHoursY],
-    [3.9, 520, 360],
-    [4.2, 520, 360],
-    [4.6, icon.x, icon.y],
-    [5.0, icon.x, icon.y],
-    [5.4, r.x + 140, statusY],
-    [6.8, r.x + 140, statusY],
-    [7.6, 480, 330],
+    [1.4, icon.x, icon.y],
+    [2.1, more[0], more[1]],
+    [2.3, more[0], more[1]],
+    [2.9, twoHours[0], twoHours[1]],
+    [3.2, twoHours[0], twoHours[1]],
+    [3.7, back[0], back[1]],
+    [3.95, back[0], back[1]],
+    [4.4, 700, 330],
+    [4.8, 700, 330],
+    [5.2, 420, 320],
+    [5.5, 420, 320],
+    [7.6, 480, 300],
   ]);
-  const firstMenu = menuOpacity(platform, t, 1.38, 3.36);
-  const subOpacity = menuOpacity(platform, t, 2.25, 3.36);
-  const secondMenu = menuOpacity(platform, t, 4.78, 6.9);
-  const rootActive = within(t, 2.0, 3.36) ? "Keep Awake" : within(t, 5.3, 6.9) ? "Keeping awake · 2h 0m left" : null;
+  const state: PanelState = awake
+    ? { ...idle, glyph: "awake", title: "Keeping awake", detail: "2h 0m left", stop: true, awake: true, awakeChoice: "2 hours", awakeEnds: "Ends 23:40" }
+    : idle;
+  const active = within(t, 2.05, 2.36)
+    ? "keep-more"
+    : within(t, 2.85, 3.14)
+      ? "2 hours"
+      : within(t, 3.65, 3.92)
+        ? "back"
+        : null;
   return (
-    <Desktop platform={platform} trayState={awake ? 1 : 0} trayTitle={awake ? "2h 0m" : null}>
-      <Menu
-        platform={platform}
-        items={root}
-        x={r.x}
-        y={r.y}
-        width={ROOT_WIDTH[platform]}
-        active={rootActive}
-        opacity={Math.max(firstMenu, secondMenu)}
-      />
-      <Menu
-        platform={platform}
-        items={keepAwakeMenu}
-        x={subX}
-        y={subY}
-        width={232}
-        active={within(t, 2.95, 3.36) ? "2 hours" : null}
-        opacity={subOpacity}
-      />
-      <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [1.3, 3.25, 4.7])} />
+    <Desktop platform={platform} trayState={awake ? "awake" : "normal"} trayOpen={within(t, 1.3, 5.3)}>
+      <WinFlyout shown={flyoutShown(t, 1.32, 5.32)} page={page} state={state} active={active} />
+      <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [1.3, 2.2, 3.0, 3.8, 5.3])} />
     </Desktop>
   );
 };
 
 /* Keep Awake: Overview in Settings, extend the session and turn on audio. */
-const sidebar = [
-  { label: "Overview", color: "#c2453f", glyph: "\uE80F" },
-  { label: "General", color: "#8a8a8e", glyph: "\uE713" },
-  { label: "Session defaults", color: "#f08c1a", glyph: "\uE706" },
-  { label: "After playback", color: "#e5487b", glyph: "\uE995" },
-  { label: "Notifications", color: "#e5484d", glyph: "\uEA8F" },
-  { label: "Agents", color: "#14a39a", glyph: "\uE716" },
-  { label: "Advanced", color: "#8a8a8e", glyph: "\uE9E9" },
-  { label: "Menu guide", color: "#a0703f", glyph: "\uE736" },
-  { label: "About Doze", color: "#2f7cf6", glyph: "\uE946" },
-];
-
-function Switch({ on }: { on: number }) {
-  return (
-    <span className="sc-switch" style={{ "--on": on } as React.CSSProperties}>
-      <i />
-    </span>
-  );
-}
-
-function SettingsWindow({ platform, left, audio }: { platform: Platform; left: string; audio: number }) {
-  const t = useTime();
-  const isMac = platform === "macos";
-  return (
-    <Window
-      platform={platform}
-      title={isMac ? "" : "Doze Settings"}
-      x={110}
-      y={isMac ? 50 : 34}
-      width={740}
-      height={isMac ? 480 : 500}
-      className="sc-settings"
-    >
-      <nav className="sc-sidebar">
-        {isMac ? <div className="sc-search-field">Search</div> : null}
-        {sidebar.map((item, index) => (
-          <div key={item.label}>
-            {!isMac && (index === 1 || index === 5 || index === 7) ? <div className="sc-nav-separator" /> : null}
-            {isMac && (index === 1 || index === 5 || index === 7) ? <div className="sc-nav-gap" /> : null}
-            <div className={`sc-nav${index === 0 ? " selected" : ""}`}>
-              {isMac ? (
-                <span className="sc-nav-tile" style={{ background: item.color }} />
-              ) : (
-                <span className="sc-fluent sc-nav-glyph" style={{ color: item.color }}>
-                  {item.glyph}
-                </span>
-              )}
-              {item.label}
-            </div>
-          </div>
-        ))}
-      </nav>
-      <div className="sc-content">
-        <h2 className="sc-page-title">Overview</h2>
-        <div className="sc-card sc-status-card">
-          <span className="sc-status-tile">
-            <span className="sc-fluent">{"\uE706"}</span>
-          </span>
-          <div>
-            <strong>Keeping awake · {left} left</strong>
-            <span>No power action scheduled</span>
-          </div>
-        </div>
-        <h3 className="sc-section">Keep Awake</h3>
-        <div className="sc-group">
-          <div className="sc-card">
-            <div className="sc-card-text">
-              <strong>Keeping awake</strong>
-              <span>{left} left</span>
-            </div>
-            <div className="sc-card-controls">
-              <span className={`sc-button${within(t, 1.8, 1.95) ? " active" : ""}`}>Extend 15 minutes</span>
-              <span className="sc-button">Stop</span>
-            </div>
-          </div>
-          <div className="sc-card">
-            <div className="sc-card-text">
-              <strong>Keep awake while audio plays</strong>
-              <span>Holds the computer awake while sound is playing.</span>
-            </div>
-            <div className="sc-card-controls">
-              {isMac ? null : <span className="sc-switch-label">{audio > 0.5 ? "On" : "Off"}</span>}
-              <Switch on={audio} />
-            </div>
-          </div>
-        </div>
-        <h3 className="sc-section">Power Timer</h3>
-        <div className="sc-group">
-          <div className="sc-card">
-            <div className="sc-card-text">
-              <strong>Action</strong>
-              <span>Used by the timer presets here and in the {isMac ? "menu bar" : "tray menu"}.</span>
-            </div>
-            <div className="sc-card-controls">
-              <span className="sc-select">Sleep</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Window>
-  );
-}
+const KEEP_AWAKE = {
+  macos: { extend: [698, 225], audio: [803, 273] },
+  windows: { extend: [695, 297], audio: [806, 366] },
+};
 
 const KeepAwake: Scene = ({ platform }) => {
   const t = useTime();
-  const isMac = platform === "macos";
   const extended = within(t, 1.9, 7.7);
   const left = extended ? "1h 57m" : "1h 42m";
   const audio = t < 3.55 ? 0 : t < 7.7 ? eased(t, 3.55, 3.75) : 1 - eased(t, 7.7, 7.9);
-  const extend = isMac ? { x: 686, y: 226 } : { x: 672, y: 292 };
-  const toggle = isMac ? { x: 794, y: 278 } : { x: 782, y: 362 };
+  const { extend, audio: toggle } = KEEP_AWAKE[platform];
   const cursor = path(t, [
-    [0, 640, 520],
-    [0.6, 640, 520],
-    [1.6, extend.x, extend.y],
-    [2.4, extend.x, extend.y],
-    [3.3, toggle.x, toggle.y],
-    [4.4, toggle.x, toggle.y],
-    [5.4, 700, 480],
-    [7.2, 700, 480],
-    [7.9, 640, 520],
+    [0, 640, 560],
+    [0.6, 640, 560],
+    [1.6, extend[0], extend[1]],
+    [2.4, extend[0], extend[1]],
+    [3.3, toggle[0], toggle[1]],
+    [4.4, toggle[0], toggle[1]],
+    [5.4, 700, 500],
+    [7.2, 700, 500],
+    [7.9, 640, 560],
   ]);
   return (
-    <Desktop platform={platform} trayState={1} trayTitle={left} frontApp="Doze">
-      <SettingsWindow platform={platform} left={left} audio={audio} />
+    <Desktop platform={platform} trayState="awake" trayTitle={extended ? "1:57" : "1:42"} frontApp="Doze">
+      <SettingsWindow
+        platform={platform}
+        state={{ left, until: extended ? "23:37" : "23:22", audio, active: within(t, 1.8, 1.95) ? "extend" : null }}
+      />
       <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [1.8, 3.5])} />
     </Desktop>
   );
 };
 
-/* Power Timer: choose Shut down and an hour, start, then see it in the menu or tooltip. */
-const actions = ["Sleep", "Hibernate", "Shut down", "Lock", "Turn display off"];
-
-function TimerWindow({ platform, action, minutes, opacity, listOpen, hover, startDown }: {
-  platform: Platform;
-  action: string;
-  minutes: number;
-  opacity: number;
-  listOpen: number;
-  hover: string | null;
-  startDown: boolean;
-}) {
-  const isMac = platform === "macos";
-  const ends = minutes === 60 ? "22:40" : "22:10";
-  const presets = isMac ? ["15m", "30m", "1h", "2h", "4h", "8h"] : ["15m", "30m", "1h", "2h", "4h", "8h"];
-  return (
-    <Window
-      platform={platform}
-      title="Doze"
-      x={250}
-      y={isMac ? 92 : 64}
-      width={460}
-      height={isMac ? 312 : 450}
-      opacity={opacity}
-      scale={0.97 + 0.03 * opacity}
-      className="sc-timer"
-    >
-      <div className="sc-timer-form">
-        <div>
-          <h2 className="sc-timer-heading">Power Timer</h2>
-          <p className="sc-help">
-            {isMac
-              ? "A final warning lets you cancel or snooze before the action runs."
-              : "A final warning lets you cancel or snooze before the action runs."}
-          </p>
-        </div>
-        {isMac ? (
-          <>
-            <div className="sc-row">
-              <span>Action</span>
-              <span className="sc-popup">{action}</span>
-            </div>
-            <div className="sc-row">
-              <span>Duration</span>
-              <span className="sc-row-controls">
-                <span className="sc-field">{minutes}</span>
-                <span className="sc-stepper" />
-                <span className="sc-muted">minutes</span>
-              </span>
-            </div>
-          </>
-        ) : (
-          <>
-            <label className="sc-header-field">
-              <span>Action</span>
-              <span className="sc-combo">{action}</span>
-            </label>
-            <label className="sc-header-field">
-              <span>Duration in minutes</span>
-              <span className="sc-number">
-                {minutes}
-                <span className="sc-fluent">{"\uE70E  \uE70D"}</span>
-              </span>
-            </label>
-          </>
-        )}
-        <div className="sc-presets">
-          {presets.map((preset) => (
-            <span key={preset} className={`sc-button small${hover === preset ? " active" : ""}`}>
-              {preset}
-            </span>
-          ))}
-        </div>
-        <p className="sc-muted sc-ends">
-          {isMac ? null : <span className="sc-fluent">{"\uE823"} </span>}
-          Ends {ends}
-        </p>
-      </div>
-      {isMac ? (
-        <div className="sc-timer-footer">
-          <span className="sc-button">Cancel</span>
-          <span className={`sc-button accent${startDown ? " active" : ""}`}>Start Timer</span>
-        </div>
-      ) : (
-        <div className="sc-timer-footer">
-          <span className={`sc-button accent${startDown ? " active" : ""}`}>Start Timer</span>
-          <span className="sc-button">Cancel</span>
-        </div>
-      )}
-      {listOpen > 0 ? (
-        <div className={`sc-list ${isMac ? "mac" : "win"}`} style={{ opacity: listOpen }}>
-          {actions.map((item) => (
-            <div key={item} className={`sc-list-item${hover === item ? " active" : ""}`}>
-              <span className="sc-check">{item === action ? "✓" : ""}</span>
-              {item}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </Window>
-  );
-}
+/* Power Timer: choose Shut down and an hour from the panel or flyout. */
+const MAC_ACTIONS = ["Sleep", "Shut down", "Lock", "Turn display off"];
+const POWER_TIMER = {
+  macos: { action: [838, 366], shutDown: [790, 390], chip: [646, 404] },
+  windows: { more: [691, 415], combo: [861, 137], shutDown: [850, 211], hour: [680, 323], back: [616, 94] },
+};
 
 const PowerTimer: Scene = ({ platform }) => {
   const t = useTime();
-  const isMac = platform === "macos";
   const icon = trayIcon(platform);
-  const action = within(t, 2.2, 8) ? "Shut down" : "Sleep";
-  const minutes = within(t, 3.0, 8) ? 60 : 30;
-  const scheduled = within(t, 4.4, 7.7);
-  const windowOpacity = Math.max(1 - eased(t, 4.4, 4.6), eased(t, 7.7, 8));
-  const control = isMac ? { x: 620, y: 200 } : { x: 470, y: 208 };
-  const shutDown = isMac ? { x: 600, y: 258 } : { x: 330, y: 344 };
-  const preset = isMac ? { x: 386, y: 275 } : { x: 386, y: 328 };
-  const start = isMac ? { x: 630, y: 372 } : { x: 376, y: 472 };
-  const root = rootMenu("Keeping awake · timer running", "Shut down in 1h 0m");
-  const r = rootPosition(platform, root);
-  const statusY = r.y + itemCenter(platform, root, "Shut down in 1h 0m");
-  const cursor = path(t, [
-    [0, 560, 520],
-    [0.4, 560, 520],
-    [1.2, control.x, control.y],
-    [1.5, control.x, control.y],
-    [2.0, shutDown.x, shutDown.y],
-    [2.3, shutDown.x, shutDown.y],
-    [2.8, preset.x, preset.y],
-    [3.1, preset.x, preset.y],
-    [3.8, start.x, start.y],
-    [4.4, start.x, start.y],
-    [5.0, icon.x, icon.y],
-    ...(isMac
-      ? ([
-          [5.4, icon.x, icon.y],
-          [5.8, r.x + 140, statusY],
-          [7.0, r.x + 140, statusY],
-        ] as [number, number, number][])
-      : ([[7.0, icon.x, icon.y]] as [number, number, number][])),
-    [7.7, 560, 520],
-  ]);
-  return (
-    <Desktop
-      platform={platform}
-      trayState={scheduled ? 1 : 0}
-      trayTitle={scheduled ? "1h 0m" : null}
-      frontApp="Doze"
-    >
-      <TimerWindow
+  if (platform === "macos") {
+    const { action, shutDown, chip } = POWER_TIMER.macos;
+    const chosen = within(t, 2.6, 7.85) ? "Shut down" : "Sleep";
+    const running = within(t, 3.45, 7.85);
+    const cursor = path(t, [
+      [0, 560, 420],
+      [0.2, 560, 420],
+      [0.9, icon.x, icon.y],
+      [1.1, icon.x, icon.y],
+      [1.8, action[0], action[1]],
+      [2.0, action[0], action[1]],
+      [2.4, shutDown[0], shutDown[1]],
+      [2.7, shutDown[0], shutDown[1]],
+      [3.3, chip[0], chip[1]],
+      [3.6, chip[0], chip[1]],
+      [4.2, 700, 80],
+      [5.5, 700, 80],
+      [6.0, 380, 420],
+      [6.4, 380, 420],
+      [7.6, 560, 420],
+    ]);
+    const state: PanelState = running
+      ? { ...idle, glyph: "awake", title: "Keeping awake", detail: "Shut down in 1h 0m", action: chosen, timer: "Shut down in 1h 0m" }
+      : { ...idle, action: chosen };
+    return (
+      <Desktop
         platform={platform}
-        action={action}
-        minutes={minutes}
-        opacity={windowOpacity}
-        listOpen={visible(t, 1.45, 2.25, 0.1)}
-        hover={within(t, 1.95, 2.25) ? "Shut down" : within(t, 1.45, 1.95) ? "Sleep" : within(t, 2.75, 3.1) ? "1h" : null}
-        startDown={pressed(t, [4.3])}
-      />
-      {isMac ? (
-        <Menu
-          platform={platform}
-          items={root}
-          x={r.x}
-          y={r.y}
-          width={ROOT_WIDTH[platform]}
-          active={within(t, 5.7, 7.1) ? "Shut down in 1h 0m" : null}
-          opacity={menuOpacity(platform, t, 5.3, 7.1)}
+        trayState={running ? "awake" : "normal"}
+        trayTitle={running ? "1:00" : null}
+        trayOpen={within(t, 1.02, 6.3)}
+      >
+        <MacPanel
+          x={PANEL.x}
+          y={PANEL.y}
+          opacity={panelOpacity(t, 1.02, 6.42)}
+          state={state}
+          active={within(t, 1.9, 2.0) ? "action" : within(t, 3.35, 3.55) ? "timer-1h" : null}
+          popup={{
+            items: MAC_ACTIONS,
+            selected: "Sleep",
+            hover: within(t, 2.0, 2.3) ? "Sleep" : within(t, 2.3, 2.62) ? "Shut down" : null,
+            opacity: visible(t, 1.95, 2.66, 0.06),
+          }}
         />
-      ) : (
-        <Tooltip lines={["Doze · Keeping awake · timer running", "Shut down in 1h 0m"]} opacity={visible(t, 5.5, 7.1)} />
-      )}
-      <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [1.4, 2.2, 3.0, 4.3, isMac ? 5.2 : -1])} />
+        <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [1.0, 1.9, 2.6, 3.4, 6.3])} />
+      </Desktop>
+    );
+  }
+  const { more, combo, shutDown, hour, back } = POWER_TIMER.windows;
+  const chosen = within(t, 3.1, 7.85) ? "Shut down" : "Sleep";
+  const running = within(t, 3.95, 7.85);
+  const page = within(t, 1.85, 4.85) ? "timer" : "main";
+  const cursor = path(t, [
+    [0, 520, 300],
+    [0.2, 520, 300],
+    [0.9, icon.x, icon.y],
+    [1.1, icon.x, icon.y],
+    [1.7, more[0], more[1]],
+    [1.9, more[0], more[1]],
+    [2.4, combo[0], combo[1]],
+    [2.6, combo[0], combo[1]],
+    [3.0, shutDown[0], shutDown[1]],
+    [3.2, shutDown[0], shutDown[1]],
+    [3.8, hour[0], hour[1]],
+    [4.0, hour[0], hour[1]],
+    [4.7, back[0], back[1]],
+    [4.95, back[0], back[1]],
+    [5.4, 700, 300],
+    [5.9, 700, 300],
+    [6.3, 420, 320],
+    [6.6, 420, 320],
+    [7.6, 520, 300],
+  ]);
+  const state: PanelState = running
+    ? { ...idle, glyph: "awake", title: "Keeping awake", detail: "Shut down in 1h 0m", action: chosen, timer: "1h 0m", timerAt: "At 22:40" }
+    : { ...idle, action: chosen };
+  const active = within(t, 1.65, 1.95)
+    ? "timer-more"
+    : within(t, 2.4, 2.56)
+      ? "action"
+      : within(t, 3.75, 3.95)
+        ? "1 hour"
+        : within(t, 4.65, 4.92)
+          ? "back"
+          : null;
+  return (
+    <Desktop platform={platform} trayState={running ? "awake" : "normal"} trayOpen={within(t, 1.0, 6.4)} frontApp="Doze">
+      <WinFlyout
+        shown={flyoutShown(t, 1.02, 6.42)}
+        page={page}
+        state={state}
+        active={active}
+        combo={{
+          hover: within(t, 2.6, 2.85) ? "Sleep" : within(t, 2.85, 3.12) ? "Shut down" : null,
+          opacity: visible(t, 2.52, 3.16, 0.08),
+        }}
+      />
+      <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [1.0, 1.8, 2.5, 3.1, 3.9, 4.8, 6.4])} />
     </Desktop>
   );
 };
@@ -463,7 +292,7 @@ const AfterPlayback: Scene = ({ platform }) => {
   return (
     <Desktop
       platform={platform}
-      trayState={warning ? 2 : ended ? 0 : 1}
+      trayState={warning ? "countdown" : ended ? "normal" : "awake"}
       trayTitle={warning ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}` : null}
       frontApp="Player"
       dim={0.22 * fade}
@@ -506,9 +335,10 @@ const AfterPlayback: Scene = ({ platform }) => {
       </Window>
       <Countdown
         platform={platform}
-        x={isMac ? 300 : 290}
-        y={isMac ? 110 : 90}
+        x={isMac ? 290 : 290}
+        y={isMac ? 96 : 90}
         remaining={remaining}
+        source="Playback stopped"
         opacity={fade}
         scale={0.96 + 0.04 * fade}
       />
@@ -527,12 +357,11 @@ const FinalWarning: Scene = ({ platform }) => {
   const t = useTime();
   const isMac = platform === "macos";
   const snoozed = within(t, 3.0, 7.5);
-  // The warning counts down from 0:30, freezes as it fades on Snooze, and the snoozed
-  // countdown then runs from 15:00 beside the status item.
+  // The warning counts down from 0:30 and freezes as it fades on Snooze; the snooze then
+  // runs as a 15-minute timer beside the status item.
   const warning = t < 3.0 ? 30 - Math.floor(t) : t >= 7.5 ? 30 : 27;
-  const title = snoozed ? 900 - Math.floor(t - 3.0) : warning;
   const shown = Math.max(1 - eased(t, 3.0, 3.3), eased(t, 7.5, 7.9));
-  const snooze = isMac ? { x: 392, y: 354 } : { x: 392, y: 298 };
+  const snooze = isMac ? { x: 392, y: 368 } : { x: 392, y: 298 };
   const cursor = path(t, [
     [0, 760, 500],
     [1.2, 760, 500],
@@ -545,71 +374,57 @@ const FinalWarning: Scene = ({ platform }) => {
   return (
     <Desktop
       platform={platform}
-      trayState={2}
-      trayTitle={`${Math.floor(title / 60)}:${String(title % 60).padStart(2, "0")}`}
+      trayState={snoozed ? "awake" : "countdown"}
+      trayTitle={snoozed ? "15m" : `0:${String(warning).padStart(2, "0")}`}
       frontApp="Doze"
     >
       <Countdown
         platform={platform}
         x={isMac ? 290 : 286}
-        y={isMac ? 120 : 92}
+        y={isMac ? 106 : 92}
         remaining={warning}
+        source="Power timer finished"
         active={within(t, 2.85, 3.0) ? "Snooze 15 minutes" : null}
         opacity={shown}
         scale={0.96 + 0.04 * shown}
       />
       {isMac ? null : (
-        <Tooltip lines={["Doze · Keeping awake · countdown running", "Sleep in 15:00 — countdown"]} opacity={visible(t, 4.4, 7.0)} />
+        <Tooltip lines={["Doze · Keeping awake · timer running", "Sleep in 15m"]} opacity={visible(t, 4.4, 7.0)} />
       )}
       <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [2.85])} />
     </Desktop>
   );
 };
 
-/* Agents: an agent asks to stay awake, you approve it from the menu. */
-const AGENT_ROW = "Claude Code · Finish the requested refactor · 0m · Approval needed";
+/* Agents: Claude Code starts work, asks to keep the computer awake, and you allow it. */
+const AGENTS = {
+  macos: { allow: [839, 184] },
+  windows: { allow: [823, 248] },
+};
 
 const Agents: Scene = ({ platform }) => {
   const t = useTime();
   const isMac = platform === "macos";
   const icon = trayIcon(platform);
-  const approved = within(t, 4.95, 8);
-  const root = rootMenu("Normal sleep allowed", "No power action scheduled");
-  const agentsMenu: MenuItem[] = [
-    { label: "Enable MCP", check: true },
-    { label: "Agent settings and connections…" },
-    { label: AGENT_ROW, sub: true },
-  ];
-  const decision: MenuItem[] = [
-    { label: "When finished: Sleep", disabled: true },
-    { label: "Allow Once" },
-    { label: "Deny" },
-  ];
-  const r = rootPosition(platform, root);
-  const agentsY = r.y + itemCenter(platform, root, "Agents");
-  const agentsWidth = isMac ? 486 : 452;
-  const subX = r.x - agentsWidth + 4;
-  const subY = submenuTop(platform, root, "Agents", r.y);
-  const rowY = subY + itemCenter(platform, agentsMenu, AGENT_ROW);
-  const nestedX = isMac ? subX - 200 + 4 : r.x - 2;
-  const nestedY = submenuTop(platform, agentsMenu, AGENT_ROW, subY);
-  const allowY = nestedY + itemCenter(platform, decision, "Allow Once");
+  const asking = within(t, 2.0, 4.05);
+  const approved = within(t, 4.05, 8);
+  const allow = AGENTS[platform].allow;
   const cursor = path(t, [
-    [0, 760, 470],
-    [2.4, 760, 470],
-    [3.0, icon.x, icon.y],
-    [3.2, icon.x, icon.y],
-    [3.6, r.x + 120, agentsY],
-    [3.9, subX + 300, agentsY],
-    [4.2, subX + 260, rowY],
-    [4.4, isMac ? subX + 60 : nestedX + 80, rowY],
-    [4.7, nestedX + 90, allowY],
-    [5.0, nestedX + 90, allowY],
-    [5.8, 760, 470],
+    [0, 560, 470],
+    [2.2, 560, 470],
+    [2.9, icon.x, icon.y],
+    [3.1, icon.x, icon.y],
+    [3.8, allow[0], allow[1]],
+    [4.15, allow[0], allow[1]],
+    [5.0, allow[0] - 60, allow[1] + 160],
+    [5.3, allow[0] - 60, allow[1] + 160],
+    [5.7, 360, 330],
+    [6.0, 360, 330],
+    [7.6, 560, 470],
   ]);
   const prompt = isMac ? "~/projects/app %" : "PS C:\\projects\\app>";
-  const command = 'claude "Finish the refactor, then put the computer to sleep"';
-  const typed = command.slice(0, Math.floor(command.length * progress(t, 0.3, 1.7)));
+  const command = 'claude "Finish the refactor"';
+  const typed = command.slice(0, Math.floor(command.length * progress(t, 0.3, 1.4)));
   const line = (start: number, text: string, className = "") =>
     t >= start ? (
       <p className={className} style={{ opacity: eased(t, start, start + 0.15) }}>
@@ -617,15 +432,30 @@ const Agents: Scene = ({ platform }) => {
       </p>
     ) : null;
   const spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[Math.floor(t * 12) % 10];
-  const menuClose = 4.95;
+  const claude: Agent = { mono: "CC", name: "Claude Code", caption: "app · Finish the refactor", state: "working", time: "0m" };
+  const state: PanelState = approved
+    ? { ...idle, glyph: "awake", title: "Keeping awake", detail: "For Claude Code · since 21:40", stop: true, agents: [claude], finish: "Sleep" }
+    : {
+        ...idle,
+        approval: asking ? { mono: "CC", name: "Claude Code", project: "app", task: "Finish the refactor", then: "Sleep" } : null,
+      };
+  const open = 3.02;
+  const close = 5.82;
+  const allowDown = within(t, 3.9, 4.06) ? "allow" : null;
   return (
-    <Desktop platform={platform} trayState={approved ? 1 : 0} frontApp="Terminal">
+    <Desktop
+      platform={platform}
+      trayState={approved ? "awake" : asking ? "attention" : "normal"}
+      trayTitle={approved ? "1" : null}
+      trayOpen={within(t, open, close - 0.1)}
+      frontApp="Terminal"
+    >
       <Window
         platform={platform}
         title={isMac ? "app — claude — 90×24" : "PowerShell"}
         x={50}
         y={isMac ? 56 : 36}
-        width={640}
+        width={600}
         height={isMac ? 400 : 420}
         dark
         className="sc-terminal"
@@ -633,47 +463,30 @@ const Agents: Scene = ({ platform }) => {
         <div className="sc-term">
           <p>
             <span className="sc-prompt">{prompt}</span> {typed}
-            {t < 1.9 && Math.floor(t * 2.5) % 2 === 0 ? <span className="sc-caret" /> : null}
+            {t < 1.6 && Math.floor(t * 2.5) % 2 === 0 ? <span className="sc-caret" /> : null}
           </p>
-          {line(2.0, "⏺ doze · start_session", "sc-tool")}
-          {line(2.2, "    reason: Finish the requested refactor")}
-          {line(2.35, "    completion_action: sleep")}
-          {line(2.6, approved ? "  ⎿ Approved · active" : "  ⎿ Waiting for your approval", approved ? "sc-ok" : "sc-wait")}
-          {line(5.3, `⏺ Refactoring 14 files ${t < 7.4 ? spinner : "✓"}`, "sc-tool")}
-          {line(6.0, "  ✓ src/session.ts")}
-          {line(6.4, "  ✓ src/power.ts")}
-          {line(6.8, "  ✓ src/agents.ts")}
-          {line(7.2, "⏺ doze · heartbeat", "sc-tool")}
+          {line(1.8, "⏺ I'll finish the refactor, starting with the session code.", "sc-tool")}
+          {line(2.3, "⏺ Read 14 files", "sc-tool")}
+          {line(4.5, "⏺ Update(src/session.ts)", "sc-tool")}
+          {line(4.8, "  ⎿  Updated 3 functions", "sc-dim-line")}
+          {line(5.4, "⏺ Update(src/power.ts)", "sc-tool")}
+          {line(5.7, "  ⎿  Updated 2 functions", "sc-dim-line")}
+          {line(6.3, "⏺ Update(src/agents.ts)", "sc-tool")}
+          {line(6.9, `⏺ Running the test suite ${spinner}`, "sc-tool")}
         </div>
       </Window>
-      <Menu
+      <Notice
         platform={platform}
-        items={root}
-        x={r.x}
-        y={r.y}
-        width={ROOT_WIDTH[platform]}
-        active={within(t, 3.5, menuClose) ? "Agents" : null}
-        opacity={menuOpacity(platform, t, 3.25, menuClose)}
+        title={`Claude Code wants to keep your ${isMac ? "Mac" : "PC"} awake`}
+        body="app · Allow or deny it in Doze."
+        opacity={visible(t, 2.1, open, 0.25)}
       />
-      <Menu
-        platform={platform}
-        items={agentsMenu}
-        x={subX}
-        y={subY}
-        width={agentsWidth}
-        active={within(t, 4.1, menuClose) ? AGENT_ROW : null}
-        opacity={menuOpacity(platform, t, 3.75, menuClose)}
-      />
-      <Menu
-        platform={platform}
-        items={decision}
-        x={nestedX}
-        y={nestedY}
-        width={200}
-        active={within(t, 4.65, menuClose) ? "Allow Once" : null}
-        opacity={menuOpacity(platform, t, 4.3, menuClose)}
-      />
-      <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [3.15, 4.85])} />
+      {isMac ? (
+        <MacPanel x={PANEL.x} y={PANEL.y} opacity={panelOpacity(t, open, close)} state={state} active={allowDown} pulse={pulse(t)} />
+      ) : (
+        <WinFlyout shown={flyoutShown(t, open, close)} state={state} active={allowDown} pulse={pulse(t)} />
+      )}
+      <Cursor platform={platform} x={cursor.x} y={cursor.y} down={pressed(t, [3.0, 4.0, 5.8])} />
     </Desktop>
   );
 };

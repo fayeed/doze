@@ -26,6 +26,14 @@ public sealed partial class TrayFlyout : Window
     private readonly Action<string> openTimer;
     private readonly Grid root = new() { Width = 360 };
     private readonly ContentPresenter body = new();
+    /// Holds keyboard focus while the content is replaced. Removing the focused control would
+    /// otherwise let WinUI move focus to another window on this thread, such as Settings, which
+    /// then takes the foreground and closes the flyout.
+    private readonly ContentControl focusHold = new()
+    {
+        Width = 1, Height = 1, Opacity = 0, IsTabStop = false, UseSystemFocusVisuals = false,
+        HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top
+    };
     private readonly UISettings system = new();
     private readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly System.Diagnostics.Stopwatch received = System.Diagnostics.Stopwatch.StartNew();
@@ -46,6 +54,9 @@ public sealed partial class TrayFlyout : Window
         this.verification = verification;
         Title = "Doze";
         root.Children.Add(body);
+        AutomationProperties.SetAccessibilityView(focusHold, AccessibilityView.Raw);
+        focusHold.LostFocus += (_, _) => focusHold.IsTabStop = false;
+        root.Children.Add(focusHold);
         Content = root;
         SystemBackdrop = new DesktopAcrylicBackdrop();
         AppWindow.IsShownInSwitchers = false;
@@ -194,6 +205,11 @@ public sealed partial class TrayFlyout : Window
     {
         workingPills.Clear();
         statusDetail = countdownText = null;
+        if (root.XamlRoot is not null && FocusManager.GetFocusedElement(root.XamlRoot) is not null)
+        {
+            focusHold.IsTabStop = true;
+            focusHold.Focus(FocusState.Programmatic);
+        }
         body.Content = subpage switch
         {
             "keep" => KeepAwakePage(),

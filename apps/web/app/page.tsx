@@ -56,9 +56,9 @@ const features = [
     title: "Awake for exactly as long as you need",
     body: (
       <>
-        Fifteen minutes, two hours, until 11:30, or indefinitely. The time left sits beside the{" "}
-        <OS mac="menu bar icon" win="tray icon" />, and Overview lets you extend or stop with one click. Normal sleep
-        settings apply again the moment it ends.
+        Fifteen minutes, two hours, until 11:30, or indefinitely, one click from the{" "}
+        <OS mac="menu bar panel" win="tray flyout" />. Overview in Settings lets you extend or stop it, and normal
+        sleep settings apply again the moment it ends.
       </>
     ),
   },
@@ -102,8 +102,9 @@ const features = [
     title: "Finish the refactor, then go to sleep",
     body: (
       <>
-        Claude Code, Codex and other MCP clients can ask Doze to stay awake while they work, then sleep when every
-        agent is done. You approve each one, and a lost connection releases after 30 minutes without acting.
+        Claude Code, Codex, OpenCode and other MCP clients keep your <OS mac="Mac" win="PC" /> awake while they work,
+        then it sleeps when every agent is done. Allow a new agent once from the <OS mac="panel" win="flyout" />, and if one stops checking in,
+        Doze lets go after 30 minutes without acting.
       </>
     ),
   },
@@ -229,7 +230,7 @@ export default function Home() {
             Free · No account · No telemetry · <OS mac="macOS 13+" win="Windows 11" />
           </p>
           <div className="hero-media">
-            <PlatformVideo name="hero" label="Starting a two-hour Keep Awake session from Doze’s menu" priority />
+            <PlatformVideo name="hero" label="Starting a two-hour Keep Awake session from Doze’s panel" priority />
           </div>
         </section>
 
@@ -370,7 +371,7 @@ export default function Home() {
               <ul>
                 <li>
                   <Check />
-                  Menu bar app with SwiftUI settings
+                  Menu bar panel and SwiftUI settings
                 </li>
                 <li>
                   <Check />
@@ -392,7 +393,7 @@ export default function Home() {
                 </li>
                 <li>
                   <Check />
-                  Native tray menu and countdown
+                  Quick Settings-style tray flyout
                 </li>
               </ul>
               <a className="button" href={downloads.windows}>

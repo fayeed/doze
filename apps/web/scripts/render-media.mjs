@@ -11,12 +11,12 @@ import puppeteer from "puppeteer-core";
 const base = process.env.SCENES_URL ?? "http://localhost:3000";
 const fps = Number(process.env.FPS ?? 30);
 const scenes = {
-  hero: 2.9,
+  hero: 4.2,
   "keep-awake": 4.6,
-  "power-timer": 1.9,
+  "power-timer": 5.2,
   "after-playback": 5.6,
   "final-warning": 1.0,
-  agents: 4.75,
+  agents: 3.35,
 };
 const platforms = ["macos", "windows"];
 const only = process.argv.slice(2);

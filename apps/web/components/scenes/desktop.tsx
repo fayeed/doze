@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type CSSProperties, type ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { Platform } from "@/lib/platform";
 import macosWallpaper from "./wallpapers/macos.svg";
 import windowsWallpaper from "./wallpapers/windows.svg";
@@ -13,31 +13,28 @@ const wallpapers: Record<Platform, string> = { macos: macosWallpaper.src, window
 export const trayIcon = (platform: Platform) =>
   platform === "macos" ? { x: 704, y: 13 } : { x: 752, y: 576 };
 
+export type GlyphState = "normal" | "awake" | "attention" | "countdown";
+
 /**
  * Doze's status glyph, as drawn by tray::image from the brand glyphs: a ring while normal
- * sleep is allowed, a filled sun while awake, the striped setting sun during a countdown.
- * macOS renders it as a template; Windows paints active states in the sunset gradient.
+ * sleep is allowed, a whole sun while awake, the sun with a dot when an agent waits for
+ * approval, and the banded setting sun during the final warning. Drawn in currentColor.
  */
-export function TrayGlyph({ platform, state }: { platform: Platform; state: 0 | 1 | 2 }) {
-  const id = useId();
-  const template = platform === "macos";
-  // The menu bar sits over a dark wallpaper, so the template glyph draws light.
-  const fill = template ? "#fff" : `url(#${id}-sun)`;
+export function Glyph({ state }: { state: GlyphState }) {
   return (
     <svg className="sc-glyph" viewBox="0 0 16 16" aria-hidden="true">
-      <defs>
-        <linearGradient id={`${id}-sun`} x1="0" y1="1.5" x2="0" y2="14.5" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#F6B25E" />
-          <stop offset="1" stopColor="#DE5F5A" />
-        </linearGradient>
-      </defs>
-      {state === 0 ? (
-        <circle cx="8" cy="8" r="5.75" fill="none" stroke={template ? "#fff" : "#5d5e6b"} strokeWidth="1.5" />
-      ) : state === 1 ? (
-        <circle cx="8" cy="8" r="6.5" fill={fill} />
+      {state === "normal" ? (
+        <circle cx="8" cy="8" r="5.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      ) : state === "awake" ? (
+        <circle cx="8" cy="8" r="6.5" fill="currentColor" />
+      ) : state === "attention" ? (
+        <>
+          <path fill="currentColor" d="M13.45 6.57A6.25 6.25 0 1 1 9.43 2.55A3.6 3.6 0 0 0 13.45 6.57Z" />
+          <circle cx="13" cy="3" r="2.1" fill="currentColor" />
+        </>
       ) : (
         <path
-          fill={fill}
+          fill="currentColor"
           d="M1.68 9.5A6.5 6.5 0 1 1 14.32 9.5Z M2 10.5L14 10.5A6.5 6.5 0 0 1 13.12 12L2.88 12A6.5 6.5 0 0 1 2 10.5Z M12.15 13A6.5 6.5 0 0 1 3.85 13Z"
         />
       )}
@@ -50,105 +47,6 @@ export function AppIcon({ platform, size }: { platform: Platform; size: number }
   const file = platform === "macos" ? "doze-icon-macos" : "doze-icon-windows";
   // eslint-disable-next-line @next/next/no-img-element -- recorded scenes, never shipped
   return <img src={`/brand/${file}${size <= 32 ? "-16-32" : ""}.svg`} width={size} height={size} alt="" />;
-}
-
-const MAC_ICONS: Record<string, ReactNode> = {
-  awake: <path d="M8 2.5v1.6M8 11.9v1.6M2.5 8h1.6M11.9 8h1.6M4.1 4.1l1.1 1.1M10.8 10.8l1.1 1.1M4.1 11.9l1.1-1.1M10.8 5.2l1.1-1.1M8 5.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2Z" />,
-  timer: <path d="M8 4.2a4.9 4.9 0 1 0 0 9.8 4.9 4.9 0 0 0 0-9.8ZM8 6.6v2.6l1.7 1.1M6.4 2h3.2" />,
-  quick: <path d="M3 5h6M12 5h1M3 11h1M7 11h6M10.5 3.5v3M5.5 9.5v3" />,
-  settings: <path d="M8 5.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4ZM8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2" />,
-  help: <path d="M8 2.2a5.8 5.8 0 1 0 0 11.6A5.8 5.8 0 0 0 8 2.2ZM6.3 6.4a1.8 1.8 0 1 1 2.6 1.6c-.6.3-.9.7-.9 1.3M8 11.3v.1" />,
-  quit: <path d="M8 2v5.5M4.6 4.2a5 5 0 1 0 6.8 0" />,
-  stop: <path d="M4.5 4.5h7v7h-7z" />,
-  add: <path d="M8 3.5v9M3.5 8h9" />,
-};
-const WIN_ICONS: Record<string, string> = {
-  awake: "",
-  timer: "",
-  quick: "",
-  settings: "",
-  help: "",
-  quit: "",
-  stop: "",
-  add: "",
-};
-
-export type MenuItem =
-  | { label: string; icon?: string; sub?: boolean; check?: boolean; disabled?: boolean }
-  | "-";
-
-const METRICS = {
-  macos: { pad: 5, item: 22, separator: 11 },
-  windows: { pad: 4, item: 28, separator: 9 },
-};
-
-export function menuHeight(platform: Platform, items: MenuItem[]) {
-  const m = METRICS[platform];
-  return items.reduce((sum, item) => sum + (item === "-" ? m.separator : m.item), m.pad * 2);
-}
-
-/** Vertical center of an item, measured from the top of its menu. */
-export function itemCenter(platform: Platform, items: MenuItem[], label: string) {
-  const m = METRICS[platform];
-  let y = m.pad;
-  for (const item of items) {
-    if (item !== "-" && item.label === label) return y + m.item / 2;
-    y += item === "-" ? m.separator : m.item;
-  }
-  return y;
-}
-
-/** The top edge a submenu uses so its first item lines up with its parent row. */
-export const submenuTop = (platform: Platform, items: MenuItem[], label: string, menuTop: number) =>
-  menuTop + itemCenter(platform, items, label) - METRICS[platform].item / 2 - METRICS[platform].pad;
-
-export function Menu({
-  platform,
-  items,
-  x,
-  y,
-  width,
-  active,
-  opacity = 1,
-}: {
-  platform: Platform;
-  items: MenuItem[];
-  x: number;
-  y: number;
-  width: number;
-  active?: string | null;
-  opacity?: number;
-}) {
-  if (opacity <= 0) return null;
-  return (
-    <div className="sc-menu" style={{ left: x, top: y, width, opacity }}>
-      {items.map((item, index) =>
-        item === "-" ? (
-          <div key={index} className="sc-separator" />
-        ) : (
-          <div
-            key={item.label}
-            className={`sc-item${item.disabled ? " disabled" : ""}${active === item.label ? " active" : ""}`}
-          >
-            <span className="sc-check">{item.check ? "✓" : ""}</span>
-            {item.icon ? (
-              platform === "macos" ? (
-                <svg className="sc-icon" viewBox="0 0 16 16" aria-hidden="true">
-                  {MAC_ICONS[item.icon]}
-                </svg>
-              ) : (
-                <span className="sc-icon">{WIN_ICONS[item.icon]}</span>
-              )
-            ) : (
-              <span className="sc-icon" />
-            )}
-            <span className="sc-label">{item.label}</span>
-            {item.sub ? <span className="sc-chevron">{platform === "macos" ? "›" : ""}</span> : null}
-          </div>
-        ),
-      )}
-    </div>
-  );
 }
 
 export function Cursor({ platform, x, y, down }: { platform: Platform; x: number; y: number; down?: boolean }) {
@@ -175,15 +73,18 @@ export function Cursor({ platform, x, y, down }: { platform: Platform; x: number
 export function Desktop({
   platform,
   children,
-  trayState = 0,
+  trayState = "normal",
   trayTitle,
+  trayOpen = false,
   frontApp = "Finder",
   dim = 0,
 }: {
   platform: Platform;
   children?: ReactNode;
-  trayState?: 0 | 1 | 2;
+  trayState?: GlyphState;
   trayTitle?: string | null;
+  /** Highlights the icon while its panel or flyout is open. */
+  trayOpen?: boolean;
   frontApp?: string;
   dim?: number;
 }) {
@@ -199,8 +100,8 @@ export function Desktop({
           <span>View</span>
           <span>Window</span>
           <span>Help</span>
-          <div className="sc-status" style={{ left: trayIcon("macos").x - 11 }}>
-            <TrayGlyph platform="macos" state={trayState} />
+          <div className={`sc-status${trayOpen ? " open" : ""}`} style={{ left: trayIcon("macos").x - 14 }}>
+            <Glyph state={trayState} />
             {trayTitle ? <span className="sc-title">{trayTitle}</span> : null}
           </div>
           <svg className="sc-sys wifi" viewBox="0 0 20 16" aria-hidden="true">
@@ -229,8 +130,8 @@ export function Desktop({
             ) : null}
           </div>
           <span className="sc-fluent sc-chevron-up">{""}</span>
-          <div className="sc-tray" style={{ left: trayIcon("windows").x - 14 }}>
-            <TrayGlyph platform="windows" state={trayState} />
+          <div className={`sc-tray${trayOpen ? " open" : ""}`} style={{ left: trayIcon("windows").x - 16 }}>
+            <Glyph state={trayState} />
           </div>
           <div className="sc-tray-sys">
             <span className="sc-fluent">{""}</span>
@@ -309,6 +210,7 @@ export function Countdown({
   y,
   remaining,
   action = "Sleep",
+  source,
   hint = "Cancel the action or snooze for 15 minutes.",
   active,
   opacity = 1,
@@ -319,6 +221,8 @@ export function Countdown({
   y: number;
   remaining: number;
   action?: string;
+  /** What started the warning, shown above the action on macOS. */
+  source?: string;
   hint?: string;
   active?: string | null;
   opacity?: number;
@@ -335,10 +239,12 @@ export function Countdown({
       {platform === "windows" ? <div className="sc-countdown-title">Doze · Countdown</div> : null}
       <div className="sc-countdown-body">
         {platform === "macos" ? (
-          <svg className="sc-countdown-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M14.5 15.5A7 7 0 0 1 7.6 5.2 7.5 7.5 0 1 0 17.8 15a7 7 0 0 1-3.3.5Z" />
-            <path d="M14 3.5h4l-4 4.5h4M19 9h2.6L19 12h2.6" />
-          </svg>
+          <>
+            <span className="sc-countdown-icon">
+              <Glyph state="countdown" />
+            </span>
+            {source ? <p className="sc-countdown-source">{source}</p> : null}
+          </>
         ) : null}
         <p className="sc-countdown-action">{action} in</p>
         <p className="sc-countdown-clock">{clock}</p>
