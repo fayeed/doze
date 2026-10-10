@@ -20,32 +20,16 @@ pub use macos::battery::processes;
 /// Battery level in percent and whether the computer runs on battery, if it has one.
 #[cfg(target_os = "macos")]
 pub use macos::battery::read as battery;
+/// Keeping a closed laptop awake while Doze holds it. Windows changes the power plan's
+/// lid-close action; macOS sets the power manager's clamshell override.
+#[cfg(target_os = "macos")]
+pub use macos::lid::{supported as lid_supported, Lid};
 #[cfg(windows)]
 pub use windows::battery::processes;
 #[cfg(windows)]
 pub use windows::battery::read as battery;
-/// Keeping a closed laptop awake. Windows changes the power plan's lid-close action while
-/// Doze holds the PC awake; macOS would need root, so it is unsupported there.
 #[cfg(windows)]
 pub use windows::lid::{supported as lid_supported, Lid};
-#[cfg(target_os = "macos")]
-pub struct Lid;
-#[cfg(target_os = "macos")]
-impl Lid {
-    pub fn new(_record: std::path::PathBuf) -> Self {
-        Self
-    }
-    pub fn set(&mut self, _hold: bool) -> Result<(), String> {
-        Ok(())
-    }
-    pub fn describe(&self) -> Option<String> {
-        None
-    }
-}
-#[cfg(target_os = "macos")]
-pub fn lid_supported() -> bool {
-    false
-}
 pub mod countdown;
 #[cfg(windows)]
 pub use windows::dialogs;

@@ -377,8 +377,8 @@ pub(super) fn worker(
                 .engine
                 .reset_transient("Power request failed · sessions cleared");
         }
-        // A closed lid sleeps the PC whatever power requests say, so Windows also changes the
-        // lid-close action, only while Doze keeps the PC awake.
+        // A closed lid sleeps the computer whatever power requests say, so Doze also overrides
+        // lid sleep, only while it keeps the computer awake.
         let hold_lid = snapshot.lid_supported
             && snapshot.settings.lid_closed_keep_awake
             && snapshot.engine.should_hold_awake();

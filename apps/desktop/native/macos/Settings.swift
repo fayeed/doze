@@ -88,8 +88,7 @@ enum SettingsCatalog {
             var awake = [
                 toggle(model, "Keep the display on too", "When off, the screen can sleep while your Mac stays awake.", key: "allowDisplaySleep", inverted: true),
             ]
-            // macOS keeps a closed MacBook awake only with root privileges, which Doze never
-            // uses, so the switch appears only where the engine reports support.
+            // Only MacBooks have a lid to keep open.
             if model.snapshot.bool("lidClosedSupported") {
                 awake.append(toggle(model, "Stay awake with the lid closed", "Only while Doze is keeping your Mac awake.", key: "lidClosedKeepAwake"))
             }
@@ -113,8 +112,8 @@ enum SettingsCatalog {
                     toggle(model, "Show agent count next to the icon", key: "menuBarAgentCount"),
                 ]),
                 SectionSpec(title: "While keeping awake",
-                            footer: model.snapshot.bool("lidClosedSupported") ? nil
-                                : "Keeping a closed MacBook awake needs administrator privileges on macOS, so Doze doesn't offer it.",
+                            footer: model.snapshot.bool("lidClosedSupported")
+                                ? "With the lid closed, keep your Mac on power and somewhere it can stay cool." : nil,
                             rows: awake),
             ]
 

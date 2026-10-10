@@ -353,7 +353,7 @@ fn base_json(snapshot: &Snapshot) -> Value {
         "actions": snapshot.actions,
         "audioSupported": snapshot.audio_supported,
         "startupSupported": snapshot.startup_supported,
-        // Windows laptops only: macOS needs root to keep a closed Mac awake.
+        // Laptops only: computers without a lid have nothing to keep open.
         "lidClosedSupported": snapshot.lid_supported,
         "status": crate::tray::status_text(snapshot),
         "statusDetail": crate::tray::status_detail(snapshot),
