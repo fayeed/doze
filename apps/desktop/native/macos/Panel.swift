@@ -347,6 +347,8 @@ struct PanelView: View {
                     Spacer()
                     Button("Connect…") { model.openSettings(.agents) }.controlSize(.small)
                 }
+                // Its caption wraps, so it needs more room than the single-line rows.
+                .padding(.vertical, 8)
             }
         } else {
             group {
