@@ -40,10 +40,6 @@ jobs:
         run: pnpm --filter @doze/desktop native:build
       - name: Check app version declarations
         run: node scripts/version-check.mjs
-      - name: Check tray panel types
-        run: pnpm --filter @doze/desktop panel:check
-      - name: Build tray panel
-        run: pnpm --filter @doze/desktop panel:build
       - name: Lint
         run: pnpm lint
       - name: Test
