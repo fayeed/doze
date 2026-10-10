@@ -309,6 +309,9 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
             settingsWindow = window
         }
         if let window = settingsWindow { activate(window) }
+        // The panel opens Settings itself; its streamed snapshots leave out the parts that
+        // read files, such as Connected agents, so ask for them.
+        send("refresh")
     }
 
     /// One warning window on the main display, plus one per other display when Show on every
