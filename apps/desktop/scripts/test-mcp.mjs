@@ -28,9 +28,12 @@ const build = spawnSync(
 );
 assert.equal(build.status, 0, "Build failed");
 const suffix = process.platform === "win32" ? ".exe" : "";
+// The build above goes to CARGO_TARGET_DIR when it is set, as the QA notes suggest while the
+// debug app runs; test those binaries, not older ones in the checkout's target folder.
 const binaries = path.join(
-  desktop,
-  "src-tauri/target",
+  process.env.CARGO_TARGET_DIR
+    ? path.resolve(process.env.CARGO_TARGET_DIR)
+    : path.join(desktop, "src-tauri/target"),
   release ? "release" : "debug",
 );
 const directory = await mkdtemp(path.join(tmpdir(), "doze-mcp-"));
