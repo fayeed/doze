@@ -46,6 +46,21 @@ The overridden display-off run ended in an unplanned 11-minute sleep: the script
 2-minute one. Afterwards Codex's `hooks.json` and backups were removed (Codex was not connected
 before), and Doze's settings, the Run key and the power plan values were restored.
 
+## Follow-up run (same evening)
+
+| Problem | Fix |
+| --- | --- |
+| After Esc or arrow keys in the flyout, every flyout opened by mouse showed a white outline on Keep awake; a tile clicked or Back pressed with the mouse kept one too | The flyout opens with keyboard focus only after Enter on the icon, which Windows sends as a click once it has moved the pointer to the icon's exact centre; rebuilding keeps each control's focus state |
+| The first flyout after Doze started had no focused control (4 of 4, before and after the fix above), so Space and the arrow keys did nothing until it was reopened | The first tile is focused once the new flyout has loaded |
+
+| Area | Evidence |
+| --- | --- |
+| Focus outline | No outline on mouse opens (also after Esc), after tile clicks or after Back by mouse; an outline after Esc back to the tiles, Win+B → Enter on the icon (pointer left at 1280,700, moved by Windows to 2322,1416), arrow keys and Space on a tile. The first open after a start focuses Keep awake, by mouse and by Enter |
+| Codex hook trust | Connect wrote five hooks. Codex 0.162's interactive screen (`--no-daemon`, which this VS Code copy of the CLI needs; run in a pseudo-console) opened on "Hooks need review · 5 hooks are new or changed"; Review hooks listed Doze's command, its source `~\.codex\hooks.json` and a 10 s timeout. `t` trusted one hook and trust all the rest, adding five `[hooks.state.'…\hooks.json:<event>:0:0'] trusted_hash` entries to `config.toml`. `codex exec` without `--dangerously-bypass-hook-trust` then asked to allow Codex with its prompt in the flyout; after Allow `doze.exe` was under DISPLAY and SYSTEM, and gone once Codex stopped. Remove left `{}` and a backup |
+
+Codex's `hooks.json`, its backup and the trust entries were removed again and Doze's settings
+restored.
+
 ## Still requiring verification
 
 - One companion crash (`0xc000027b` in `Microsoft.UI.Xaml.dll`) as a final warning appeared,
@@ -53,12 +68,14 @@ before), and Doze's settings, the Run key and the power plan values were restore
   it, and the engine discards the companion's stderr, where the cause is written.
 - A real lid close and battery behaviour (no lid or battery here). Narrator's speech itself; the
   names it reads were checked through UI Automation.
-- Trusting Codex's hooks with `/hooks`; the run bypassed trust. Codex hooks connected on Windows
-  before this run keep the quoted command and fail until removed and connected again.
+- Codex hooks connected on Windows before this run keep the quoted command and fail until
+  removed and connected again; their trust then has to be given again too.
+- Telling Enter on the icon from a click relies on where Windows puts the pointer; checked at
+  100% scaling with the icon in the taskbar, not in the hidden-icons area.
 - Not changed: at 200% and at the minimum size the collapsed Settings sidebar cuts the selected
-  page's icon in half and hides Advanced; after keyboard use the flyout opens with a square focus
-  rectangle on Keep awake; the tray tooltip covers the flyout while the pointer rests on the icon;
-  `format:check` flags six files that this `core.autocrlf=true` checkout writes with CRLF.
+  page's icon in half and hides Advanced; the tray tooltip covers the flyout while the pointer
+  rests on the icon; `format:check` flags six files that this `core.autocrlf=true` checkout
+  writes with CRLF.
 
 # macOS QA — 10 October 2026
 
