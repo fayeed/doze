@@ -121,7 +121,14 @@ public sealed partial class TrayFlyout : Window
         Slide(entering: true);
         // The click or key that opened the flyout went to the taskbar, so WinUI would show or
         // hide the focus outline by whatever input came before it.
-        FocusFirst(Flag(anchor?["keyboard"]) ? FocusState.Keyboard : FocusState.Pointer);
+        var focus = Flag(anchor?["keyboard"]) ? FocusState.Keyboard : FocusState.Pointer;
+        // Shown for the first time, the flyout loads its content only after this.
+        if (root.IsLoaded) FocusFirst(focus);
+        else
+        {
+            void Loaded(object sender, RoutedEventArgs args) { root.Loaded -= Loaded; FocusFirst(focus); }
+            root.Loaded += Loaded;
+        }
         clock.Start();
     }
 
