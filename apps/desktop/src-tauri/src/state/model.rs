@@ -102,6 +102,10 @@ pub enum Operation {
         remove: bool,
         token: String,
     },
+    /// A prompt that has the agent add Doze's hooks itself.
+    ConnectPrompt {
+        agent: String,
+    },
     /// A ready-to-paste MCP configuration for another client.
     CopyConfig,
     ExportDiagnostics {

@@ -394,6 +394,72 @@ pub fn apply(
     }))
 }
 
+/// "Use a prompt…" in Settings › Agents: text to paste into the agent so it adds the same
+/// entries Connect writes, for people who would rather the agent edit its own settings.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupPrompt {
+    pub agent: String,
+    pub name: String,
+    pub path: PathBuf,
+    pub prompt: String,
+}
+
+pub fn prompt(agent: &str, home: &Path, executable: &str) -> Result<SetupPrompt, String> {
+    let target = target(agent, home)?;
+    let name = super::AgentKind::parse(agent)?.label();
+    let file = target.file.display();
+    let mut text = format!(
+        "Set up Doze for {name} on this computer. Doze is a desktop app that keeps the computer awake while you work, and it learns when you start and stop from {}.\n\n",
+        if target.method == "Plugin" {
+            "a small plugin"
+        } else {
+            "hooks in your settings"
+        }
+    );
+    if agent == "opencode" {
+        text += &format!(
+            "Create {file} with exactly the content below. If the file already exists and is not Doze's plugin, stop and ask me first. Change nothing else.\n\n```js\n{}```\n\n",
+            opencode_plugin(executable)
+        );
+    } else {
+        let mut hooks = Map::new();
+        for event in target.events {
+            hooks.insert(
+                (*event).into(),
+                json!([{"hooks": [entry(agent, command(executable, agent, event))]}]),
+            );
+        }
+        let snippet =
+            serde_json::to_string_pretty(&json!({ "hooks": hooks })).map_err(|e| e.to_string())?;
+        text += &format!(
+            "Edit {file} (create it containing {{}} if it doesn't exist):\n\
+             1. First copy it to {file}.doze-backup-<date and time>, so it can be restored.\n\
+             2. Under \"hooks\", append each entry below to that event's list. Keep every existing setting and hook exactly as it is. Skip an event whose list already has a command containing \"hook {agent} \".\n\
+             3. Keep the file valid JSON, without comments.\n\n\
+             ```json\n{snippet}\n```\n\n\
+             Change nothing else, then show me what you added.\n"
+        );
+    }
+    text += match agent {
+        "claude-code" => {
+            "Claude Code loads hooks when a session starts, so remind me to start a new session."
+        }
+        "codex" => {
+            "Codex runs new hooks only after I trust them, so remind me to run /hooks and trust Doze's entries."
+        }
+        "gemini-cli" => "Gemini CLI loads hooks when it starts, so remind me to restart it.",
+        _ => "OpenCode loads plugins when it starts, so remind me to restart it.",
+    };
+    text.push('\n');
+    Ok(SetupPrompt {
+        agent: agent.into(),
+        name,
+        path: target.file,
+        prompt: text,
+    })
+}
+
 fn backup_path(path: &Path, now: std::time::SystemTime) -> PathBuf {
     let seconds = now
         .duration_since(std::time::UNIX_EPOCH)
@@ -553,6 +619,41 @@ mod tests {
         let change = preview("claude-code", true, &home, EXE).unwrap();
         apply("claude-code", true, &change.token, &home, EXE).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn the_setup_prompt_asks_for_exactly_what_connect_writes() {
+        let home = home();
+        for agent in AGENTS {
+            let setup = prompt(agent, &home, EXE).unwrap();
+            assert!(setup.prompt.contains(&setup.path.display().to_string()));
+            assert!(setup.prompt.contains(EXE));
+            if agent == "opencode" {
+                assert!(setup.prompt.contains(&opencode_plugin(EXE)));
+                continue;
+            }
+            // The prompt's JSON block holds the entries Connect adds, event for event.
+            let block = setup.prompt.split("```json\n").nth(1).unwrap();
+            let snippet: Value =
+                serde_json::from_str(block.split("\n```").next().unwrap()).unwrap();
+            let target = target(agent, &home).unwrap();
+            assert_eq!(
+                snippet["hooks"].as_object().unwrap().len(),
+                target.events.len()
+            );
+            for event in target.events {
+                assert_eq!(
+                    snippet["hooks"][*event][0]["hooks"][0],
+                    entry(agent, command(EXE, agent, event))
+                );
+            }
+            assert!(connected_in(&snippet, agent), "Doze recognises the entries");
+            assert!(setup
+                .prompt
+                .contains("Keep every existing setting and hook"));
+        }
+        assert!(prompt("cursor", &home, EXE).is_err());
         std::fs::remove_dir_all(&home).unwrap();
     }
 

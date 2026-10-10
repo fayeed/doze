@@ -164,6 +164,11 @@ enum Verification {
         model.receivedAt = Date()
     }
 
+    static let samplePrompt: JSON = [
+        "agent": "claude-code", "name": "Claude Code", "path": "/Users/me/.claude/settings.json",
+        "prompt": "Set up Doze for Claude Code on this computer. Doze is a desktop app that keeps the computer awake while you work, and it learns when you start and stop from hooks in your settings.\n\nEdit /Users/me/.claude/settings.json (create it containing {} if it doesn't exist):\n1. First copy it to /Users/me/.claude/settings.json.doze-backup-<date and time>, so it can be restored.\n2. Under \"hooks\", append each entry below to that event's list.\n\n```json\n{\n  \"hooks\": {\n    \"Stop\": [\n      {\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"\\\"/Applications/Doze.app/Contents/MacOS/doze\\\" hook claude-code Stop\",\n            \"timeout\": 10\n          }\n        ]\n      }\n    ]\n  }\n}\n```\n",
+    ]
+
     private static func failure(_ message: String) -> NSError {
         NSError(domain: "Doze.NativeUI", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
@@ -214,6 +219,17 @@ enum Verification {
         guard !general.contains("Stay awake with the lid closed") else { throw failure("The lid switch is offered without support.") }
         let about = SettingsCatalog.rows(for: .about, model: model).map(\.title) + (model.snapshot.objects("links").compactMap { $0.string("title") })
         guard !about.contains(where: { $0.contains("GitHub") || $0.contains("Source") }) else { throw failure("About links to source code.") }
+        // Use a Prompt… shows the engine's prompt in a sheet to copy.
+        model.receive(["type": "state", "command": "connect-prompt", "result": samplePrompt])
+        guard let setup = model.setupPrompt, setup.name == "Claude Code", setup.prompt.contains("hook claude-code Stop") else {
+            throw failure("Use a Prompt… did not open its sheet.")
+        }
+        let sheet = NSHostingView(rootView: PromptSheet(model: model, setup: setup))
+        sheet.layoutSubtreeIfNeeded()
+        guard abs(sheet.fittingSize.width - 560) < 1, sheet.fittingSize.height > 300 else {
+            throw failure("The prompt sheet did not lay out (\(sheet.fittingSize)).")
+        }
+        model.setupPrompt = nil
         // Preview buttons must never submit engine commands.
         model.receive(["type": "preview", "action": "Sleep"])
         guard model.warningVisible, model.preview else { throw failure("Preview did not show.") }
@@ -275,6 +291,8 @@ enum Verification {
                 try capture(SettingsView(model: model), size: NSSize(width: 940, height: 720),
                             name: "settings-\(page.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))", appearance: appearance)
             }
+            try capture(PromptSheet(model: model, setup: SetupPrompt(samplePrompt)), size: NSSize(width: 560, height: 470),
+                        name: "agents-prompt", appearance: appearance)
             for (isPreview, name) in [(true, "countdown-preview"), (false, "countdown")] {
                 model.preview = isPreview
                 model.warningAction = "Sleep"

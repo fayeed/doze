@@ -17,6 +17,7 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     @Published var revealed: String?
     @Published var notice = ""
     @Published var pendingChange: PendingChange?
+    @Published var setupPrompt: SetupPrompt?
     @Published var confirmReset = false
     @Published var showAssertions = false
     @Published var appIcon: NSImage?
@@ -189,12 +190,20 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
             pendingChange = PendingChange(result)
         case "connect-apply":
             notice = result.string("message") ?? ""
+        case "connect-prompt":
+            setupPrompt = SetupPrompt(result)
         case "copy-config":
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(result.string("config") ?? "", forType: .string)
             notice = "MCP config copied. Paste it into your MCP client's settings."
         default: break
         }
+    }
+
+    func copySetupPrompt(_ setup: SetupPrompt) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(setup.prompt, forType: .string)
+        notice = "Prompt copied. Paste it into \(setup.name); it shows as Connected here once the change is made."
     }
 
     // MARK: Search
@@ -487,7 +496,7 @@ enum DozeNativeUI {
         if CommandLine.arguments.contains("--verify-ui") {
             do {
                 try Verification.verify(ui)
-                print("Verified: the menu bar panel in its idle, working and countdown states and its Countdown, Quick Settings and Help & About pages, nine Settings pages in light and dark, search by setting, and preview snooze.")
+                print("Verified: the menu bar panel in its idle, working and countdown states and its Countdown, Quick Settings and Help & About pages, nine Settings pages in light and dark, search by setting, the setup prompt sheet, and preview snooze.")
             } catch {
                 FileHandle.standardError.write(Data("\(error)\n".utf8))
                 exit(1)

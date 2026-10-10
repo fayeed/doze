@@ -199,6 +199,12 @@ pub(super) fn apply(
             snapshot.engine.message = Some(note.clone());
             snapshot.result = Some(serde_json::json!({ "message": note }));
         }
+        Operation::ConnectPrompt { agent } => {
+            let home = crate::agents::connect::home()?;
+            let executable = crate::agents::connect::executable();
+            let setup = crate::agents::connect::prompt(&agent, &home, &executable)?;
+            snapshot.result = Some(serde_json::json!(setup));
+        }
         Operation::CopyConfig => {
             let mut settings = snapshot.settings.clone();
             crate::mcp::tools::connect(&mut settings, "Generic MCP client")?;

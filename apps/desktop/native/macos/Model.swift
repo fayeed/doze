@@ -174,6 +174,21 @@ struct PendingChange: Identifiable {
     }
 }
 
+/// "Use a prompt…": text for the agent, so it adds Doze's hooks itself.
+struct SetupPrompt: Identifiable {
+    let id = UUID()
+    let agent: String
+    let name: String
+    let path: String
+    let prompt: String
+    init(_ json: JSON) {
+        agent = json.string("agent") ?? ""
+        name = json.string("name") ?? agentName(agent)
+        path = json.string("path") ?? ""
+        prompt = json.string("prompt") ?? ""
+    }
+}
+
 func agentName(_ id: String) -> String {
     switch id {
     case "claude-code": return "Claude Code"

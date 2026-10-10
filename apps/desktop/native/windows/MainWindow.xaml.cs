@@ -259,6 +259,12 @@ public sealed partial class MainWindow : Window
             throw new InvalidOperationException("Reset does not ask for confirmation.");
         if (ConnectDialog(SampleChange()).PrimaryButtonText != "Connect")
             throw new InvalidOperationException("Connect does not show the change for confirmation.");
+        SelectPage("Agents");
+        // Only agents that are not connected yet offer a prompt; the sample connects all but Gemini CLI.
+        if (!Shows("Connect Gemini CLI with a prompt") || Shows("Connect Claude Code with a prompt"))
+            throw new InvalidOperationException("Agents does not offer Use a prompt… for exactly the agents not connected.");
+        if (PromptDialog(SamplePrompt()).PrimaryButtonText != "Copy prompt")
+            throw new InvalidOperationException("Use a prompt… does not show the prompt to copy.");
     }
 
     internal JsonObject Snapshot => snapshot;
@@ -284,6 +290,15 @@ public sealed partial class MainWindow : Window
     {
         ["agent"] = "claude-code", ["remove"] = false, ["path"] = @"C:\Users\example\.claude\settings.json",
         ["diff"] = "  {\n+   \"hooks\": {\n+     \"Stop\": []\n+   }\n  }\n", ["token"] = "0", ["note"] = null
+    };
+
+    private static JsonObject SamplePrompt() => new()
+    {
+        ["agent"] = "claude-code", ["name"] = "Claude Code", ["path"] = @"C:\Users\example\.claude\settings.json",
+        ["prompt"] = "Set up Doze for Claude Code on this computer. Doze is a desktop app that keeps the computer awake while you work, and it learns when you start and stop from hooks in your settings.\n\n"
+            + "Edit C:\\Users\\example\\.claude\\settings.json (create it containing {} if it doesn't exist):\n"
+            + "1. First copy it to C:\\Users\\example\\.claude\\settings.json.doze-backup-<date and time>, so it can be restored.\n"
+            + "2. Under \"hooks\", append each entry below to that event's list.\n\n```json\n{\n  \"hooks\": {\n    \"Stop\": [ { \"hooks\": [ { \"type\": \"command\", \"command\": \"\\\"C:/Program Files/Doze/doze-cli.exe\\\" hook claude-code Stop\", \"timeout\": 10 } ] } ]\n  }\n}\n```\n"
     };
 
     private bool Shows(string name) => Descendants(Cards).OfType<FrameworkElement>().Any(element =>
@@ -396,6 +411,7 @@ public sealed partial class MainWindow : Window
                         if (name == "Overview" && label == "") await RenderSessionsAsync(directory, file);
                         if (label == "" && name == "Advanced") await RenderDialogAsync(ResetDialog(), theme, Path.Combine(directory, $"Advanced-Reset-{theme}.png"));
                         if (label == "" && name == "Agents") await RenderDialogAsync(ConnectDialog(SampleChange()), theme, Path.Combine(directory, $"Agents-Connect-{theme}.png"));
+                        if (label == "" && name == "Agents") await RenderDialogAsync(PromptDialog(SamplePrompt()), theme, Path.Combine(directory, $"Agents-Prompt-{theme}.png"));
                     }
                 }
             }

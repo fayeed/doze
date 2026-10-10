@@ -140,6 +140,9 @@ public sealed partial class MainWindow
             var connected = Flag(link["connected"]);
             var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
             controls.Children.Add(connected ? Positive("Connected") : Muted(Flag(link["installed"]) ? "Not set up" : "Not installed"));
+            if (!connected)
+                controls.Children.Add(ActionButton("Use a prompt…",
+                    () => Send("connect-prompt", new JsonObject { ["agent"] = id }), $"Connect {name} with a prompt"));
             controls.Children.Add(ActionButton(connected ? "Remove" : "Connect",
                 () => Send("connect-preview", new JsonObject { ["agent"] = id, ["remove"] = connected }),
                 (connected ? "Remove " : "Connect ") + name, accent: !connected));
@@ -172,7 +175,7 @@ public sealed partial class MainWindow
                     ActionButton("Forget", () => Send("agent-permission", new JsonObject { ["id"] = Text(client["id"]) }), "Forget " + name));
             }
         }
-        Footer("Connect adds Doze's hooks to the tool's own settings file after showing you the change, keeps a timestamped backup beside it, and never touches other entries. Remove takes out exactly what Connect added.");
+        Footer("Connect adds Doze's hooks to the tool's own settings file after showing you the change, keeps a timestamped backup beside it, and never touches other entries. Remove takes out exactly what Connect added. Use a prompt… gives you text to paste into the agent instead, so it makes the same change itself.");
     }
 
     private static string AgentName(string id) => id switch
@@ -356,7 +359,33 @@ public sealed partial class MainWindow
         };
     }
 
-    /// Data returned by a command: a change to confirm, a config to copy, or a message.
+    /// The prompt that has an agent make Connect's change itself, to copy into the agent.
+    private ContentDialog PromptDialog(JsonObject setup)
+    {
+        var agent = Text(setup["name"]) ?? AgentName(Text(setup["agent"]) ?? "");
+        var body = new StackPanel { Spacing = 12, MaxWidth = 560 };
+        body.Children.Add(new TextBlock
+        {
+            Text = $"Paste this into {agent}. It makes the same change Connect would, backs up the file first and leaves everything else as it is. {agent} shows as Connected here once it's done.",
+            TextWrapping = TextWrapping.Wrap
+        });
+        body.Children.Add(new TextBlock { Text = Text(setup["path"]) ?? "", Style = Style("CodeTextStyle"), IsTextSelectionEnabled = true });
+        var prompt = new TextBlock { Text = Text(setup["prompt"]) ?? "", Style = Style("CodeTextStyle"), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+        AutomationProperties.SetName(prompt, $"Prompt for {agent}");
+        body.Children.Add(new ScrollViewer
+        {
+            Content = prompt, MaxHeight = 280, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(0, 0, 12, 12)
+        });
+        return new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot, RequestedTheme = Root.ActualTheme,
+            Title = $"Connect {agent} with a prompt",
+            Content = body, PrimaryButtonText = "Copy prompt", CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Primary
+        };
+    }
+
+    /// Data returned by a command: a change to confirm, a prompt or config to copy, or a message.
     private async void HandleResult(string? command, JsonObject result)
     {
         try
@@ -369,6 +398,16 @@ public sealed partial class MainWindow
                     break;
                 case "connect-apply":
                     Notify("Done", Text(result["message"]) ?? "", InfoBarSeverity.Success);
+                    break;
+                case "connect-prompt":
+                    if (await PromptDialog(result).ShowAsync() == ContentDialogResult.Primary)
+                    {
+                        var prompt = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                        prompt.SetText(Text(result["prompt"]) ?? "");
+                        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(prompt);
+                        var agent = Text(result["name"]) ?? "your agent";
+                        Notify("Prompt copied", $"Paste it into {agent}. It shows as Connected here once the change is made.", InfoBarSeverity.Success);
+                    }
                     break;
                 case "copy-config":
                     var data = new Windows.ApplicationModel.DataTransfer.DataPackage();

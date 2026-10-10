@@ -311,6 +311,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle(model.page?.rawValue ?? "Doze")
+            .sheet(item: $model.setupPrompt) { setup in PromptSheet(model: model, setup: setup) }
         }
         .sheet(item: $model.pendingChange) { change in ConnectSheet(model: model, change: change) }
         .confirmationDialog("Reset all settings to their defaults?", isPresented: $model.confirmReset) {
@@ -715,7 +716,7 @@ enum AgentsPage {
                 RowSpec(title: "If an agent stops checking in", detail: "Doze stays awake, then lets go without acting.", control: .value("Up to 30 minutes")),
             ]),
             SectionSpec(title: "Connected agents",
-                        footer: "Connect adds Doze's hooks to the tool's own settings after showing you the change, keeps a timestamped backup beside the file and never touches other entries. Remove takes out exactly what Connect added.",
+                        footer: "Connect adds Doze's hooks to the tool's own settings after showing you the change, keeps a timestamped backup beside the file and never touches other entries. Remove takes out exactly what Connect added. Use a Prompt… gives you text to paste into the agent instead, so it makes the same change itself.",
                         rows: connected),
         ]
         let trusted = model.setting("agents.trusted") as? [String] ?? []
@@ -767,6 +768,9 @@ struct AgentLinkRow: View {
                     .accessibilityLabel("Remove \(link.name)")
             } else {
                 Text(link.installed ? "Not set up" : "Not installed").foregroundStyle(.secondary)
+                Button("Use a Prompt…") { model.send("connect-prompt", ["agent": link.id]) }
+                    .help("Copy a prompt that has \(link.name) add Doze's hooks itself")
+                    .accessibilityLabel("Connect \(link.name) with a prompt")
                 Button("Connect") { model.send("connect-preview", ["agent": link.id, "remove": false]) }
                     .buttonStyle(.borderedProminent)
                     .accessibilityLabel("Connect \(link.name)")
@@ -801,6 +805,37 @@ struct ConnectSheet: View {
                 Button(change.remove ? "Remove" : "Connect") {
                     model.send("connect-apply", ["agent": change.agent, "remove": change.remove, "token": change.token])
                     model.pendingChange = nil
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 560)
+    }
+}
+
+/// The prompt that has an agent make Connect's change itself, to copy into the agent.
+struct PromptSheet: View {
+    @ObservedObject var model: NativeUI
+    let setup: SetupPrompt
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Connect \(setup.name) with a prompt").font(.title2.bold())
+            Text("Paste this into \(setup.name). It makes the same change Connect would, backs up the file first and leaves everything else as it is. \(setup.name) shows as Connected here once it's done.")
+                .fixedSize(horizontal: false, vertical: true)
+            Text(setup.path).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+            ScrollView {
+                Text(setup.prompt).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: 260)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            HStack {
+                Spacer()
+                Button("Close") { model.setupPrompt = nil }.keyboardShortcut(.cancelAction)
+                Button("Copy Prompt") {
+                    model.copySetupPrompt(setup)
+                    model.setupPrompt = nil
                 }
                 .keyboardShortcut(.defaultAction)
             }

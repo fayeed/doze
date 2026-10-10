@@ -89,6 +89,9 @@ impl UiRequest {
                 remove: self.remove.unwrap_or(false),
                 token: self.token.ok_or("Review the change first.")?,
             },
+            "connect-prompt" => Operation::ConnectPrompt {
+                agent: self.agent.ok_or("Agent missing.")?,
+            },
             "copy-config" => Operation::CopyConfig,
             "export-diagnostics" => Operation::ExportDiagnostics {
                 path: self.path.ok_or("Choose where to save the report.")?,
