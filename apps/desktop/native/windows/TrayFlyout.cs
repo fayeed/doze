@@ -406,12 +406,18 @@ public sealed partial class TrayFlyout : Window
         var shell = new Grid { Height = 48 };
         shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         if (page is not null) shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
-        var main = new ToggleButton
-        {
-            IsChecked = on, IsEnabled = enabled, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
-            Content = new FontIcon { Glyph = glyph, FontSize = 16 },
-            CornerRadius = page is null ? new CornerRadius(4) : new CornerRadius(4, 0, 0, 4), Padding = new Thickness(0)
-        };
+        // Every update builds the tiles anew. A new toggle eases from its off colour into the
+        // checked one, so an active tile starts with the checked colour instead of flashing.
+        var main = on
+            ? (ToggleButton)XamlReader.Load("<ToggleButton xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Background=\"{ThemeResource ToggleButtonBackgroundChecked}\" />")
+            : new ToggleButton();
+        main.IsChecked = on;
+        main.IsEnabled = enabled;
+        main.HorizontalAlignment = HorizontalAlignment.Stretch;
+        main.VerticalAlignment = VerticalAlignment.Stretch;
+        main.Content = new FontIcon { Glyph = glyph, FontSize = 16 };
+        main.CornerRadius = page is null ? new CornerRadius(4) : new CornerRadius(4, 0, 0, 4);
+        main.Padding = new Thickness(0);
         AutomationProperties.SetName(main, name);
         if (caption is not null) AutomationProperties.SetHelpText(main, caption);
         main.Click += async (_, _) =>
