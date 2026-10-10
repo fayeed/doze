@@ -831,10 +831,15 @@ fn update_agents(app: &tauri::AppHandle, menu: &NativeMenu, snapshot: &Snapshot)
         for item in menu.agents.items()? {
             menu.agents.remove(&item)?;
         }
+        // The same switch as in Settings: it covers hooks as well as MCP.
         menu.agents.append(&CheckMenuItem::with_id(
             app,
             "agents:enable",
-            "Enable MCP",
+            if cfg!(target_os = "macos") {
+                "Let agents keep your Mac awake"
+            } else {
+                "Let agents keep the PC awake"
+            },
             true,
             snapshot.settings.agents.enabled,
             None::<&str>,
