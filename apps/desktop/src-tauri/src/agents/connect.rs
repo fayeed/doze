@@ -110,11 +110,15 @@ fn ours(command: &str, agent: &str) -> bool {
     command.contains(&format!(" hook {agent} ")) && command.to_ascii_lowercase().contains("doze")
 }
 
-fn entry(agent: &str, command: String) -> Value {
+fn entry(agent: &str, event: &str, command: String) -> Value {
     match agent {
         // Gemini CLI timeouts are milliseconds and entries carry a name.
         "gemini-cli" => {
             json!({"name": "doze", "type": "command", "command": command, "timeout": 5000})
+        }
+        // Codex caps SessionEnd hooks at 3 seconds and warns about longer ones in every session.
+        "codex" if event == "SessionEnd" => {
+            json!({"type": "command", "command": command, "timeout": 3})
         }
         _ => json!({"type": "command", "command": command, "timeout": 10}),
     }
@@ -322,7 +326,9 @@ pub fn preview(agent: &str, remove: bool, home: &Path, executable: &str) -> Resu
                 groups
                     .as_array_mut()
                     .ok_or(format!("The file's \"{event}\" hooks are not a list."))?
-                    .push(json!({"hooks": [entry(agent, command(executable, agent, event))]}));
+                    .push(
+                        json!({"hooks": [entry(agent, event, command(executable, agent, event))]}),
+                    );
             }
         }
         let mut text = serde_json::to_string_pretty(&document).map_err(|e| e.to_string())?;
@@ -427,7 +433,7 @@ pub fn prompt(agent: &str, home: &Path, executable: &str) -> Result<SetupPrompt,
         for event in target.events {
             hooks.insert(
                 (*event).into(),
-                json!([{"hooks": [entry(agent, command(executable, agent, event))]}]),
+                json!([{"hooks": [entry(agent, event, command(executable, agent, event))]}]),
             );
         }
         let snippet =
@@ -645,7 +651,7 @@ mod tests {
             for event in target.events {
                 assert_eq!(
                     snippet["hooks"][*event][0]["hooks"][0],
-                    entry(agent, command(EXE, agent, event))
+                    entry(agent, event, command(EXE, agent, event))
                 );
             }
             assert!(connected_in(&snippet, agent), "Doze recognises the entries");
@@ -669,6 +675,20 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "{\"theme\":\"dark\"}"
         );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn codex_session_end_stays_within_its_three_second_limit() {
+        let home = home();
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        let change = preview("codex", false, &home, EXE).unwrap();
+        apply("codex", false, &change.token, &home, EXE).unwrap();
+        let hooks: Value =
+            serde_json::from_slice(&std::fs::read(home.join(".codex/hooks.json")).unwrap())
+                .unwrap();
+        assert_eq!(hooks["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"], 3);
+        assert_eq!(hooks["hooks"]["Stop"][0]["hooks"][0]["timeout"], 10);
         std::fs::remove_dir_all(&home).unwrap();
     }
 
