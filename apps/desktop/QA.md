@@ -30,19 +30,41 @@ mouse events and Accessibility, and checked against screen captures, `pmset -g a
 | MCP completion | A pre-approved client finished with `display_off`: "All agents finished" ran its 5-minute warning (agents never get less), then the display turned off at 08:51:50 as Doze released its assertion |
 | Hooks | `doze hook claude-code UserPromptSubmit` asked for approval ("doze · QA: run the test suite"); after Allow it showed Working; `Stop` released the Mac |
 | CLI | `doze run` held the Mac while the command ran, released it after, and returned the command's status (0, and 3 for a failing command) |
-| Display off | With an agent working, `pmset displaysleepnow` kept the display off for 2 minutes (08:40:38 to 08:42:40, no input): heartbeats continued every 20.1 s and nothing slept. Repeated for 90 s with the display allowed to sleep |
+| Display off | With an agent working, `pmset displaysleepnow` kept the display off for 2 minutes (08:40:38 to 08:42:40, no input): heartbeats continued every 20.1 s and nothing slept. Repeated for 90 s with the display allowed to sleep. The follow-up run showed this passed only because the Simulator also held an idle-sleep assertion |
 | Lid closed | With an agent working, the lid was closed from 08:55:45 to 09:00:36: no Clamshell Sleep, sleep or wake in `pmset -g log`, heartbeats every 20.1 s throughout. Finishing the session cleared the override and its record file |
 | Use a prompt | The sheet showed Claude Code's prompt for the real settings path; Copy Prompt put it on the clipboard. An agent given the prompt for a scratch settings file backed it up, kept every other entry and added exactly Connect's entries. Cancelling Connect's preview left `~/.claude/settings.json` unchanged |
 | Checks | 116 Rust tests, 6 Node lease tests, MCP SDK integration, clippy with warnings denied, the universal companion build and `--verify-ui` (now covering the panel pages and the prompt sheet) |
 
+## Follow-up run on battery (same day, with the user present)
+
+Transporter and the Simulator were quit first, so `pmset -g assertions` listed only powerd's
+own display assertion. On battery this Mac sleeps 1 minute after the display turns off.
+
+| Problem | Fix |
+| --- | --- |
+| With an agent working and the display turned off, the Mac idle-slept 65 s later (`Idle Sleep` at 09:52:47). Doze held only `PreventUserIdleDisplaySleep`, which stops idle sleep only while the display is on | Doze always holds `PreventUserIdleSystemSleep` while it keeps the Mac awake, plus the display assertion while the display should stay on, as Windows pairs `ES_SYSTEM_REQUIRED` with `ES_DISPLAY_REQUIRED` |
+| Closing the lid on that sleeping Mac woke it, then `Clamshell Sleep` followed 11 s later. powerd had cleared the override on wake, and Doze refreshed it only on engine checks, on a clock that stops during sleep | A thread sets the override again every 2 s while Doze holds the Mac |
+| Codex warned "clamping SessionEnd hook timeout to 3s" in every session | Connect and the setup prompt write 3 s for Codex's SessionEnd |
+| The README still said macOS could not keep a closed MacBook awake | It describes both platforms |
+
+| Area | Evidence |
+| --- | --- |
+| Display off on battery | Fixed build, agent working: `pmset displaysleepnow` at 10:06:16, then no input for 4.5 minutes. No sleep in `pmset -g log`, heartbeats every 20.1 s, both assertions held |
+| Lid closed on battery | Straight after, the lid was closed from about 10:10:45 to 10:14:46: no Clamshell Sleep, sleep or wake, heartbeats every 20.1 s throughout. Finishing released both assertions and removed `lid-restore.json` |
+| Codex prompt | Codex 0.162 (`codex exec`) followed the real setup prompt: it backed up a `{}` file, wrote `~/.codex/hooks.json` identical to the prompt's entries, left `config.toml` byte-for-byte unchanged and reminded the user to trust the hooks. Doze then listed Codex as connected |
+| Codex hooks | With those hooks (`--dangerously-bypass-hook-trust`, workspace-write sandbox) Codex ran SessionStart, UserPromptSubmit, PostToolUse, Stop and SessionEnd. The panel showed Codex's approval card; after Allow the row read Working and Doze held both assertions from 10:31:10 until 10:31:53, as Codex stopped. A 3 s SessionEnd timeout ran without the warning |
+| Checks | 118 Rust tests, the ignored lid hardware test, and clippy with warnings denied |
+
+Afterwards `~/.codex/hooks.json` and its backup were moved out (Codex was not connected
+before), and Doze's trusted agents were reset to none.
+
 ## Still requiring verification
 
-- Other apps held idle-sleep assertions during the display-off test (a Transporter upload and
-  coreaudiod for simulator audio), so it shows Doze's assertion held and the agent kept
-  running, not that Doze alone prevented idle sleep. Assertions never stop lid-close sleep, so
-  the lid test is unaffected.
-- Lid closed on battery, and with an external display attached (where Doze leaves the override
-  to powerd), were not tested.
+- Lid closed with an external display attached (where Doze leaves the override to powerd), and
+  unplugging or plugging in power while the lid is closed, were not tested.
+- Trusting Codex's hooks with `/hooks` (or in the ChatGPT app) was not exercised; the run
+  bypassed trust. Codex hooks connected before this change keep the 10 s SessionEnd timeout,
+  and its warning, until they are disconnected and connected again.
 - The Windows "Use a prompt…" button, dialog and verification were written on a Mac without the
   .NET SDK; run `scripts/test-native.ps1` on Windows. Windows-target clippy also needs Windows
   (`llvm-rc`).
