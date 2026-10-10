@@ -226,10 +226,13 @@ pub fn bridge() -> Result<(), String> {
     Ok(())
 }
 
-/// Sessions this bridge's agent created or used, with when each is next renewed and the
-/// renewal (`last_heartbeat`) that time counts from.
+/// A session's renewal interval, when it is next renewed, and the renewal (`last_heartbeat`)
+/// that time counts from.
+type Renewal = (Duration, Instant, Option<u64>);
+
+/// Sessions this bridge's agent created or used.
 #[derive(Clone, Default)]
-struct Sessions(Arc<Mutex<HashMap<String, (Duration, Instant, Option<u64>)>>>);
+struct Sessions(Arc<Mutex<HashMap<String, Renewal>>>);
 impl Sessions {
     /// Track sessions that are still open, and forget ended ones.
     fn observe(&self, session: &Value) {
