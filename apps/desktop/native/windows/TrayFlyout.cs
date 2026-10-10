@@ -81,6 +81,8 @@ public sealed partial class TrayFlyout : Window
             else Dismiss();
         };
         root.KeyboardAccelerators.Add(escape);
+        // WinUI otherwise shows "Esc" as a tooltip wherever the pointer rests on the flyout.
+        root.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
         clock.Tick += (_, _) => Tick();
         system.ColorValuesChanged += (_, _) => DispatcherQueue.TryEnqueue(() => ApplyTheme(theme));
         AppWindow.Closing += (_, args) => { args.Cancel = !verification; Dismiss(); };
