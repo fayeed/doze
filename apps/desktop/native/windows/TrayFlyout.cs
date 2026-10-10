@@ -119,7 +119,9 @@ public sealed partial class TrayFlyout : Window
         _ = SetForegroundWindow(Handle);
         WatchClicks();
         Slide(entering: true);
-        FocusFirst();
+        // The click or key that opened the flyout went to the taskbar, so WinUI would show or
+        // hide the focus outline by whatever input came before it.
+        FocusFirst(Flag(anchor?["keyboard"]) ? FocusState.Keyboard : FocusState.Pointer);
         clock.Start();
     }
 
@@ -138,10 +140,10 @@ public sealed partial class TrayFlyout : Window
         if (!rebuild) return;
         if (Shape(next) != shape)
         {
-            var focus = FocusedName();
+            var (name, state) = Focused();
             Render();
             Resize();
-            Refocus(focus);
+            Refocus(name, state);
         }
         else Tick();
     }
@@ -229,7 +231,7 @@ public sealed partial class TrayFlyout : Window
         subpage = page;
         Render();
         Resize();
-        if (page == "") Refocus("More " + PageTitle(from));
+        if (page == "") Refocus("More " + PageTitle(from), FocusState.Programmatic);
         else FocusFirst();
     }
 
@@ -916,27 +918,30 @@ public sealed partial class TrayFlyout : Window
 
     // ---------- Window ----------
 
-    private string? FocusedName()
+    private (string? Name, FocusState State) Focused()
     {
-        if (root.XamlRoot is null || FocusManager.GetFocusedElement(root.XamlRoot) is not DependencyObject focused) return null;
-        return AutomationProperties.GetName(focused);
+        if (root.XamlRoot is null || FocusManager.GetFocusedElement(root.XamlRoot) is not UIElement focused) return (null, FocusState.Programmatic);
+        return (AutomationProperties.GetName(focused), focused.FocusState);
     }
 
-    private void Refocus(string? name)
+    /// Moves focus to the rebuilt control of that name. Focus that came from a click keeps its
+    /// outline hidden; Programmatic shows it only if the last input was the keyboard.
+    private void Refocus(string? name, FocusState state)
     {
+        if (state == FocusState.Unfocused) state = FocusState.Programmatic;
         root.UpdateLayout();
         var target = name is null ? null : MainWindow.Descendants(root).OfType<Control>().FirstOrDefault(c => AutomationProperties.GetName(c) == name && c.IsEnabled);
-        if (target is not null) target.Focus(FocusState.Keyboard);
-        else FocusFirst();
+        if (target is not null) target.Focus(state);
+        else FocusFirst(state);
     }
 
-    private void FocusFirst()
+    private void FocusFirst(FocusState state = FocusState.Programmatic)
     {
         root.UpdateLayout();
         var first = subpage == ""
             ? MainWindow.Descendants(root).OfType<ToggleButton>().FirstOrDefault(c => c.IsEnabled)
             : MainWindow.Descendants(root).OfType<Control>().Skip(1).FirstOrDefault(c => c.IsEnabled && c.IsTabStop);
-        first?.Focus(FocusState.Programmatic);
+        first?.Focus(state);
     }
 
     [DllImport("dwmapi.dll")]

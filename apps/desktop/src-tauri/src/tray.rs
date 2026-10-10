@@ -73,6 +73,19 @@ fn opens_panel(button: MouseButton, option: bool, setting: IconClick) -> bool {
     primary == (setting == IconClick::Panel)
 }
 
+/// Whether a left click on the Windows icon came from the keyboard. Enter on an icon chosen
+/// with Win+B and the arrow keys arrives as a click too, once Windows has moved the pointer
+/// to the icon's centre; a mouse click lands on that exact pixel only by chance.
+fn from_keyboard(rect: tauri::Rect, cursor: tauri::PhysicalPosition<f64>) -> bool {
+    let position = rect.position.to_physical::<f64>(1.0);
+    let size = rect.size.to_physical::<f64>(1.0);
+    let centre = (
+        position.x + (size.width / 2.0).floor(),
+        position.y + (size.height / 2.0).floor(),
+    );
+    (cursor.x.round(), cursor.y.round()) == centre
+}
+
 fn on_click(
     tray: &tauri::tray::TrayIcon,
     button: MouseButton,
@@ -110,6 +123,8 @@ fn on_click(
                     "width": size.width,
                     "height": size.height,
                     "scale": scale,
+                    // The flyout shows where focus is only when opened from the keyboard.
+                    "keyboard": cfg!(windows) && from_keyboard(rect, cursor),
                 }),
             },
         );
@@ -1025,6 +1040,21 @@ mod tests {
         assert!(!opens_panel(Left, false, IconClick::Menu));
         assert!(opens_panel(Right, false, IconClick::Menu));
         assert!(opens_panel(Left, true, IconClick::Menu));
+    }
+
+    #[test]
+    fn enter_from_the_keyboard_is_told_apart_from_a_click() {
+        let icon = |x: f64, y: f64, width: f64, height: f64| tauri::Rect {
+            position: tauri::PhysicalPosition::new(x, y).into(),
+            size: tauri::PhysicalSize::new(width, height).into(),
+        };
+        let at = tauri::PhysicalPosition::new;
+        // Doze's icon in a 2560×1440 taskbar; Enter left the pointer at 2322,1416.
+        let taskbar = icon(2306.0, 1392.0, 32.0, 48.0);
+        assert!(from_keyboard(taskbar, at(2322.0, 1416.0)));
+        assert!(!from_keyboard(taskbar, at(2318.0, 1411.0)));
+        assert!(!from_keyboard(taskbar, at(2323.0, 1416.0)));
+        assert!(from_keyboard(icon(0.0, 0.0, 41.0, 61.0), at(20.0, 30.0)));
     }
 
     #[test]
