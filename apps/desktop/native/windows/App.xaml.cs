@@ -88,16 +88,15 @@ public partial class App : Application
             var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
             await bridge.ListenAsync(message => dispatcher.TryEnqueue(() => Receive(message)));
             Stop();
-            // Exit() can leave the hidden timer window, and with it this process, running
-            // once a final warning has been shown; close it first, as verification does.
-            timer?.Close();
-            Exit();
+            // Every window here belongs to the engine, which has quit. Exit() alone left a
+            // hidden timer or warning window, and with it this process, running.
+            Environment.Exit(0);
         }
         catch (Exception error)
         {
             Stop();
             await Console.Error.WriteLineAsync(error.ToString());
-            Exit();
+            Environment.Exit(1);
         }
     }
 
