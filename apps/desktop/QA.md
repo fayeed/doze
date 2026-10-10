@@ -1,3 +1,56 @@
+# macOS QA — 10 October 2026
+
+MacBook Pro (MacBookPro18,1) on macOS 27, on AC power, no external display. The debug build
+ran from its LaunchAgent; the panel, Settings, timer and warning windows were driven with real
+mouse events and Accessibility, and checked against screen captures, `pmset -g assertions`,
+`pmset -g log` and the settings file.
+
+## Found and fixed
+
+| Problem | Fix |
+| --- | --- |
+| The panel's Countdown, Quick Settings and Help & About rows hid the panel and opened a native menu | They open pages inside the panel, with a back button and Esc; the panel resizes under the icon |
+| Dark square corners around the panel: the window shadow took the glass backdrop as a full rectangle | Panel content is clipped to its rounded shape |
+| "Set up…" in the panel used the system link blue | Accent colour |
+| The panel's "Keep the display on" switch never changed | Switches save the opposite of the stored value |
+| A closed MacBook slept while an agent held Doze (every lid close logged "Clamshell Sleep") | While Doze holds the Mac it sets IOPMrootDomain's clamshell override, without root |
+| After a fresh start, Settings opened from the panel listed no Claude Code, Codex, OpenCode or Gemini CLI rows | Opening Settings asks the engine for a full snapshot |
+| Connecting an agent always meant Doze editing its config | "Use a prompt…" gives a per-agent prompt the agent runs itself (macOS and Windows) |
+| The panel's "No agents running" card was cramped | 8 pt above and below |
+
+## Verified live
+
+| Area | Evidence |
+| --- | --- |
+| Panel pages | Quick Settings, Countdown and Help & About open in place and Back returns; right-click still opens the full menu; Menu guide opens Settings on that page; Preview from the Countdown page closed the panel and showed "Preview only" |
+| Keep Awake | 15m: "15m left · until 8:46 AM", "15m" beside the icon, `PreventUserIdleDisplaySleep "Doze keep awake"`; Indefinitely: "Until you stop it"; Stop released it |
+| Power Timer | Custom 1-minute "Turn display off" timer from the timer window; the warning appeared 61 s later; the panel's countdown card snoozed it 15 minutes, then Cancel released the assertion |
+| Settings | Panel switches and pop-ups wrote `logging`, `countdownSeconds` and `allowDisplaySleep`; turning the display switch off moved the held assertion to `PreventUserIdleSystemSleep` at once |
+| MCP approval | A client without permission waited in `awaiting_authorization` with the attention glyph and an approval card; Allow made it active, heartbeats every 20.1 s were accepted, and finish released it with no action |
+| MCP completion | A pre-approved client finished with `display_off`: "All agents finished" ran its 5-minute warning (agents never get less), then the display turned off at 08:51:50 as Doze released its assertion |
+| Hooks | `doze hook claude-code UserPromptSubmit` asked for approval ("doze · QA: run the test suite"); after Allow it showed Working; `Stop` released the Mac |
+| CLI | `doze run` held the Mac while the command ran, released it after, and returned the command's status (0, and 3 for a failing command) |
+| Display off | With an agent working, `pmset displaysleepnow` kept the display off for 2 minutes (08:40:38 to 08:42:40, no input): heartbeats continued every 20.1 s and nothing slept. Repeated for 90 s with the display allowed to sleep |
+| Lid closed | With an agent working, the lid was closed from 08:55:45 to 09:00:36: no Clamshell Sleep, sleep or wake in `pmset -g log`, heartbeats every 20.1 s throughout. Finishing the session cleared the override and its record file |
+| Use a prompt | The sheet showed Claude Code's prompt for the real settings path; Copy Prompt put it on the clipboard. An agent given the prompt for a scratch settings file backed it up, kept every other entry and added exactly Connect's entries. Cancelling Connect's preview left `~/.claude/settings.json` unchanged |
+| Checks | 116 Rust tests, 6 Node lease tests, MCP SDK integration, clippy with warnings denied, the universal companion build and `--verify-ui` (now covering the panel pages and the prompt sheet) |
+
+## Still requiring verification
+
+- Other apps held idle-sleep assertions during the display-off test (a Transporter upload and
+  coreaudiod for simulator audio), so it shows Doze's assertion held and the agent kept
+  running, not that Doze alone prevented idle sleep. Assertions never stop lid-close sleep, so
+  the lid test is unaffected.
+- Lid closed on battery, and with an external display attached (where Doze leaves the override
+  to powerd), were not tested.
+- The Windows "Use a prompt…" button, dialog and verification were written on a Mac without the
+  .NET SDK; run `scripts/test-native.ps1` on Windows. Windows-target clippy also needs Windows
+  (`llvm-rc`).
+- Rebuilding `target/debug/doze` in place while the LaunchAgent copy runs gets the next launch
+  killed (`OS_REASON_CODESIGNING`); copy the binary to a new file first. Development only.
+- Not changed: MCP sessions that never call `update_session` show "Done · 0m" worked, and the
+  Connect preview lists added lines before the line they replace.
+
 # macOS QA — 1 October 2026
 
 First run of Doze on a Mac: macOS 27.0.1 on Apple Silicon, Xcode with the macOS 27 SDK,
