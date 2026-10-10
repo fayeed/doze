@@ -22,7 +22,7 @@
   "devDependencies": {
     "@doze/config": "workspace:*",
     "eslint": "^10.0.0",
-    "turbo": "^2.5.8",
+    "turbo": "^2.11.7",
     "typescript": "^5.9.3"
   }
 }
