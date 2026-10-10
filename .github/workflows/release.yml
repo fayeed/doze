@@ -17,7 +17,7 @@ jobs:
     name: Create draft release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Create draft and generated release notes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -46,7 +46,7 @@ jobs:
     needs: create-release
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
       - uses: pnpm/action-setup@v4
@@ -98,7 +98,7 @@ jobs:
       mac_sha256: ${{ steps.checksums.outputs.mac }}
       windows_sha256: ${{ steps.checksums.outputs.windows }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           path: installers
@@ -123,8 +123,8 @@ jobs:
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: fayeed/homebrew-tap
           ref: main
@@ -156,7 +156,7 @@ jobs:
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
