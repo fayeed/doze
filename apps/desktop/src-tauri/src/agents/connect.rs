@@ -17,12 +17,19 @@ struct Target {
     note: Option<&'static str>,
 }
 
+/// `home` joined one part at a time, so Windows paths never mix separators.
+fn under(home: &Path, parts: &[&str]) -> PathBuf {
+    parts
+        .iter()
+        .fold(home.to_path_buf(), |path, part| path.join(part))
+}
+
 fn target(agent: &str, home: &Path) -> Result<Target, String> {
     Ok(match agent {
         // https://docs.claude.com/en/docs/claude-code/hooks
         "claude-code" => Target {
-            folder: home.join(".claude"),
-            file: home.join(".claude/settings.json"),
+            folder: under(home, &[".claude"]),
+            file: under(home, &[".claude", "settings.json"]),
             method: "Hooks",
             events: &[
                 "SessionStart",
@@ -37,8 +44,8 @@ fn target(agent: &str, home: &Path) -> Result<Target, String> {
         // Codex reads Claude-style hooks from ~/.codex/hooks.json and runs new hooks only
         // once the user trusts them.
         "codex" => Target {
-            folder: home.join(".codex"),
-            file: home.join(".codex/hooks.json"),
+            folder: under(home, &[".codex"]),
+            file: under(home, &[".codex", "hooks.json"]),
             method: "Hooks",
             events: &[
                 "SessionStart",
@@ -51,8 +58,8 @@ fn target(agent: &str, home: &Path) -> Result<Target, String> {
         },
         // https://geminicli.com/docs/hooks/
         "gemini-cli" => Target {
-            folder: home.join(".gemini"),
-            file: home.join(".gemini/settings.json"),
+            folder: under(home, &[".gemini"]),
+            file: under(home, &[".gemini", "settings.json"]),
             method: "Hooks",
             events: &[
                 "SessionStart",
@@ -66,8 +73,8 @@ fn target(agent: &str, home: &Path) -> Result<Target, String> {
         },
         // https://opencode.ai/docs/plugins/ — a plugin file of Doze's own.
         "opencode" => Target {
-            folder: home.join(".config/opencode"),
-            file: home.join(".config/opencode/plugins/doze.js"),
+            folder: under(home, &[".config", "opencode"]),
+            file: under(home, &[".config", "opencode", "plugins", "doze.js"]),
             method: "Plugin",
             events: &[],
             note: Some("OpenCode loads the plugin the next time it starts."),
@@ -660,6 +667,17 @@ mod tests {
                 .contains("Keep every existing setting and hook"));
         }
         assert!(prompt("cursor", &home, EXE).is_err());
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn config_paths_use_one_separator() {
+        let home = home();
+        let other = if cfg!(windows) { '/' } else { '\\' };
+        for agent in AGENTS {
+            let file = target(agent, &home).unwrap().file.display().to_string();
+            assert!(!file.contains(other), "{file}");
+        }
         std::fs::remove_dir_all(&home).unwrap();
     }
 
