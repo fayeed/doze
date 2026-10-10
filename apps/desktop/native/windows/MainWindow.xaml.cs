@@ -384,7 +384,7 @@ public sealed partial class MainWindow : Window
         try
         {
             // Effective sizes: the default window, a 1080p display at 200% scaling, and the minimum.
-            foreach (var (label, width, height) in new[] { ("", 1120, 780), ("-minimum", MinimumWidth, MinimumHeight) })
+            foreach (var (label, width, height) in new[] { ("", 1120, 780), ("-200pct", 883, 475), ("-minimum", MinimumWidth, MinimumHeight) })
             {
                 AppWindow.Resize(new SizeInt32((int)(width * Scale), (int)(height * Scale)));
                 foreach (var theme in new[] { ElementTheme.Light, ElementTheme.Dark })
