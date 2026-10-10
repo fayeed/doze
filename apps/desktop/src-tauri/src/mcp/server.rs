@@ -226,9 +226,10 @@ pub fn bridge() -> Result<(), String> {
     Ok(())
 }
 
-/// Sessions this bridge's agent created or used, with when each is next renewed.
+/// Sessions this bridge's agent created or used, with when each is next renewed and the
+/// renewal (`last_heartbeat`) that time counts from.
 #[derive(Clone, Default)]
-struct Sessions(Arc<Mutex<HashMap<String, (Duration, Instant)>>>);
+struct Sessions(Arc<Mutex<HashMap<String, (Duration, Instant, Option<u64>)>>>);
 impl Sessions {
     /// Track sessions that are still open, and forget ended ones.
     fn observe(&self, session: &Value) {
@@ -242,6 +243,16 @@ impl Sessions {
             session["status"].as_str(),
             Some("awaiting_authorization" | "active" | "connection_lost")
         ) {
+            // Reading a session (get_session, list_sessions) does not renew its lease, so it
+            // must not put off the next renewal either; an agent polling more often than the
+            // interval would otherwise lose its lease.
+            let renewed = session["last_heartbeat"].as_u64();
+            if sessions
+                .get(id)
+                .is_some_and(|(_, _, last)| *last == renewed)
+            {
+                return;
+            }
             // Renew three times per lease, using the lease Doze just granted.
             let lease = session["lease_expires_at"]
                 .as_u64()
@@ -252,7 +263,7 @@ impl Sessions {
                 .and_then(|value| value.parse().ok())
                 .unwrap_or((lease / 3).clamp(10, 600));
             let interval = Duration::from_secs(interval);
-            sessions.insert(id.into(), (interval, Instant::now() + interval));
+            sessions.insert(id.into(), (interval, Instant::now() + interval, renewed));
         } else {
             sessions.remove(id);
         }
@@ -264,7 +275,7 @@ impl Sessions {
             |sessions| {
                 sessions
                     .iter()
-                    .filter(|(_, (_, due))| *due <= now)
+                    .filter(|(_, (_, due, _))| *due <= now)
                     .map(|(id, _)| id.clone())
                     .collect()
             },
@@ -277,7 +288,7 @@ impl Sessions {
     }
     fn postpone(&self, id: &str) {
         if let Ok(mut sessions) = self.0.lock() {
-            if let Some((interval, due)) = sessions.get_mut(id) {
+            if let Some((interval, due, _)) = sessions.get_mut(id) {
                 *due = Instant::now() + *interval;
             }
         }
@@ -302,7 +313,11 @@ fn keep_alive(path: PathBuf, key: String, sessions: Sessions) {
                     },
                 );
                 match result {
-                    Ok(session) => sessions.observe(&session),
+                    // A session still awaiting approval is not renewed; try again next interval.
+                    Ok(session) => {
+                        sessions.observe(&session);
+                        sessions.postpone(&id);
+                    }
                     // Doze may be restarting; retry on the next interval.
                     Err(error)
                         if error.contains("unavailable") || error.contains("Open the Doze") =>
@@ -406,4 +421,26 @@ pub fn connection_configs(
         let codex = format!("[mcp_servers.doze]\ncommand = {}\nargs = [\"--mcp\", \"--endpoint\", {}]\n[mcp_servers.doze.env]\nDOZE_MCP_KEY = {}\n", json!(executable), json!(endpoint), json!(client.secret));
         json!({"clientId":client.id,"name":client.name,"generic":json!({"mcpServers":{"doze":command}}).to_string(),"claude":command.to_string(),"codex":codex})
     }).collect::<Vec<_>>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Sessions;
+    use serde_json::json;
+
+    #[test]
+    fn reading_a_session_does_not_put_off_its_renewal() {
+        let sessions = Sessions::default();
+        let session = |renewed: u64| json!({"session_id": "s", "status": "active", "last_heartbeat": renewed, "lease_expires_at": renewed + 300});
+        let due = || sessions.0.lock().unwrap()["s"].1;
+        sessions.observe(&session(10));
+        let first = due();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        // get_session returns the same lease, so the next renewal stays where it was.
+        sessions.observe(&session(10));
+        assert_eq!(due(), first);
+        // A heartbeat renewed the lease, so the next renewal counts from now.
+        sessions.observe(&session(70));
+        assert!(due() > first);
+    }
 }
