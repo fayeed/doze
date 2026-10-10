@@ -1,3 +1,65 @@
+# Windows QA — 10 October 2026
+
+Windows 11 Pro (26200) desktop on AC power: no lid or battery, one 2560×1440 display at 100%,
+S3 standby and Hibernate (`powercfg /a`), Balanced plan sleeping after 15 minutes and turning the
+display off after 5 on AC. .NET SDK 8.0.425, Rust 1.96.1. The debug build ran from the checkout
+with `doze-cli.exe` beside it and the companion from `native/windows/publish`. The tray, flyout,
+menu and windows were driven with real mouse and keyboard input, UI Automation and screen
+captures; power evidence came from elevated `powercfg /requests`, `CallNtPowerInformation`, a
+`GUID_CONSOLE_DISPLAY_STATE` and suspend logger, and the System log. An unrelated process holding
+display and system requests was stopped first.
+
+## Found and fixed
+
+| Problem | Fix |
+| --- | --- |
+| An "Esc" tooltip followed the pointer over every flyout page: the Esc accelerator sits on the flyout's root | The accelerator's tooltip is hidden; Esc still goes back, then closes |
+| Active flyout tiles dropped to grey and faded back to orange (about 85 ms) on every update, sometimes twice per click, while their › half stayed orange | Active tiles start with the checked colour; sampled every few ms, they stay orange |
+| With Settings open behind the flyout, choosing a list item, Stay Awake or Cancel in the flyout brought Settings to the front and closed the flyout (9 of 9) | Settings puts focus back on its control only while it is in front |
+| After a final warning had been shown, Quit left `Doze.Settings.exe` running hidden (about 100 threads, companion files locked), 4 of 4 | Once the engine's pipe closes the companion ends its process |
+| Codex's hooks failed on Windows ("hook: SessionStart Failed"): Codex runs hooks with Windows PowerShell, which reads `"C:/…/doze-cli.exe" hook …` as a string | Codex's commands on Windows start with PowerShell's call operator, `& "…"` |
+| An MCP agent polling `get_session` more often than every 100 s was never renewed and fell to connection lost after 5 minutes | Only a renewal moves the bridge's next keep-alive |
+| Settings left open still showed Codex as Not set up after Codex followed Use a prompt… | Settings asks for a full snapshot when it comes to the front |
+| Use a prompt… asked agents to edit `C:\Users\…\.codex/hooks.json` | Config paths are joined one part at a time |
+| Switching power plans while Doze held a laptop left the new plan's lid action in force, and letting go switched back to the old plan | Doze moves the override to the new plan and re-applies only the active plan (setting-level test; no lid here) |
+| The tray menu's "Enable MCP" also turned off hook-connected agents | It reads "Let agents keep the PC awake", like Settings |
+| The 200% render size had been dropped from `test-native.ps1 -RenderDirectory` | Restored; all nine pages pass at 883×475 |
+| `mcp:test` with `CARGO_TARGET_DIR` set ran older binaries from `src-tauri/target`, or failed when there were none | It uses `CARGO_TARGET_DIR` |
+
+## Verified live
+
+| Area | Evidence |
+| --- | --- |
+| Checks | `native:build`, `native:test`, 138 renders (36 at 200%) reviewed, 121 Rust tests (3 ignored), 6 Node lease tests, clippy with warnings denied, `cargo fmt`, `mcp:test`; the two ignored lid tests pass and leave every plan's lid action at Sleep |
+| Flyout | Opens above the tray icon 12 px from the screen edge and taskbar; Keep awake, Power timer, Agents, Countdown and Quick settings pages open and render; Esc returns from a page with focus on its › button, then closes; clicks on the taskbar or another window close it |
+| Menu | Every submenu opens; Keep Awake 15 minutes (state `0x1` → `0x3`, `doze.exe` under DISPLAY and SYSTEM), audio keep-awake, the agents switch (`agents.enabled` false → true), diagnostic logs, Settings…, All Settings…, Agent settings and connections…, Menu Guide…, About Doze… and Countdown › Preview all did what they say; Quit released. "Clicking the tray icon opens" › Menu swapped left and right clicks |
+| Keep Awake | 15 minutes from the menu and the flyout ("Ends 15:57"), Indefinitely ("Until you stop it"), Stop and the tile all held and released; Advanced › Show active requests listed system and display required |
+| Power Timer | 1-minute Turn display off with a 15 s warning: the warning appeared 60–62 s after Start; Snooze gave "in 15m 3s"; Cancel from the flyout and from the warning released at once; Stay Awake from the flyout continued as Keep Awake; an unattended run turned the display off at 15:52:14, 75 s after Start |
+| MCP | An unapproved session held nothing (`0x1`); Allow on the flyout card made it active (`0x3`); heartbeats were accepted; finish released it. Polling `get` every 60 s, the bridge renewed the lease every 100 s |
+| Display off, agent working | Display kept on and turned off with `SC_MONITORPOWER`: 326 s without input against a 120 s sleep timeout, no suspend or Kernel-Power event, renewals every 100 s; a USB audio stream and another app also held the PC. Repeated with those requests overridden (`powercfg /requestsoverride`) and the display allowed to sleep: it turned off at 60 s and the PC stayed up for 336 s idle. When the session finished, Windows slept at once (Kernel-Power 42, System Idle), so Doze's request alone had kept it awake |
+| Use a prompt… | Offered only for agents not connected, named "Connect Codex with a prompt"; Copy prompt filled the clipboard and showed "Prompt copied". Codex 0.162 (`codex exec`) followed it: backed up the `{}` it created, wrote entries identical to the prompt's with forward-slash paths to `doze-cli.exe`, left `config.toml` unchanged and reminded about `/hooks`; Settings then showed Connected |
+| Codex hooks | `codex exec --dangerously-bypass-hook-trust`: SessionStart, UserPromptSubmit, PostToolUse and Stop completed; the flyout asked to allow Codex, then showed "Keeping awake · For Codex" and Working with `doze.exe` under DISPLAY and SYSTEM, and released when Codex stopped. A probe hook confirmed Windows PowerShell 5; Claude Code's hooks run in Git Bash and reached Doze unchanged |
+| Settings refresh | After a fresh start, Settings opened from the flyout listed Claude Code, Codex, OpenCode and Gemini CLI at once |
+
+The overridden display-off run ended in an unplanned 11-minute sleep: the script restored the
+15-minute sleep timeout a second before finishing the session, and Windows still applied the
+2-minute one. Afterwards Codex's `hooks.json` and backups were removed (Codex was not connected
+before), and Doze's settings, the Run key and the power plan values were restored.
+
+## Still requiring verification
+
+- One companion crash (`0xc000027b` in `Microsoft.UI.Xaml.dll`) as a final warning appeared,
+  with Settings open on Advanced. Six later warnings and several previews did not reproduce
+  it, and the engine discards the companion's stderr, where the cause is written.
+- A real lid close and battery behaviour (no lid or battery here). Narrator's speech itself; the
+  names it reads were checked through UI Automation.
+- Trusting Codex's hooks with `/hooks`; the run bypassed trust. Codex hooks connected on Windows
+  before this run keep the quoted command and fail until removed and connected again.
+- Not changed: at 200% and at the minimum size the collapsed Settings sidebar cuts the selected
+  page's icon in half and hides Advanced; after keyboard use the flyout opens with a square focus
+  rectangle on Keep awake; the tray tooltip covers the flyout while the pointer rests on the icon;
+  `format:check` flags six files that this `core.autocrlf=true` checkout writes with CRLF.
+
 # macOS QA — 10 October 2026
 
 MacBook Pro (MacBookPro18,1) on macOS 27, on AC power, no external display. The debug build
