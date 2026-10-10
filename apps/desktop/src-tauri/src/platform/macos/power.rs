@@ -1,6 +1,6 @@
 use crate::{core::sessions::PowerAction, platform::PowerManager};
 use std::{
-    ffi::{c_char, c_int, c_void},
+    ffi::{c_char, c_int, c_void, CStr},
     process::Command,
 };
 type CFString = *const c_void;
@@ -60,31 +60,66 @@ extern "C" {
     fn IOPMSleepSystem(connection: u32) -> i32;
     fn IOServiceClose(connection: u32) -> i32;
 }
+/// While Doze keeps the Mac awake it always holds the system assertion: a display assertion
+/// alone stops idle sleep only while the display is on, so once someone turns the display off
+/// the sleep timer runs. The display assertion is added while the display should stay on.
 pub struct NativePower {
-    assertion: Option<u32>,
-    allow_display_sleep: bool,
+    system: Option<u32>,
+    display: Option<u32>,
 }
 impl NativePower {
     pub fn new() -> Self {
         Self {
-            assertion: None,
-            allow_display_sleep: false,
+            system: None,
+            display: None,
         }
     }
 }
+fn create(kind: &CStr) -> Result<u32, String> {
+    unsafe {
+        let kind = CFStringCreateWithCString(std::ptr::null(), kind.as_ptr(), 0x08000100);
+        let name =
+            CFStringCreateWithCString(std::ptr::null(), c"Doze keep awake".as_ptr(), 0x08000100);
+        if kind.is_null() || name.is_null() {
+            if !kind.is_null() {
+                CFRelease(kind);
+            }
+            if !name.is_null() {
+                CFRelease(name);
+            }
+            return Err("Could not allocate power assertion.".into());
+        }
+        let mut id = 0;
+        let status = IOPMAssertionCreateWithName(kind, 255, name, &mut id);
+        CFRelease(kind);
+        CFRelease(name);
+        if status != 0 {
+            return Err(format!("IOKit assertion failed: {status}"));
+        }
+        Ok(id)
+    }
+}
+fn release(assertion: &mut Option<u32>) -> Result<(), String> {
+    if let Some(id) = *assertion {
+        let status = unsafe { IOPMAssertionRelease(id) };
+        if status != 0 {
+            return Err(format!("IOKit release failed: {status}"));
+        }
+        *assertion = None;
+    }
+    Ok(())
+}
 impl PowerManager for NativePower {
     fn describe(&self) -> Vec<String> {
-        self.assertion
-            .map(|id| {
-                let kind = if self.allow_display_sleep {
-                    "PreventUserIdleSystemSleep"
-                } else {
-                    "PreventUserIdleDisplaySleep"
-                };
-                format!("{kind} · “Doze keep awake” · IOKit assertion {id}")
-            })
-            .into_iter()
-            .collect()
+        [
+            ("PreventUserIdleSystemSleep", self.system),
+            ("PreventUserIdleDisplaySleep", self.display),
+        ]
+        .into_iter()
+        .filter_map(|(kind, id)| {
+            id.map(|id| format!("{kind} · “Doze keep awake” · IOKit assertion {id}"))
+        })
+        .collect()
     }
     fn supported_actions(&self) -> Vec<PowerAction> {
         let mut actions = vec![PowerAction::Sleep, PowerAction::Shutdown];
@@ -95,54 +130,21 @@ impl PowerManager for NativePower {
         actions
     }
     fn set_awake(&mut self, active: bool, allow_display_sleep: bool) -> Result<(), String> {
-        if active && self.assertion.is_some() && allow_display_sleep != self.allow_display_sleep {
-            self.set_awake(false, false)?;
+        if !active {
+            release(&mut self.display)?;
+            return release(&mut self.system);
         }
-        unsafe {
-            if active && self.assertion.is_none() {
-                let kind = CFStringCreateWithCString(
-                    std::ptr::null(),
-                    if allow_display_sleep {
-                        c"PreventUserIdleSystemSleep".as_ptr()
-                    } else {
-                        c"PreventUserIdleDisplaySleep".as_ptr()
-                    },
-                    0x08000100,
-                );
-                let name = CFStringCreateWithCString(
-                    std::ptr::null(),
-                    c"Doze keep awake".as_ptr(),
-                    0x08000100,
-                );
-                if kind.is_null() || name.is_null() {
-                    if !kind.is_null() {
-                        CFRelease(kind);
-                    }
-                    if !name.is_null() {
-                        CFRelease(name);
-                    }
-                    return Err("Could not allocate power assertion.".into());
-                }
-                let mut id = 0;
-                let status = IOPMAssertionCreateWithName(kind, 255, name, &mut id);
-                CFRelease(kind);
-                CFRelease(name);
-                if status != 0 {
-                    return Err(format!("IOKit assertion failed: {status}"));
-                }
-                self.assertion = Some(id);
-                self.allow_display_sleep = allow_display_sleep;
-            } else if !active {
-                if let Some(id) = self.assertion {
-                    let status = IOPMAssertionRelease(id);
-                    if status != 0 {
-                        return Err(format!("IOKit release failed: {status}"));
-                    }
-                    self.assertion = None;
-                }
+        if self.system.is_none() {
+            self.system = Some(create(c"PreventUserIdleSystemSleep")?);
+        }
+        if allow_display_sleep {
+            release(&mut self.display)
+        } else {
+            if self.display.is_none() {
+                self.display = Some(create(c"PreventUserIdleDisplaySleep")?);
             }
+            Ok(())
         }
-        Ok(())
     }
     fn execute(&mut self, action: PowerAction) -> Result<(), String> {
         if !self.supported_actions().contains(&action) {
@@ -205,5 +207,18 @@ mod tests {
         assert!(actions.contains(&PowerAction::DisplayOff));
         assert!(!actions.contains(&PowerAction::Hibernate));
         assert!(power.execute(PowerAction::Hibernate).is_err());
+    }
+
+    #[test]
+    fn the_system_assertion_is_held_whether_or_not_the_display_may_sleep() {
+        let mut power = NativePower::new();
+        power.set_awake(true, false).unwrap();
+        let system = power.system;
+        assert!(system.is_some() && power.display.is_some());
+        power.set_awake(true, true).unwrap();
+        assert_eq!((power.system, power.display), (system, None));
+        assert!(power.describe()[0].starts_with("PreventUserIdleSystemSleep"));
+        power.set_awake(false, false).unwrap();
+        assert!(power.describe().is_empty());
     }
 }
