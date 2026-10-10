@@ -102,7 +102,11 @@ fn write(scheme: &GUID, ac: u32, dc: u32) -> Result<(), String> {
         {
             return Err("Could not change the lid setting on battery.".into());
         }
-        // Re-applying the plan makes the change take effect at once.
+        // Re-applying the plan makes the change take effect at once. Only the active one:
+        // putting back a plan the user has since left must not switch back to it.
+        if active_scheme()? != *scheme {
+            return Ok(());
+        }
         PowerSetActiveScheme(HKEY::default(), Some(scheme))
             .ok()
             .map_err(|e| format!("Could not apply the power plan: {e}"))
@@ -163,6 +167,14 @@ impl Lid {
                 self.held = None;
                 Ok(())
             }
+            // The user switched power plans: give the old one its setting back and hold the
+            // new one, which has its own lid action.
+            (true, Some(saved))
+                if active_scheme().is_ok_and(|active| active.to_u128() != saved.scheme) =>
+            {
+                self.set(false)?;
+                self.set(true)
+            }
             _ => Ok(()),
         }
     }
@@ -183,9 +195,13 @@ impl Drop for Lid {
 
 #[cfg(test)]
 mod tests {
+    /// Both tests change the same system-wide power plan, so they never run at once.
+    static PLAN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     #[ignore = "Changes and restores the active power plan's lid setting"]
     fn holding_and_releasing_restores_the_lid_setting() {
+        let _plan = PLAN.lock().unwrap_or_else(|e| e.into_inner());
         let scheme = super::active_scheme().unwrap();
         let before = super::read(&scheme).unwrap();
         let record = std::env::temp_dir().join(format!("doze-lid-{}.json", uuid::Uuid::new_v4()));
@@ -194,6 +210,45 @@ mod tests {
         assert_eq!(super::read(&scheme).unwrap(), (0, 0));
         lid.set(false).unwrap();
         assert_eq!(super::read(&scheme).unwrap(), before);
+        assert!(!record.exists());
+    }
+
+    #[test]
+    #[ignore = "Switches the active power plan and its lid settings, then restores both"]
+    fn switching_plans_while_held_moves_the_override_and_keeps_the_new_plan() {
+        let _plan = PLAN.lock().unwrap_or_else(|e| e.into_inner());
+        use windows::{core::GUID, Win32::System::Registry::HKEY};
+        let activate = |scheme: &GUID| unsafe {
+            windows::Win32::System::Power::PowerSetActiveScheme(HKEY::default(), Some(scheme))
+                .ok()
+                .unwrap()
+        };
+        let first = super::active_scheme().unwrap();
+        // High performance or Power saver, whichever is not active.
+        let other = [
+            GUID::from_u128(0x8c5e7fda_e8bf_4a96_9a85_a6e23a8c635c),
+            GUID::from_u128(0xa1841308_3541_4fab_bc81_f71556f20b4a),
+        ]
+        .into_iter()
+        .find(|scheme| *scheme != first)
+        .unwrap();
+        let (first_before, other_before) =
+            (super::read(&first).unwrap(), super::read(&other).unwrap());
+        let record = std::env::temp_dir().join(format!("doze-lid-{}.json", uuid::Uuid::new_v4()));
+        let mut lid = super::Lid::new(record.clone());
+        lid.set(true).unwrap();
+        activate(&other);
+        // The engine sets the lid again on every check while it holds the PC.
+        lid.set(true).unwrap();
+        let held = (super::read(&first).unwrap(), super::read(&other).unwrap());
+        lid.set(false).unwrap();
+        let released = (
+            super::read(&other).unwrap(),
+            super::active_scheme().unwrap(),
+        );
+        activate(&first);
+        assert_eq!(held, (first_before, (0, 0)));
+        assert_eq!(released, (other_before, other));
         assert!(!record.exists());
     }
 }
