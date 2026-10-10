@@ -51,6 +51,12 @@ public sealed partial class MainWindow : Window
             args.Cancel = true;
             HideWindow();
         };
+        // Streamed updates leave out what the engine reads from files, and an agent given
+        // Use a prompt… changes its own config meanwhile: coming back asks for all of it.
+        Activated += (_, args) =>
+        {
+            if (args.WindowActivationState != WindowActivationState.Deactivated) _ = Send("refresh");
+        };
         // Ctrl+F finds a setting, as in Windows Settings.
         Root.KeyboardAccelerators.Add(Accelerator(Windows.System.VirtualKey.F, Windows.System.VirtualKeyModifiers.Control, () => Search.Focus(FocusState.Keyboard)));
         SelectPage(ViewPage(initial["view"]?.GetValue<string>(), Text(initial["page"]), "Overview"));
