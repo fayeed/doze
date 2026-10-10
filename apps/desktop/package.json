@@ -23,7 +23,7 @@
     "@types/react-dom": "^19.3.0",
     "prettier": "^3.9.9",
     "puppeteer-core": "^25.12.0",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "vite": "^8.3.2"
   },
   "dependencies": {
