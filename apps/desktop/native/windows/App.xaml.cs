@@ -88,6 +88,9 @@ public partial class App : Application
             var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
             await bridge.ListenAsync(message => dispatcher.TryEnqueue(() => Receive(message)));
             Stop();
+            // Exit() can leave the hidden timer window, and with it this process, running
+            // once a final warning has been shown; close it first, as verification does.
+            timer?.Close();
             Exit();
         }
         catch (Exception error)
