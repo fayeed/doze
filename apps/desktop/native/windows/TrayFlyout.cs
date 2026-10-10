@@ -207,7 +207,8 @@ public sealed partial class TrayFlyout : Window
     {
         workingPills.Clear();
         statusDetail = countdownText = null;
-        if (root.XamlRoot is not null && FocusManager.GetFocusedElement(root.XamlRoot) is not null)
+        // Also while an open list has focus: its control is about to be replaced too.
+        if (root.XamlRoot is not null && (AppWindow.IsVisible || FocusManager.GetFocusedElement(root.XamlRoot) is not null))
         {
             focusHold.IsTabStop = true;
             focusHold.Focus(FocusState.Programmatic);
