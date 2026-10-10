@@ -1,8 +1,9 @@
 //! Stay awake with the lid closed. A closed MacBook sleeps whatever power assertions say,
 //! unless an external display is attached on power. While Doze keeps the Mac awake it sets the
 //! power manager's clamshell override, the switch powerd itself sets for closed-display mode,
-//! which needs no administrator rights. powerd clears it when displays or the power source
-//! change, so Doze sets it again on each check while it holds the Mac.
+//! which needs no administrator rights. powerd clears it when displays, the power source or the
+//! system's sleep state change, so a thread sets it again every few seconds while Doze holds
+//! the Mac. The engine's checks can be a minute apart, and its clock stops while the Mac sleeps.
 //!
 //! Clearing it while an external display is attached could leave closed-display mode without
 //! the override powerd set, so Doze waits until no external display is attached. A record file
@@ -10,7 +11,8 @@
 use std::{
     ffi::{c_char, c_void},
     path::PathBuf,
-    time::{Duration, Instant},
+    sync::{Arc, Mutex, MutexGuard, Weak},
+    time::Duration,
 };
 
 type CFStringRef = *const c_void;
@@ -59,7 +61,7 @@ extern "C" {
 const SET_CLAMSHELL_SLEEP_STATE: u32 = 12;
 const UTF8: u32 = 0x0800_0100;
 /// How often a held override is set again, in case powerd cleared it.
-const REFRESH: Duration = Duration::from_secs(10);
+const REFRESH: Duration = Duration::from_secs(2);
 
 /// The power manager, released by the caller.
 fn root_domain() -> Option<u32> {
@@ -134,11 +136,30 @@ fn external_display() -> bool {
 
 pub struct Lid {
     record: PathBuf,
-    /// When Doze last set the override, while it holds the Mac.
-    held: Option<Instant>,
+    /// Whether Doze holds the override. The refresh thread sets it again only while this is
+    /// true, under the same lock, so it never sets it after Doze has cleared it.
+    held: Arc<Mutex<bool>>,
+    refreshing: bool,
     /// The override may still be set: Doze let go with an external display attached, or a
     /// crash left the record behind.
     pending_clear: bool,
+}
+
+/// Sets a held override again every few seconds, until the `Lid` is dropped.
+fn refresh(held: Weak<Mutex<bool>>) {
+    loop {
+        std::thread::sleep(REFRESH);
+        let Some(held) = held.upgrade() else {
+            return;
+        };
+        if *lock(&held) {
+            let _ = set_override(true);
+        }
+    }
+}
+
+fn lock(held: &Mutex<bool>) -> MutexGuard<'_, bool> {
+    held.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl Lid {
@@ -146,7 +167,8 @@ impl Lid {
         let pending_clear = record.exists();
         let mut lid = Self {
             record,
-            held: None,
+            held: Arc::new(Mutex::new(false)),
+            refreshing: false,
             pending_clear,
         };
         let _ = lid.set(false);
@@ -156,20 +178,26 @@ impl Lid {
     /// Keeps a closed lid from sleeping the Mac while `hold` is true; restores normal lid
     /// sleep otherwise, once no external display is attached.
     pub fn set(&mut self, hold: bool) -> Result<(), String> {
+        let mut held = lock(&self.held);
         if hold {
-            if self.held.is_some_and(|at| at.elapsed() < REFRESH) {
+            if *held {
                 return Ok(());
             }
-            if self.held.is_none() {
-                std::fs::write(&self.record, b"{\"clamshellOverride\":true}\n")
-                    .map_err(|e| format!("Could not save the lid setting: {e}"))?;
-            }
+            std::fs::write(&self.record, b"{\"clamshellOverride\":true}\n")
+                .map_err(|e| format!("Could not save the lid setting: {e}"))?;
             set_override(true)?;
-            self.held = Some(Instant::now());
+            *held = true;
             self.pending_clear = false;
+            if !self.refreshing {
+                let weak = Arc::downgrade(&self.held);
+                self.refreshing = std::thread::Builder::new()
+                    .name("doze-lid".into())
+                    .spawn(move || refresh(weak))
+                    .is_ok();
+            }
             return Ok(());
         }
-        if self.held.take().is_some() {
+        if std::mem::take(&mut *held) {
             self.pending_clear = true;
         }
         if self.pending_clear && !external_display() {
@@ -182,7 +210,7 @@ impl Lid {
 
     /// For Settings › Advanced › Show active assertions.
     pub fn describe(&self) -> Option<String> {
-        self.held.map(|_| {
+        lock(&self.held).then(|| {
             "Lid close: stays awake (normal lid sleep returns when Doze lets go)".to_string()
         })
     }
