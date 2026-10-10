@@ -700,9 +700,10 @@ struct PanelView: View {
         HStack(spacing: 10) { content() }.frame(minHeight: 38).padding(.horizontal, 12)
     }
 
-    /// A switch for one saved setting.
+    /// A switch for one saved setting; `inverted` shows the setting's opposite, as "Keep the
+    /// display on" does for allowDisplaySleep.
     private func settingToggle(_ name: String, key: String, inverted: Bool = false) -> some View {
-        toggle(name, model.bool(key) != inverted) { model.set(key, model.bool(key) == inverted) }
+        toggle(name, model.bool(key) != inverted) { model.set(key, !model.bool(key)) }
     }
 
     /// A pop-up of durations for one saved setting, keeping a value set elsewhere.
