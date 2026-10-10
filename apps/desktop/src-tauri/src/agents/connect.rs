@@ -109,7 +109,13 @@ pub fn executable() -> String {
 }
 
 fn command(executable: &str, agent: &str, event: &str) -> String {
-    format!("\"{executable}\" hook {agent} {event}")
+    // Codex runs hook commands with PowerShell on Windows, where a quoted path is only a
+    // string until the call operator runs it.
+    if cfg!(windows) && agent == "codex" {
+        format!("& \"{executable}\" hook {agent} {event}")
+    } else {
+        format!("\"{executable}\" hook {agent} {event}")
+    }
 }
 
 /// Whether a hook command is one Doze wrote for this agent.
@@ -708,6 +714,21 @@ mod tests {
         assert_eq!(hooks["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"], 3);
         assert_eq!(hooks["hooks"]["Stop"][0]["hooks"][0]["timeout"], 10);
         std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn codex_hooks_run_from_powershell_on_windows() {
+        // Codex runs hooks with Windows PowerShell, which needs the call operator before a
+        // quoted path; the other agents' shells take the quoted path as it is.
+        for agent in AGENTS.into_iter().filter(|agent| *agent != "opencode") {
+            let line = command(EXE, agent, "Stop");
+            assert_eq!(
+                line.starts_with("& \""),
+                cfg!(windows) && agent == "codex",
+                "{line}"
+            );
+            assert!(ours(&line, agent), "Doze recognises {line}");
+        }
     }
 
     #[test]
