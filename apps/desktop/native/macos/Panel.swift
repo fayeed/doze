@@ -9,13 +9,22 @@ extension Dictionary where Key == String, Value == Any {
 /// the engine sends the icon's rectangle (physical pixels, top-left origin) with each click.
 final class PanelWindow: NSPanel {
     override var canBecomeKey: Bool { true }
-    override func cancelOperation(_ sender: Any?) { (delegate as? PanelController)?.close() }
+    override func cancelOperation(_ sender: Any?) { (delegate as? PanelController)?.back() }
+}
+
+/// The rows at the bottom of the panel open their page in place, as Control Center's modules
+/// do, rather than leaving the panel for a menu.
+enum PanelPage: String, CaseIterable {
+    case countdown = "Countdown"
+    case quick = "Quick Settings"
+    case support = "Help & About"
 }
 
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
     private var window: PanelWindow?
     private var host: NSHostingView<AnyView>?
+    private weak var model: NativeUI?
     private var anchor: JSON?
     private var hiddenAt = Date.distantPast
     private var closing = false
@@ -30,9 +39,19 @@ final class PanelController: NSObject, NSWindowDelegate {
         // The click that took focus from an open panel already closed it.
         if Date().timeIntervalSince(hiddenAt) < 0.35 { return }
         self.anchor = anchor
+        self.model = model
+        // Every opening starts on the main page.
+        model.panelPage = nil
         let window = self.window ?? makeWindow()
         self.window = window
         let host = NSHostingView(rootView: AnyView(PanelView(model: model)))
+        // The glass's backdrop reads as opaque to the window server, which would shape the
+        // shadow as the whole rectangle and leave dark square corners. Clipping the content to
+        // the panel's rounded shape gives the shadow that shape.
+        host.wantsLayer = true
+        host.layer?.cornerRadius = 18
+        host.layer?.cornerCurve = .continuous
+        host.layer?.masksToBounds = true
         window.contentView = host
         self.host = host
         refit()
@@ -70,6 +89,11 @@ final class PanelController: NSObject, NSWindowDelegate {
         }, completionHandler: {
             Task { @MainActor in hide() }
         })
+    }
+
+    /// Escape returns from a page to the main page, then closes the panel.
+    func back() {
+        if let model, model.panelPage != nil { model.showPanelPage(nil) } else { close() }
     }
 
     func windowDidResignKey(_ notification: Notification) { close() }
@@ -115,6 +139,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         host.layoutSubtreeIfNeeded()
         let size = NSSize(width: Self.width, height: host.fittingSize.height)
         window.setFrame(NSRect(origin: origin(for: size), size: size), display: true)
+        window.invalidateShadow()
     }
 
     private func origin(for size: NSSize) -> NSPoint {
@@ -189,13 +214,19 @@ struct PanelView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 6) {
-                status(context.date)
-                ForEach(model.agents.filter { $0.state == "needsApproval" }) { approval($0) }
-                agentsSection(context.date)
-                keepAwakeSection
-                timerSection(context.date)
-                menus
-                footer
+                switch model.panelPage {
+                case .countdown?: countdownPage(context.date)
+                case .quick?: quickPage
+                case .support?: supportPage
+                case nil:
+                    status(context.date)
+                    ForEach(model.agents.filter { $0.state == "needsApproval" }) { approval($0) }
+                    agentsSection(context.date)
+                    keepAwakeSection
+                    timerSection(context.date)
+                    menus
+                    footer()
+                }
             }
             .padding(12)
             .frame(width: PanelController.width, alignment: .topLeading)
@@ -299,7 +330,8 @@ struct PanelView: View {
         let idle = rows.filter { $0.state == "idle" }.count
         header("Agents") {
             if rows.isEmpty {
-                Button("Set up…") { model.openSettings(.agents) }.buttonStyle(.link).font(.system(size: 12, weight: .medium))
+                Button("Set up…") { model.openSettings(.agents) }.buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dozeAccent)
             } else {
                 Text([working > 0 ? "\(working) working" : nil, idle > 0 ? "\(idle) idle" : nil].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
@@ -450,35 +482,176 @@ struct PanelView: View {
 
     // MARK: Menus and footer
 
-    /// Each row opens the matching submenu of the existing menu bar menu.
+    /// Each row opens its page in place; Escape or the back button returns.
     private var menus: some View {
         group {
-            menuRow("Countdown", icon: "stopwatch.fill", color: Color(.sRGB, red: 1, green: 0.62, blue: 0.04), name: "countdown")
-            menuRow("Quick Settings", icon: "slider.horizontal.3", color: Color(white: 0.56), name: "quick")
-            menuRow("Help & About", icon: "info", color: Page.about.color, name: "support")
+            ForEach(PanelPage.allCases, id: \.self) { page in
+                linkRow(page.rawValue, icon: page.symbol, color: page.color, hint: "Shows \(page.rawValue) in the panel") {
+                    model.showPanelPage(page)
+                }
+            }
         }
         .padding(.top, 6)
     }
 
-    private func menuRow(_ title: String, icon: String, color: Color, name: String) -> some View {
-        Button { model.send("menu", ["name": name]) } label: {
+    /// A row that opens something: a page of the panel, Settings, or (`external`) a web page.
+    private func linkRow(_ title: String, icon: String, color: Color, hint: String, external: Bool = false,
+                         action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 10) {
                 SettingsIcon(symbol: icon, color: color)
                 Text(title)
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
+                Image(systemName: external ? "arrow.up.right" : "chevron.right")
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
             }
             .frame(minHeight: 38).padding(.horizontal, 12).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
-        .accessibilityHint("Opens the \(title) menu")
+        .accessibilityHint(hint)
     }
 
-    private var footer: some View {
+    // MARK: Pages
+
+    private func pageHeader(_ page: PanelPage) -> some View {
+        HStack(spacing: 8) {
+            Button { model.showPanelPage(nil) } label: {
+                Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
+                    .frame(width: 26, height: 26)
+                    .background(Color.primary.opacity(0.08), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+            .help("Back")
+            Text(page.rawValue).font(.system(size: 13, weight: .bold)).accessibilityAddTraits(.isHeader)
+            Spacer()
+        }
+        .padding(.horizontal, 2).padding(.bottom, 4)
+    }
+
+    /// The final warning: the live countdown when one runs, and how the warning behaves.
+    @ViewBuilder private func countdownPage(_ now: Date) -> some View {
+        pageHeader(.countdown)
+        if session.object("countdown") != nil {
+            status(now)
+        } else {
+            group {
+                row(icon: "stopwatch.fill", color: PanelPage.countdown.color) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("No countdown running")
+                        Text("A final warning runs before every power action").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+            }
+        }
+        header("Final warning") { EmptyView() }
+        group {
+            plainRow {
+                Text("Warning length")
+                Spacer()
+                choice("Warning length", key: "countdownSeconds", values: [60, 120, 180, 300, 600, 900], fallback: 300,
+                       label: { durationLabel(seconds: $0) })
+            }
+            plainRow { Text("Play a sound"); Spacer(); settingToggle("Play a sound when the warning appears", key: "warningSound") }
+            plainRow { Text("Show on every display"); Spacer(); settingToggle("Show on every display", key: "warningAllDisplays") }
+            plainRow {
+                Text("Snooze length")
+                Spacer()
+                choice("Snooze length", key: "snoozeMinutes", values: [5, 10, 15, 20, 30, 45, 60], fallback: 15,
+                       label: { durationLabel(minutes: $0) })
+            }
+        }
+        group {
+            linkRow("Preview the warning", icon: "eye.fill", color: Page.notifications.color,
+                    hint: "Shows the warning without scheduling anything") {
+                model.panel.close()
+                model.send("preview")
+            }
+        }
+        footer("Notification Settings…", page: .notifications)
+    }
+
+    /// Saved preferences, as in the menu's Quick Settings, without leaving the panel.
+    @ViewBuilder private var quickPage: some View {
+        pageHeader(.quick)
+        group {
+            plainRow { Text("Keep the display on"); Spacer(); settingToggle("Keep the display on", key: "allowDisplaySleep", inverted: true) }
+            if model.snapshot.bool("lidClosedSupported") {
+                plainRow { Text("Stay awake with the lid closed"); Spacer(); settingToggle("Stay awake with the lid closed", key: "lidClosedKeepAwake") }
+            }
+            plainRow { Text("Show countdown notifications"); Spacer(); settingToggle("Show countdown notifications", key: "notifications") }
+        }
+        group {
+            plainRow {
+                Text("Open Doze at login")
+                Spacer()
+                settingToggle("Open Doze at login", key: "launchAtStartup").disabled(!model.snapshot.bool("startupSupported"))
+            }
+            plainRow { Text("Start in the menu bar"); Spacer(); settingToggle("Start in the menu bar", key: "startMinimized") }
+            plainRow { Text("Write diagnostic logs"); Spacer(); settingToggle("Write diagnostic logs", key: "logging") }
+        }
+        group {
+            plainRow {
+                Text("Default keep awake")
+                Spacer()
+                choice("Default keep awake", key: "defaultAwakeMinutes", values: [15, 30, 60, 120], fallback: 30,
+                       label: { durationLabel(minutes: $0) })
+            }
+            plainRow {
+                Text("Default power timer")
+                Spacer()
+                choice("Default power timer", key: "defaultTimerMinutes", values: [15, 30, 60, 120], fallback: 30,
+                       label: { durationLabel(minutes: $0) })
+            }
+        }
+        footer("All Settings…", page: .general)
+    }
+
+    @ViewBuilder private var supportPage: some View {
+        pageHeader(.support)
+        group {
+            HStack(spacing: 12) {
+                AppIcon(model: model, size: 36)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Doze").font(.system(size: 13, weight: .semibold))
+                    Text("Version \(model.snapshot.string("version") ?? "")").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+        }
+        group {
+            linkRow("Menu guide", icon: Page.guide.symbol, color: Page.guide.color, hint: "Opens the Menu guide in Settings") {
+                model.openSettings(.guide)
+            }
+            linkRow("About Doze", icon: Page.about.symbol, color: Page.about.color, hint: "Opens About Doze in Settings") {
+                model.openSettings(.about)
+            }
+        }
+        let links = model.snapshot.objects("links")
+        if !links.isEmpty {
+            group {
+                ForEach(links.indices, id: \.self) { index in
+                    let title = links[index].string("title") ?? ""
+                    linkRow(title, icon: "safari.fill", color: Color(white: 0.45), hint: "Opens \(title) in your browser", external: true) {
+                        model.panel.close()
+                        model.openLink(links[index].string("url") ?? "")
+                    }
+                }
+            }
+        }
+        footer()
+    }
+
+    /// The left of the footer opens Settings, or one page of it from a panel page.
+    private func footer(_ title: String = "Settings…", page: Page? = nil) -> some View {
         HStack {
-            Button { model.showSettings() } label: {
-                HStack(spacing: 6) { Text("Settings…"); Text("⌘,").foregroundStyle(.tertiary) }
+            Button { if let page { model.openSettings(page) } else { model.showSettings() } } label: {
+                HStack(spacing: 6) { Text(title); Text("⌘,").foregroundStyle(.tertiary) }
             }
             .keyboardShortcut(",", modifiers: .command)
             Spacer()
@@ -520,6 +693,43 @@ struct PanelView: View {
     private func toggle(_ name: String, _ on: Bool, _ flip: @escaping () -> Void) -> some View {
         Toggle(name, isOn: Binding(get: { on }, set: { _ in flip() }))
             .toggleStyle(.switch).controlSize(.small).labelsHidden()
+    }
+
+    /// A row of a panel page: its label and control, without an icon.
+    private func plainRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 10) { content() }.frame(minHeight: 38).padding(.horizontal, 12)
+    }
+
+    /// A switch for one saved setting.
+    private func settingToggle(_ name: String, key: String, inverted: Bool = false) -> some View {
+        toggle(name, model.bool(key) != inverted) { model.set(key, model.bool(key) == inverted) }
+    }
+
+    /// A pop-up of durations for one saved setting, keeping a value set elsewhere.
+    private func choice(_ name: String, key: String, values: [Int], fallback: Int, label: @escaping (Int) -> String) -> some View {
+        let current = model.int(key, fallback)
+        return Picker(name, selection: Binding(get: { current }, set: { model.set(key, $0) })) {
+            ForEach(Array(Set(values + [current])).sorted(), id: \.self) { Text(label($0)).tag($0) }
+        }
+        .pickerStyle(.menu).labelsHidden().fixedSize()
+    }
+}
+
+extension PanelPage {
+    var symbol: String {
+        switch self {
+        case .countdown: return "stopwatch.fill"
+        case .quick: return "slider.horizontal.3"
+        case .support: return "info"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .countdown: return Color(.sRGB, red: 1, green: 0.62, blue: 0.04)
+        case .quick: return Color(white: 0.56)
+        case .support: return Page.about.color
+        }
     }
 }
 

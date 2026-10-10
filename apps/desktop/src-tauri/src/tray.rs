@@ -26,10 +26,8 @@ struct NativeMenu {
     audio: CheckMenuItem<tauri::Wry>,
     playback: CheckMenuItem<tauri::Wry>,
     actions: Vec<(PowerAction, CheckMenuItem<tauri::Wry>)>,
-    /// The whole menu, and the panel's Countdown, Quick Settings and Help & About rows: the
-    /// same items as the menu's submenus, shown on their own.
+    /// The whole menu, for the clicks that open it.
     root: Menu<tauri::Wry>,
-    submenus: Vec<(&'static str, Menu<tauri::Wry>)>,
     /// What a plain click opens, from the latest settings.
     click: std::sync::Mutex<IconClick>,
 }
@@ -119,19 +117,6 @@ fn on_click(
         let _ = tray.set_menu(Some(menu.root.clone()));
         let _ = tray.with_inner_tray_icon(|inner| inner.show_menu());
     }
-}
-
-/// Shows one of the menu's submenus at the icon, for the panel's rows that open them.
-pub(crate) fn show_menu(app: &tauri::AppHandle, name: &str) {
-    let (Some(menu), Some(tray)) = (app.try_state::<NativeMenu>(), app.tray_by_id("doze")) else {
-        return;
-    };
-    let Some((_, submenu)) = menu.submenus.iter().find(|(id, _)| *id == name) else {
-        return;
-    };
-    let _ = tray.set_menu(Some(submenu.clone()));
-    let _ = tray.with_inner_tray_icon(|inner| inner.show_menu());
-    let _ = tray.set_menu(Some(menu.root.clone()));
 }
 
 pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
@@ -251,19 +236,6 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
             &quit,
         ],
     )?;
-    // The panel's rows open these: the same items, so they stay in step with the menu.
-    let mut submenus = Vec::new();
-    for (name, source) in [
-        ("countdown", &countdown),
-        ("quick", &quick.menu),
-        ("support", &support),
-    ] {
-        let standalone = Menu::new(app)?;
-        for child in source.items()? {
-            standalone.append(&child)?;
-        }
-        submenus.push((name, standalone));
-    }
     app.manage(NativeMenu {
         agents,
         agent_signature: std::sync::Mutex::new(String::new()),
@@ -282,7 +254,6 @@ pub(crate) fn setup(app: &tauri::App) -> tauri::Result<()> {
         playback,
         actions,
         root: menu.clone(),
-        submenus,
         click: std::sync::Mutex::new(IconClick::Panel),
     });
     let tray = TrayIconBuilder::with_id("doze")

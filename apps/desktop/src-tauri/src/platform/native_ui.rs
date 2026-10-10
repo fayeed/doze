@@ -94,9 +94,6 @@ impl UiRequest {
                 path: self.path.ok_or("Choose where to save the report.")?,
             },
             "reset" => Operation::Reset,
-            "menu" => Operation::ShowMenu {
-                name: self.name.ok_or("Menu missing.")?,
-            },
             "open-settings" => Operation::OpenPage {
                 page: self.page.unwrap_or_else(|| "overview".into()),
             },

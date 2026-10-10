@@ -93,10 +93,6 @@ pub enum Operation {
         key: String,
         value: serde_json::Value,
     },
-    /// Shows the existing tray submenu ("countdown", "quick" or "support") at the icon.
-    ShowMenu {
-        name: String,
-    },
     ConnectPreview {
         agent: String,
         remove: bool,

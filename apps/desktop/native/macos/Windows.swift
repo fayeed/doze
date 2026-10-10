@@ -179,6 +179,15 @@ enum Verification {
                 guard panel.fittingSize.height > 300, abs(panel.fittingSize.width - PanelController.width) < 1 else {
                     throw failure("The panel did not lay out at 368 points (\(panel.fittingSize)).")
                 }
+                // Its rows open their pages in place, never a menu.
+                for page in PanelPage.allCases {
+                    model.panelPage = page
+                    panel.layoutSubtreeIfNeeded()
+                    guard panel.fittingSize.height > 150, abs(panel.fittingSize.width - PanelController.width) < 1 else {
+                        throw failure("The panel's \(page.rawValue) page did not lay out (\(panel.fittingSize)).")
+                    }
+                }
+                model.panelPage = nil
             }
             sample(model)
             for page in Page.allCases {
@@ -251,6 +260,15 @@ enum Verification {
                 try capture(PanelView(model: model).padding(20), size: NSSize(width: 408, height: host.fittingSize.height + 40),
                             name: countdown ? "panel-countdown" : "panel", appearance: appearance, transparent: true)
             }
+            sample(model)
+            for page in PanelPage.allCases {
+                model.panelPage = page
+                let host = NSHostingView(rootView: PanelView(model: model))
+                host.layoutSubtreeIfNeeded()
+                try capture(PanelView(model: model).padding(20), size: NSSize(width: 408, height: host.fittingSize.height + 40),
+                            name: "panel-\(page)", appearance: appearance, transparent: true)
+            }
+            model.panelPage = nil
             sample(model)
             for page in Page.allCases {
                 model.page = page

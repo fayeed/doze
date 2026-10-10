@@ -176,8 +176,6 @@ pub(super) fn apply(
             let settings = set(&snapshot.settings, &key, value)?;
             save(snapshot, path, settings)?;
         }
-        // Handled by the runtime on the main thread.
-        Operation::ShowMenu { .. } => {}
         Operation::ConnectPreview { agent, remove } => {
             let home = crate::agents::connect::home()?;
             let executable = crate::agents::connect::executable();

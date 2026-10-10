@@ -195,7 +195,6 @@ pub(super) fn worker(
         let mut open_dialog = false;
         let mut preview_countdown = false;
         let mut warning_failed = false;
-        let mut show_menu = None;
         if let Some(request) = request {
             match request {
                 Request::Mcp(call, tx) => {
@@ -251,9 +250,6 @@ pub(super) fn worker(
                             | Operation::ConnectAgent { .. }
                     );
                     preview_countdown = matches!(op, Operation::PreviewCountdown);
-                    if let Operation::ShowMenu { name } = &op {
-                        show_menu = Some(name.clone());
-                    }
                     if matches!(op, Operation::OpenPanel { .. }) {
                         // The panel footer shows the battery; read it fresh.
                         next_battery_at = 0;
@@ -450,10 +446,6 @@ pub(super) fn worker(
         let tray_app = app.clone();
         let tray_snapshot = snapshot.clone();
         let _ = app.run_on_main_thread(move || crate::tray::update(&tray_app, &tray_snapshot));
-        if let Some(name) = show_menu {
-            let menu_app = app.clone();
-            let _ = app.run_on_main_thread(move || crate::tray::show_menu(&menu_app, &name));
-        }
         // Open windows follow the engine through this stream instead of polling it.
         platform::publish(&snapshot);
         if open_dialog {

@@ -34,6 +34,9 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
     @Published var targetDate = Date().addingTimeInterval(1800)
     @Published var timerAction = "sleep"
 
+    /// The page the menu bar panel shows; nil for its main page.
+    @Published var panelPage: PanelPage?
+
     private var settingsWindow: NSWindow?
     private var warningWindows: [NSWindow] = []
     private var timerWindow: NSWindow?
@@ -265,6 +268,13 @@ final class NativeUI: NSObject, ObservableObject, NSWindowDelegate {
         NSApp.windowsMenu = window
     }
 
+    /// Shows a page of the menu bar panel in place, or its main page for nil, keeping the
+    /// panel's top edge under the icon.
+    func showPanelPage(_ page: PanelPage?) {
+        panelPage = page
+        panel.refit()
+    }
+
     @objc private func quitDoze() { send("quit") }
     @objc private func openSettingsFromMenu() { showSettings() }
     func openSettings(_ page: Page) {
@@ -474,7 +484,7 @@ enum DozeNativeUI {
         if CommandLine.arguments.contains("--verify-ui") {
             do {
                 try Verification.verify(ui)
-                print("Verified: the menu bar panel in its idle, working and countdown states, nine Settings pages in light and dark, search by setting, and preview snooze.")
+                print("Verified: the menu bar panel in its idle, working and countdown states and its Countdown, Quick Settings and Help & About pages, nine Settings pages in light and dark, search by setting, and preview snooze.")
             } catch {
                 FileHandle.standardError.write(Data("\(error)\n".utf8))
                 exit(1)
