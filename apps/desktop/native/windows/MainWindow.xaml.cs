@@ -147,6 +147,9 @@ public sealed partial class MainWindow : Window
     /// The focused control's name and section, when focus is on the page itself.
     private (string? Name, int Section)? FocusedInPage()
     {
+        // Only while Settings is in front: focusing one of its controls activates the window,
+        // which would take the foreground from the tray flyout or the countdown.
+        if (GetForegroundWindow() != WinRT.Interop.WindowNative.GetWindowHandle(this)) return null;
         if (Root.XamlRoot is null || Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(Root.XamlRoot) is not FrameworkElement focused) return null;
         for (DependencyObject? node = focused; node is not null; node = VisualTreeHelper.GetParent(node))
             if (node is UIElement child && VisualTreeHelper.GetParent(node) == Cards)
@@ -169,6 +172,8 @@ public sealed partial class MainWindow : Window
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint window);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
 
     private double Scale => GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
 
